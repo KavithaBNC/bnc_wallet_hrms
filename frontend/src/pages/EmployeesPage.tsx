@@ -1469,7 +1469,7 @@ export default function EmployeesPage() {
         isOpen={showForm}
         onClose={handleFormCancel}
         title={editingEmployee ? 'Edit Employee' : 'Create Employee'}
-        size="2xl"
+        size="full"
       >
         {organizationId && (
           <EmployeeForm
