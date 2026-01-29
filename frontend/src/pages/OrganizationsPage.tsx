@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import organizationService, { Organization, CreateOrganizationData } from '../services/organization.service';
 import Modal from '../components/common/Modal';

@@ -102,7 +102,7 @@ const PayrollDistributionChart = ({ organizationId }: PayrollDistributionChartPr
           formatter={(value: number) => `₹${value.toFixed(1)}L`}
         />
         <Bar dataKey="amount" radius={[8, 8, 0, 0]}>
-          {data.map((entry, index) => (
+          {data.map((_entry, index) => (
             <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
           ))}
         </Bar>

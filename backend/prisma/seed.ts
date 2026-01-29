@@ -11,6 +11,18 @@ async function main() {
   await prisma.employee.deleteMany({ where: { email: { contains: '@test.hrms.com' } } });
   await prisma.user.deleteMany({ where: { email: { contains: '@test.hrms.com' } } });
 
+  // Remove existing test org and its data so we can recreate (avoids unique code conflict)
+  const existingTestOrgs = await prisma.organization.findMany({ where: { name: 'Test Corp Inc' } });
+  for (const org of existingTestOrgs) {
+    await prisma.employee.deleteMany({ where: { organizationId: org.id } });
+    await prisma.jobPosition.deleteMany({ where: { organizationId: org.id } });
+    await prisma.department.deleteMany({ where: { organizationId: org.id } });
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+  if (existingTestOrgs.length > 0) {
+    console.log('🗑️  Removed existing Test Corp Inc organization and its departments/positions');
+  }
+
   // Hash password for all test users
   const password = 'Test@123';
   const passwordHash = await bcrypt.hash(password, 10);

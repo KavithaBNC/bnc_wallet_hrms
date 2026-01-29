@@ -16,7 +16,7 @@ interface EmployeeStore {
   // Actions
   fetchEmployees: (params?: any) => Promise<void>;
   fetchEmployeeById: (id: string) => Promise<void>;
-  createEmployee: (data: any) => Promise<Employee>;
+  createEmployee: (data: any) => Promise<{ employee: Employee; temporaryPassword?: string }>;
   updateEmployee: (id: string, data: any) => Promise<Employee>;
   deleteEmployee: (id: string) => Promise<void>;
   setCurrentEmployee: (employee: Employee | null) => void;
@@ -39,13 +39,8 @@ export const useEmployeeStore = create<EmployeeStore>((set) => ({
     set({ loading: true, error: null });
     try {
       const response = await employeeService.getAll(params);
-      const employees = response.employees || response.data?.employees || [];
-      const pagination = response.pagination || response.data?.pagination || {
-        page: 1,
-        limit: 20,
-        total: 0,
-        totalPages: 0,
-      };
+      const employees = response.employees ?? [];
+      const pagination = response.pagination ?? { page: 1, limit: 20, total: 0, totalPages: 0 };
       set({
         employees,
         pagination,

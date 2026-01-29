@@ -109,7 +109,7 @@ const DepartmentEmployeesChart = ({ organizationId }: DepartmentEmployeesChartPr
           }}
         />
         <Bar dataKey="employees" radius={[0, 8, 8, 0]}>
-          {data.map((entry, index) => (
+          {data.map((_entry, index) => (
             <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
           ))}
         </Bar>

@@ -20,7 +20,7 @@ const PermissionsPage = () => {
   const [rolePermissions, setRolePermissions] = useState<RolePermission[]>([]);
   const [loadingRolePerms, setLoadingRolePerms] = useState(false);
   const [selectedModule, setSelectedModule] = useState<string>('all');
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [_showCreateModal, _setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
 
@@ -138,11 +138,6 @@ const PermissionsPage = () => {
   }, {} as Record<string, Permission[]>);
 
   const modules = Object.keys(permissionsByModule).sort();
-
-  const filteredPermissions =
-    selectedModule === 'all'
-      ? permissions
-      : permissionsByModule[selectedModule] || [];
 
   const rolePermissionIds = new Set(rolePermissions.map((rp) => rp.permission.id));
 

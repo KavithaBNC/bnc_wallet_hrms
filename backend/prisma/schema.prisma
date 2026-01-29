@@ -84,6 +84,9 @@ model User {
   createdJobOpenings JobOpening[]  @relation("JobOpeningCreator")
   createdInterviews  Interview[]   @relation("InterviewCreator")
   createdOffers      Offer[]       @relation("OfferCreator")
+  // Employee Master Approval
+  submittedChangeRequests EmployeeChangeRequest[] @relation("EmployeeChangeRequestSubmissions")
+  approvedChangeRequests  EmployeeChangeRequest[] @relation("EmployeeChangeRequestApprovals")
 
   @@map("users")
 }
@@ -333,8 +336,40 @@ model Employee {
   hiringManagerJobs         JobOpening[]               @relation("HiringManager")
   referredCandidates        Candidate[]                @relation("CandidateReferrer")
   assignedApplications      Application[]              @relation("ApplicationRecruiter")
+  changeRequests            EmployeeChangeRequest[]     @relation("EmployeeChangeRequests")
 
   @@map("employees")
+}
+
+// Employee Master Approval: pending changes submitted by employee (or approval-required role)
+model EmployeeChangeRequest {
+  id              String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId      String                    @map("employee_id") @db.Uuid
+  submittedById   String                    @map("submitted_by_id") @db.Uuid
+  organizationId  String                    @map("organization_id") @db.Uuid
+  status          EmployeeChangeRequestStatus @default(PENDING)
+  existingData    Json                      @map("existing_data")   // snapshot of employee data before change
+  requestedData   Json                      @map("requested_data") // form payload to apply on approve
+  submittedAt     DateTime                  @default(now()) @map("submitted_at")
+  approvedById    String?                   @map("approved_by_id") @db.Uuid
+  approvedAt      DateTime?                 @map("approved_at")
+  rejectionReason String?                   @map("rejection_reason") @db.Text
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
+
+  employee     Employee @relation("EmployeeChangeRequests", fields: [employeeId], references: [id], onDelete: Cascade)
+  submittedBy  User     @relation("EmployeeChangeRequestSubmissions", fields: [submittedById], references: [id], onDelete: Cascade)
+  approvedBy   User?    @relation("EmployeeChangeRequestApprovals", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@map("employee_change_requests")
+}
+
+enum EmployeeChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("employee_change_request_status")
 }
 
 enum Gender {

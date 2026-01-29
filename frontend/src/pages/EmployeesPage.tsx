@@ -78,6 +78,9 @@ export default function EmployeesPage() {
   const canCreate = canCreateEmployee(user?.role);
   const canUpdate = canUpdateEmployee(user?.role);
   const canDelete = canDeleteEmployee(user?.role);
+  /** EMPLOYEE can edit only their own record; HR_MANAGER/ORG_ADMIN/SUPER_ADMIN can edit any */
+  const canEditEmployee = (emp: Employee) =>
+    canUpdate || (user?.role === 'EMPLOYEE' && user?.employee?.id === emp.id);
   const canManageCredentials = user?.role === 'ORG_ADMIN' || user?.role === 'HR_MANAGER';
 
   // Fetch employee statistics
@@ -379,9 +382,9 @@ export default function EmployeesPage() {
     return colors[index];
   };
 
-  // Handle employee card click - navigate to employee details
+  // Handle employee card click - open edit only if user can edit this employee
   const handleEmployeeClick = (employee: Employee) => {
-    handleEdit(employee);
+    if (canEditEmployee(employee)) handleEdit(employee);
   };
 
   // Show error if no organizationId (after trying to load user data)
@@ -427,8 +430,6 @@ export default function EmployeesPage() {
     );
   }
 
-  const isOrgAdmin = user?.role === 'ORG_ADMIN';
-
   // Fetch credentials when ORG_ADMIN or HR_MANAGER opens credentials view
   useEffect(() => {
     if (showCredentials && canManageCredentials && credentials.length === 0 && !loadingCredentials) {
@@ -457,7 +458,7 @@ export default function EmployeesPage() {
       
       // The employeeId from credentials is the employee record ID
       // Update employee with role
-      await employeeService.update(employeeId, { role: newRole as any });
+      await (employeeService as { update: (id: string, data: Record<string, unknown>) => Promise<unknown> }).update(employeeId, { role: newRole });
 
       alert(`Role updated successfully to ${newRole}`);
       setRoleChangeModal(null);
@@ -480,7 +481,7 @@ export default function EmployeesPage() {
 
     try {
       setResettingPassword(resetPasswordModal.employeeId);
-      const response = await api.post(`/auth/admin/reset-password/${resetPasswordModal.employeeId}`, {
+      await api.post(`/auth/admin/reset-password/${resetPasswordModal.employeeId}`, {
         newPassword,
       });
       
@@ -594,7 +595,7 @@ export default function EmployeesPage() {
                 </div>
               )}
             </div>
-            {isOrgAdmin && (
+            {canManageCredentials && (
               <button
                 onClick={() => {
                   setShowCredentials(!showCredentials);
@@ -619,8 +620,8 @@ export default function EmployeesPage() {
           </div>
         </div>
 
-      {/* Employee Credentials View (ORG_ADMIN only) */}
-      {showCredentials && isOrgAdmin && (
+      {/* Employee Credentials View (ORG_ADMIN / HR_MANAGER) */}
+      {showCredentials && canManageCredentials && (
         <div className="bg-white rounded-lg shadow mb-6">
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-2xl font-bold text-gray-900">Employee Credentials</h2>
@@ -1153,22 +1154,24 @@ export default function EmployeesPage() {
                       <div
                         key={emp.id}
                         onClick={() => handleEmployeeClick(emp)}
-                        className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-gray-200 p-6 relative"
+                        className={`bg-white rounded-xl shadow-md border border-gray-200 p-6 relative ${canEditEmployee(emp) ? 'hover:shadow-lg transition-all duration-200 cursor-pointer' : ''}`}
                       >
-                        {/* Vertical Ellipsis Menu */}
-                        <div className="absolute top-4 right-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEdit(emp);
-                            }}
-                            className="p-1 text-gray-400 hover:text-gray-600"
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                            </svg>
-                          </button>
-                        </div>
+                        {/* Vertical Ellipsis Menu - only when user can edit this employee */}
+                        {canEditEmployee(emp) && (
+                          <div className="absolute top-4 right-4">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEdit(emp);
+                              }}
+                              className="p-1 text-gray-400 hover:text-gray-600"
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
 
                         {/* Profile Image with Avatar Fallback */}
                         <div className="flex justify-center mb-4">
@@ -1367,7 +1370,7 @@ export default function EmployeesPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-left">
                       <div className="flex items-center gap-3">
-                        {canUpdate && (
+                        {canEditEmployee(emp) && (
                           <button
                             onClick={() => handleEdit(emp)}
                             className="text-blue-600 hover:text-blue-900"

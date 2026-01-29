@@ -320,10 +320,6 @@ export const payrollCycleService = {
     const response = await api.post(`/payroll/payroll-cycles/${id}/rollback`);
     return response.data.data;
   },
-
-  async delete(id: string): Promise<void> {
-    await api.delete(`/payroll/payroll-cycles/${id}`);
-  },
 };
 
 // ============================================================================

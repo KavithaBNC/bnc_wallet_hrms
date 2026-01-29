@@ -26,7 +26,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (data: LoginData) => {
     try {
       set({ isLoading: true, error: null });
-      const { user } = await authService.login(data);
+      await authService.login(data);
       // Refresh user data to ensure we have latest employee/organization info
       const refreshedUser = await authService.getCurrentUser();
       set({ user: refreshedUser, isAuthenticated: true, isLoading: false });

@@ -2,8 +2,6 @@
  * Direct test of payslip calculation to find the bug
  */
 
-import { PayrollCalculationEngine } from '../utils/payroll-calculation-engine';
-
 async function testCalculation() {
   try {
     console.log('🧪 Testing Payslip Calculation Directly...\n');

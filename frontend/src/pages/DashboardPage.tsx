@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '../store/authStore';
 import employeeService from '../services/employee.service';
 import organizationService from '../services/organization.service';
-import { payrollCycleService } from '../services/payroll.service';
+import { payrollCycleService, type PayrollCycle } from '../services/payroll.service';
 import api from '../services/api';
 import AppHeader from '../components/layout/AppHeader';
 import MonthlyAttendanceChart from '../components/dashboard/MonthlyAttendanceChart';
@@ -137,10 +137,10 @@ const DashboardPage = () => {
 
       // Process payroll total
       if (payrollData.status === 'fulfilled') {
-        const response = payrollData.value.data;
-        const cycles = response?.data ?? [];
-        if (Array.isArray(cycles) && cycles.length > 0 && cycles[0].totalNet != null) {
-          newStats.payrollTotal = Number(cycles[0].totalNet);
+        const raw = payrollData.value as PayrollCycle[] | { data?: PayrollCycle[] };
+        const cycles = Array.isArray(raw) ? raw : (raw?.data ?? []);
+        if (cycles.length > 0 && (cycles[0] as any).totalNet != null) {
+          newStats.payrollTotal = Number((cycles[0] as any).totalNet);
         }
       }
 

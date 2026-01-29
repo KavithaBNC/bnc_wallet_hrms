@@ -122,9 +122,14 @@ export class AuthService {
    * Login user
    */
   async login(data: LoginInput) {
+    // Normalize email (trim + lowercase) so login is case-insensitive
+    const email = data.email.trim().toLowerCase();
+    if (!email) {
+      throw new AppError('Invalid email or password', 401);
+    }
     // Find user by email
     const user = await prisma.user.findUnique({
-      where: { email: data.email },
+      where: { email },
       include: {
         employee: {
           select: {

@@ -189,7 +189,7 @@ const PaygroupSelectionModal: React.FC<PaygroupSelectionModalProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} title="Associate" size="md">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Debug info (remove in production) */}
-        {process.env.NODE_ENV === 'development' && (
+        {import.meta.env.DEV && (
           <div className="text-xs text-gray-400 mb-2">
             Org ID: {organizationId ? organizationId.substring(0, 8) + '...' : 'MISSING'} | 
             Paygroups: {paygroups.length} | 

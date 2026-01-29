@@ -17,6 +17,8 @@ import SalaryStructurePage from './pages/SalaryStructurePage';
 import EmployeeSalariesPage from './pages/EmployeeSalariesPage';
 import OrganizationsPage from './pages/OrganizationsPage';
 import PermissionsPage from './pages/PermissionsPage';
+import HRAuditSettingsPage from './pages/HRAuditSettingsPage';
+import EmployeeMasterApprovalPage from './pages/EmployeeMasterApprovalPage';
 
 function App() {
   return (
@@ -162,6 +164,26 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <PermissionsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/hr-audit-settings"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <HRAuditSettingsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/employee-master-approval"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EmployeeMasterApprovalPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }

@@ -533,7 +533,7 @@ export default function DepartmentsPage() {
       >
         <DepartmentForm
           department={editingDepartment}
-          organizationId={organizationId}
+          organizationId={organizationId!}
           onSuccess={handleFormSuccess}
           onCancel={handleFormCancel}
         />

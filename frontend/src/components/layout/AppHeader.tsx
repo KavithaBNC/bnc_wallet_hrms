@@ -11,17 +11,17 @@ interface AppHeaderProps {
 export default function AppHeader({
   title,
   subtitle,
-  notificationCount = 0,
+  notificationCount: _notificationCount = 0,
   onLogout,
 }: AppHeaderProps) {
   const { user } = useAuthStore();
-  const userName = user?.firstName || user?.employee?.firstName || 'Admin';
+  const userName = user?.employee?.firstName != null ? `${user.employee.firstName} ${user.employee.lastName ?? ''}`.trim() : user?.email ?? 'Admin';
   const userRole = user?.role || 'Admin';
   
   // Get user initials for avatar
   const getInitials = () => {
-    const firstName = user?.firstName || user?.employee?.firstName || 'A';
-    const lastName = user?.lastName || user?.employee?.lastName || '';
+    const firstName = user?.employee?.firstName ?? 'A';
+    const lastName = user?.employee?.lastName ?? '';
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
   };
 

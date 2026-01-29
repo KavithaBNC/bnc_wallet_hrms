@@ -36,7 +36,7 @@ export const useDepartmentStore = create<DepartmentStore>((set) => ({
         sortBy: options?.sortBy,
         sortOrder: options?.sortOrder,
       });
-      const departments = response.departments || response.data?.departments || [];
+      const departments = response.departments ?? [];
       set({ departments, loading: false });
     } catch (error: any) {
       console.error('Error fetching departments:', error);

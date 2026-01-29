@@ -41,13 +41,8 @@ export const usePositionStore = create<PositionStore>((set) => ({
       const response = await positionService.getAll(params);
       console.log('Positions API Response:', response);
       // Handle both response formats
-      const positions = response.positions || response.data?.positions || [];
-      const pagination = response.pagination || response.data?.pagination || {
-        page: 1,
-        limit: 20,
-        total: 0,
-        totalPages: 0,
-      };
+      const positions = response.positions ?? [];
+      const pagination = response.pagination ?? { page: 1, limit: 20, total: 0, totalPages: 0 };
       set({
         positions,
         pagination,

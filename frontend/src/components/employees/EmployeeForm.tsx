@@ -1,10 +1,13 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { useDepartmentStore } from '../../store/departmentStore';
 import { usePositionStore } from '../../store/positionStore';
+import { useAuthStore } from '../../store/authStore';
+import { useHRAuditStore } from '../../store/hrAuditStore';
 import employeeService, { Employee, Gender, MaritalStatus, EmployeeStatus } from '../../services/employee.service';
+import { employeeChangeRequestService } from '../../services/employee-change-request.service';
 import api from '../../services/api';
 import Modal from '../common/Modal';
 import DepartmentForm from '../departments/DepartmentForm';
@@ -27,9 +30,29 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   onSuccess,
   onCancel,
 }) => {
-  const { createEmployee, updateEmployee, loading, fetchEmployees, employees } = useEmployeeStore();
+  const { createEmployee, updateEmployee, loading } = useEmployeeStore();
   const { departments, fetchDepartments } = useDepartmentStore();
   const { positions, fetchPositions } = usePositionStore();
+  const { user } = useAuthStore();
+  const auditByRole = useHRAuditStore((s) => s.byRole);
+  const getSettingsForRole = useHRAuditStore((s) => s.getSettingsForRole);
+  const auditSettings = useMemo(
+    () => getSettingsForRole(user?.role || 'USER'),
+    [user?.role, getSettingsForRole, auditByRole]
+  );
+  const auditByModule = useMemo(
+    () => new Map(auditSettings.modules.map((m) => [m.id, m])),
+    [auditSettings.modules]
+  );
+  const isModuleViewable = (tabId: string) => auditByModule.get(tabId as any)?.viewable !== false;
+  /** Employee editing own record can always edit Personal Info; otherwise use HR Audit setting */
+  const isModuleEditable = (tabId: string) => {
+    const fromAudit = auditByModule.get(tabId as any)?.editable !== false;
+    const isEmployeeSelf = (user?.role || '').toUpperCase() === 'EMPLOYEE' && employee?.id === user?.employee?.id;
+    if (tabId === 'personal' && isEmployeeSelf) return true;
+    return fromAudit;
+  };
+  const isModuleApprovalRequired = (tabId: string) => auditByModule.get(tabId as any)?.approval === true;
   const [availableManagers, setAvailableManagers] = useState<Employee[]>([]);
   const [locations, setLocations] = useState<{ id: string; name: string; code?: string }[]>([]);
   const [costCentres, setCostCentres] = useState<{ id: string; name: string; code?: string }[]>([]);
@@ -482,6 +505,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     }
 
     try {
+      const requiresApproval = auditSettings.addApproval || auditSettings.modules.some((m) => m.approval);
+
       // Helper function to convert empty strings to undefined
       const emptyToUndefined = (value: string | undefined) => {
         return value && value.trim() ? value.trim() : undefined;
@@ -503,6 +528,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       const hasAddress = Object.keys(addressFields).length > 0;
       
       // Build emergency contacts only if all required fields are filled
+
       const emergencyContactName = emptyToUndefined(formData.emergencyContactName);
       const emergencyContactRelationship = emptyToUndefined(formData.emergencyContactRelationship);
       const emergencyContactPhone = emptyToUndefined(formData.emergencyContactPhone);
@@ -563,6 +589,19 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         return;
       }
 
+      if (employee && requiresApproval) {
+        const existingData = JSON.parse(JSON.stringify(employee)) as Record<string, unknown>;
+        await employeeChangeRequestService.submit({
+          employeeId: employee.id,
+          organizationId,
+          existingData,
+          requestedData: submitData,
+        });
+        alert('Your changes have been submitted for HR Manager approval. They will be saved to the database after approval.');
+        onSuccess?.();
+        return;
+      }
+
       if (employee) {
         await updateEmployee(employee.id, submitData);
         onSuccess?.();
@@ -620,7 +659,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         {/* Tab Navigation - vertical menu */}
         <div className="w-56 flex-shrink-0">
           <nav className="flex flex-col space-y-2 bg-white rounded-lg border border-gray-200 p-3">
-          {(initialPaygroupId || (employee as any)?.paygroupId || (employee as any)?.paygroup) && (
+          {(initialPaygroupId || (employee as any)?.paygroupId || (employee as any)?.paygroup) && isModuleViewable('company') && (
             <button
               type="button"
               onClick={() => setCurrentTab('company')}
@@ -633,6 +672,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               Company Details
             </button>
           )}
+          {isModuleViewable('personal') && (
           <button
             type="button"
             onClick={() => setCurrentTab('personal')}
@@ -644,6 +684,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Personal Info
           </button>
+          )}
+          {isModuleViewable('employment') && (
           <button
             type="button"
             onClick={() => setCurrentTab('employment')}
@@ -655,6 +697,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Employment
           </button>
+          )}
+          {isModuleViewable('statutory') && (
           <button
             type="button"
             onClick={() => setCurrentTab('statutory')}
@@ -666,6 +710,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Statutory Details
           </button>
+          )}
+          {isModuleViewable('bank') && (
           <button
             type="button"
             onClick={() => setCurrentTab('bank')}
@@ -677,6 +723,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Bank Details
           </button>
+          )}
+          {isModuleViewable('salary') && (
           <button
             type="button"
             onClick={() => setCurrentTab('salary')}
@@ -688,6 +736,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Salary Details
           </button>
+          )}
+          {isModuleViewable('assets') && (
           <button
             type="button"
             onClick={() => setCurrentTab('assets')}
@@ -699,6 +749,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Assets
           </button>
+          )}
+          {isModuleViewable('academic') && (
           <button
             type="button"
             onClick={() => setCurrentTab('academic')}
@@ -710,6 +762,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Academic Qualification
           </button>
+          )}
+          {isModuleViewable('previousEmployment') && (
           <button
             type="button"
             onClick={() => setCurrentTab('previousEmployment')}
@@ -721,6 +775,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             Previous Employment
           </button>
+          )}
+          {isModuleViewable('family') && (
           <button
             type="button"
             onClick={() => setCurrentTab('family')}
@@ -735,6 +791,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             </svg>
             Family Details
           </button>
+          )}
+          {isModuleViewable('others') && (
           <button
             type="button"
             onClick={() => setCurrentTab('others')}
@@ -749,6 +807,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             </svg>
             Others
           </button>
+          )}
+          {isModuleViewable('newFields') && (
           <button
             type="button"
             onClick={() => setCurrentTab('newFields')}
@@ -760,11 +820,23 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           >
             New Fields
           </button>
+          )}
         </nav>
       </div>
 
       {/* Tab Content */}
       <div className="flex-1 space-y-6">
+      {!isModuleEditable(currentTab) && (
+        <div className="p-3 bg-amber-50 text-amber-800 rounded-lg border border-amber-200 text-sm">
+          View only. You do not have permission to edit this section.
+        </div>
+      )}
+      {isModuleApprovalRequired(currentTab) && isModuleEditable(currentTab) && employee && (
+        <div className="p-3 bg-blue-50 text-blue-800 rounded-lg border border-blue-200 text-sm">
+          Changes require HR Manager approval before they are saved to the database.
+        </div>
+      )}
+      <fieldset disabled={!isModuleEditable(currentTab)} className="border-0 p-0 m-0 min-w-0 space-y-6">
 
       {/* Company Details Tab */}
       {(initialPaygroupId || (employee as any)?.paygroupId || (employee as any)?.paygroup) && currentTab === 'company' && (
@@ -2858,7 +2930,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               <input
                 type="text"
                 name="imei"
-                value={formData.imei}
+                value={String((formData as Record<string, unknown>).imei ?? '')}
                 onChange={handleChange}
                 className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 placeholder="IMEI"
@@ -2883,7 +2955,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               <label className="block text-sm font-medium text-gray-700">PF ABRY Scheme Applicable</label>
               <select
                 name="pfAbrySchemeApplicable"
-                value={formData.pfAbrySchemeApplicable}
+                value={String((formData as Record<string, unknown>).pfAbrySchemeApplicable ?? '')}
                 onChange={handleChange}
                 className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
@@ -2896,7 +2968,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               <label className="block text-sm font-medium text-gray-700">Alternate Saturday Off</label>
               <select
                 name="alternateSaturdayOff"
-                value={formData.alternateSaturdayOff}
+                value={String((formData as Record<string, unknown>).alternateSaturdayOff ?? '')}
                 onChange={handleChange}
                 className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
@@ -2909,7 +2981,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               <label className="block text-sm font-medium text-gray-700">Compoff Applicable</label>
               <select
                 name="compoffApplicable"
-                value={formData.compoffApplicable}
+                value={String((formData as Record<string, unknown>).compoffApplicable ?? '')}
                 onChange={handleChange}
                 className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
@@ -2970,6 +3042,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             </button>
           )}
         </div>
+      </div>
+
+      </fieldset>
+      </div>
       </div>
 
       {/* Temporary Password Modal */}
@@ -3043,8 +3119,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           </div>
         </div>
       )}
-      </div> {/* end tab content */}
-      </div> {/* end layout flex */}
     </form>
 
     {/* Department Modal - Outside form to avoid nested forms */}
