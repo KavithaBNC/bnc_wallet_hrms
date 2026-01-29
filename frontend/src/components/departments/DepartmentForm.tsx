@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useDepartmentStore } from '../../store/departmentStore';
+<<<<<<< Updated upstream
 import { useEmployeeStore } from '../../store/employeeStore';
 import { Department } from '../../services/department.service';
+=======
+import departmentService, { Department } from '../../services/department.service';
+>>>>>>> Stashed changes
 
 interface DepartmentFormProps {
   department?: Department | null;
@@ -21,6 +25,7 @@ const DepartmentForm: React.FC<DepartmentFormProps> = ({
 
   const [formData, setFormData] = useState({
     name: department?.name || '',
+<<<<<<< Updated upstream
     code: department?.code || '',
     description: department?.description || '',
     parentDepartmentId: department?.parentDepartmentId || '',
@@ -28,6 +33,8 @@ const DepartmentForm: React.FC<DepartmentFormProps> = ({
     costCenter: department?.costCenter || '',
     location: department?.location || '',
     isActive: department?.isActive !== undefined ? department.isActive : true,
+=======
+>>>>>>> Stashed changes
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -84,9 +91,34 @@ const DepartmentForm: React.FC<DepartmentFormProps> = ({
       return;
     }
 
+    const trimmedName = formData.name.trim();
+
+    // Duplicate name check: same department name must not exist in this organization
+    try {
+      const { departments } = await departmentService.getAll({
+        organizationId,
+        limit: 500,
+        listView: true,
+      });
+      const existingList = departments || [];
+      const isDuplicate = existingList.some(
+        (d) =>
+          d.name.trim().toLowerCase() === trimmedName.toLowerCase() &&
+          (!department || d.id !== department.id)
+      );
+      if (isDuplicate) {
+        setErrors({ name: 'A department with this name already exists. Please use a different name.' });
+        return;
+      }
+    } catch (err) {
+      console.error('Error checking duplicate department:', err);
+      // Continue with create/update if check fails (e.g. network); backend may still enforce uniqueness
+    }
+
     try {
       const submitData = {
         organizationId,
+<<<<<<< Updated upstream
         name: formData.name.trim(),
         code: formData.code.trim() || undefined,
         description: formData.description.trim() || undefined,
@@ -95,6 +127,10 @@ const DepartmentForm: React.FC<DepartmentFormProps> = ({
         costCenter: formData.costCenter.trim() || undefined,
         location: formData.location.trim() || undefined,
         isActive: formData.isActive,
+=======
+        name: trimmedName,
+        isActive: true,
+>>>>>>> Stashed changes
       };
 
       console.log('Creating department with data:', submitData);
@@ -125,8 +161,13 @@ const DepartmentForm: React.FC<DepartmentFormProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+<<<<<<< Updated upstream
       {/* Name */}
       <div>
+=======
+      <div>
+        {/* Department Name */}
+>>>>>>> Stashed changes
         <label htmlFor="name" className="block text-sm font-medium text-gray-700">
           Department Name <span className="text-red-500">*</span>
         </label>
@@ -144,6 +185,7 @@ const DepartmentForm: React.FC<DepartmentFormProps> = ({
           placeholder="e.g., Engineering, Sales, HR"
         />
         {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
+<<<<<<< Updated upstream
       </div>
 
       {/* Code */}
@@ -274,6 +316,8 @@ const DepartmentForm: React.FC<DepartmentFormProps> = ({
         <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
           Active Department
         </label>
+=======
+>>>>>>> Stashed changes
       </div>
 
       {/* Submit Error */}
