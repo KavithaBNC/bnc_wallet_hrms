@@ -1,6 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { useDepartmentStore } from '../../store/departmentStore';
 import { usePositionStore } from '../../store/positionStore';
@@ -68,14 +66,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [showCertificationModal, setShowCertificationModal] = useState(false);
   const [showKnownLanguageModal, setShowKnownLanguageModal] = useState(false);
 
-  const dateOfBirthRef = useRef<any>(null);
-  const joiningDateRef = useRef<any>(null);
-  const passportExpiryRef = useRef<any>(null);
-  const drivingLicenseExpiryRef = useRef<any>(null);
-  const dateOfWeddingRef = useRef<any>(null);
-  const familyDateOfBirthRef = useRef<any>(null);
-  const familyPassportIssueDateRef = useRef<any>(null);
-  const familyPassportExpiryDateRef = useRef<any>(null);
   const [salaryTab, setSalaryTab] = useState<'earnings' | 'deductions' | 'reimbursement'>('earnings');
   const [othersTab, setOthersTab] = useState<'certifications' | 'knownLanguages'>('certifications');
   const [assets, setAssets] = useState<Array<{
@@ -889,11 +879,11 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                     : 'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                 }`}
               >
-                <DatePicker
-                  ref={dateOfBirthRef}
-                  selected={formData.dateOfBirth ? new Date(formData.dateOfBirth) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
+                <input
+                  type="date"
+                  value={formData.dateOfBirth || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
                     setFormData((prev) => ({ ...prev, dateOfBirth: value }));
                     if (errors.dateOfBirth) {
                       setErrors((prev) => {
@@ -903,36 +893,13 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                       });
                     }
                   }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Select date"
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (dateOfBirthRef.current?.setOpen) {
-                      dateOfBirthRef.current.setOpen(true);
-                    } else if (dateOfBirthRef.current?.input?.focus) {
-                      dateOfBirthRef.current.input.focus();
-                    }
-                  }}
-                >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
               {errors.dateOfBirth && <p className="mt-1 text-sm text-red-600">{errors.dateOfBirth}</p>}
             </div>
@@ -962,11 +929,11 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                     : 'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                 }`}
               >
-                <DatePicker
-                  ref={joiningDateRef}
-                  selected={formData.joiningDate ? new Date(formData.joiningDate) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
+                <input
+                  type="date"
+                  value={formData.joiningDate || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
                     setFormData((prev) => ({ ...prev, joiningDate: value }));
                     if (errors.joiningDate) {
                       setErrors((prev) => {
@@ -976,36 +943,13 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                       });
                     }
                   }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Select date"
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (joiningDateRef.current?.setOpen) {
-                      joiningDateRef.current.setOpen(true);
-                    } else if (joiningDateRef.current?.input?.focus) {
-                      joiningDateRef.current.input.focus();
-                    }
-                  }}
-                >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
               {errors.joiningDate && <p className="mt-1 text-sm text-red-600">{errors.joiningDate}</p>}
             </div>
@@ -1428,33 +1372,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                     'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                   }`}
                 >
-                  <DatePicker
-                    ref={dateOfWeddingRef}
-                    selected={formData.dateOfWedding ? new Date(formData.dateOfWedding) : null}
-                    onChange={(date: Date | null) => {
-                      const value = date ? date.toISOString().slice(0, 10) : '';
-                      setFormData((prev) => ({ ...prev, dateOfWedding: value }));
-                    }}
-                    dateFormat="dd-MM-yyyy"
-                    placeholderText="Select date"
+                  <input
+                    type="date"
+                    value={formData.dateOfWedding || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, dateOfWedding: e.target.value }))}
                     className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                    popperPlacement="bottom-start"
                   />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                    onClick={() => {
-                      if (dateOfWeddingRef.current?.setOpen) {
-                        dateOfWeddingRef.current.setOpen(true);
-                      } else if (dateOfWeddingRef.current?.input?.focus) {
-                        dateOfWeddingRef.current.input.focus();
-                      }
-                    }}
-                  >
+                  <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                  </button>
+                  </span>
                 </div>
               </div>
               <div>
@@ -1521,33 +1449,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                     'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                   }`}
                 >
-                  <DatePicker
-                    ref={passportExpiryRef}
-                    selected={formData.passportExpiry ? new Date(formData.passportExpiry) : null}
-                    onChange={(date: Date | null) => {
-                      const value = date ? date.toISOString().slice(0, 10) : '';
-                      setFormData((prev) => ({ ...prev, passportExpiry: value }));
-                    }}
-                    dateFormat="dd-MM-yyyy"
-                    placeholderText="Select date"
+                  <input
+                    type="date"
+                    value={formData.passportExpiry || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, passportExpiry: e.target.value }))}
                     className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                    popperPlacement="bottom-start"
                   />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                    onClick={() => {
-                      if (passportExpiryRef.current?.setOpen) {
-                        passportExpiryRef.current.setOpen(true);
-                      } else if (passportExpiryRef.current?.input?.focus) {
-                        passportExpiryRef.current.input.focus();
-                      }
-                    }}
-                  >
+                  <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                  </button>
+                  </span>
                 </div>
               </div>
               <div>
@@ -1567,33 +1479,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                     'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                   }`}
                 >
-                  <DatePicker
-                    ref={drivingLicenseExpiryRef}
-                    selected={formData.drivingLicenseExpiry ? new Date(formData.drivingLicenseExpiry) : null}
-                    onChange={(date: Date | null) => {
-                      const value = date ? date.toISOString().slice(0, 10) : '';
-                      setFormData((prev) => ({ ...prev, drivingLicenseExpiry: value }));
-                    }}
-                    dateFormat="dd-MM-yyyy"
-                    placeholderText="Select date"
+                  <input
+                    type="date"
+                    value={formData.drivingLicenseExpiry || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, drivingLicenseExpiry: e.target.value }))}
                     className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                    popperPlacement="bottom-start"
                   />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                    onClick={() => {
-                      if (drivingLicenseExpiryRef.current?.setOpen) {
-                        drivingLicenseExpiryRef.current.setOpen(true);
-                      } else if (drivingLicenseExpiryRef.current?.input?.focus) {
-                        drivingLicenseExpiryRef.current.input.focus();
-                      }
-                    }}
-                  >
+                  <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                  </button>
+                  </span>
                 </div>
               </div>
             </div>
@@ -3702,33 +3598,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                   'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                 }`}
               >
-                <DatePicker
-                  ref={familyDateOfBirthRef}
-                  selected={familyFormData.dateOfBirth ? new Date(familyFormData.dateOfBirth) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
-                    setFamilyFormData((prev) => ({ ...prev, dateOfBirth: value }));
-                  }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Date of Birth"
+                <input
+                  type="date"
+                  value={familyFormData.dateOfBirth || ''}
+                  onChange={(e) => setFamilyFormData((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (familyDateOfBirthRef.current?.setOpen) {
-                      familyDateOfBirthRef.current.setOpen(true);
-                    } else if (familyDateOfBirthRef.current?.input?.focus) {
-                      familyDateOfBirthRef.current.input.focus();
-                    }
-                  }}
-                >
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
             </div>
             <div>
@@ -3788,33 +3668,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                   'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                 }`}
               >
-                <DatePicker
-                  ref={familyPassportIssueDateRef}
-                  selected={familyFormData.passportIssueDate ? new Date(familyFormData.passportIssueDate) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
-                    setFamilyFormData((prev) => ({ ...prev, passportIssueDate: value }));
-                  }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Passport Issue Date"
+                <input
+                  type="date"
+                  value={familyFormData.passportIssueDate || ''}
+                  onChange={(e) => setFamilyFormData((prev) => ({ ...prev, passportIssueDate: e.target.value }))}
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (familyPassportIssueDateRef.current?.setOpen) {
-                      familyPassportIssueDateRef.current.setOpen(true);
-                    } else if (familyPassportIssueDateRef.current?.input?.focus) {
-                      familyPassportIssueDateRef.current.input.focus();
-                    }
-                  }}
-                >
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
             </div>
             <div>
@@ -3824,33 +3688,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                   'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
                 }`}
               >
-                <DatePicker
-                  ref={familyPassportExpiryDateRef}
-                  selected={familyFormData.passportExpiryDate ? new Date(familyFormData.passportExpiryDate) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
-                    setFamilyFormData((prev) => ({ ...prev, passportExpiryDate: value }));
-                  }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Passport Expiry Date"
+                <input
+                  type="date"
+                  value={familyFormData.passportExpiryDate || ''}
+                  onChange={(e) => setFamilyFormData((prev) => ({ ...prev, passportExpiryDate: e.target.value }))}
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (familyPassportExpiryDateRef.current?.setOpen) {
-                      familyPassportExpiryDateRef.current.setOpen(true);
-                    } else if (familyPassportExpiryDateRef.current?.input?.focus) {
-                      familyPassportExpiryDateRef.current.input.focus();
-                    }
-                  }}
-                >
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
             </div>
           </div>
