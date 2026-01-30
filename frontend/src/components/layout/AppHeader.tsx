@@ -10,7 +10,7 @@ interface AppHeaderProps {
 export default function AppHeader({
   title,
   subtitle,
-  notificationCount = 0,
+  notificationCount: _notificationCount = 0,
   onLogout,
 }: AppHeaderProps) {
   return (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useDepartmentStore } from '../store/departmentStore';
 import { useAuthStore } from '../store/authStore';
 import { Department } from '../services/department.service';
@@ -325,7 +325,7 @@ export default function DepartmentsPage() {
             /* Tree View */
             <div className="bg-white rounded-lg shadow p-6">
               <DepartmentTree
-                organizationId={organizationId}
+                organizationId={organizationId!}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
               />
@@ -341,12 +341,14 @@ export default function DepartmentsPage() {
         title={editingDepartment ? 'Edit Department' : 'Create Department'}
         size="2xl"
       >
-        <DepartmentForm
-          department={editingDepartment}
-          organizationId={organizationId}
-          onSuccess={handleFormSuccess}
-          onCancel={handleFormCancel}
-        />
+        {organizationId && (
+          <DepartmentForm
+            department={editingDepartment}
+            organizationId={organizationId}
+            onSuccess={handleFormSuccess}
+            onCancel={handleFormCancel}
+          />
+        )}
       </Modal>
       </main>
     </div>

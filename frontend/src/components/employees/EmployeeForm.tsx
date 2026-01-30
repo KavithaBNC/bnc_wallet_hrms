@@ -16,6 +16,8 @@ interface EmployeeFormProps {
   initialPaygroupName?: string;
   onSuccess?: () => void;
   onCancel?: () => void;
+  /** When 'view', form is read-only and Update Employee button is hidden */
+  mode?: 'view' | 'edit';
 }
 
 const EmployeeForm: React.FC<EmployeeFormProps> = ({
@@ -25,8 +27,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   initialPaygroupName,
   onSuccess,
   onCancel,
+  mode = 'edit',
 }) => {
-  const { createEmployee, updateEmployee, loading, fetchEmployees, employees } = useEmployeeStore();
+  const isViewMode = mode === 'view';
+  const { createEmployee, updateEmployee, loading } = useEmployeeStore();
   const { departments, fetchDepartments } = useDepartmentStore();
   const { positions, fetchPositions } = usePositionStore();
   const [availableManagers, setAvailableManagers] = useState<Employee[]>([]);
@@ -37,10 +41,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [createdEmployeeEmail, setCreatedEmployeeEmail] = useState<string>('');
   const [showDepartmentModal, setShowDepartmentModal] = useState(false);
   const [showPositionModal, setShowPositionModal] = useState(false);
-<<<<<<< Updated upstream
-
-  const [currentTab, setCurrentTab] = useState<'company' | 'personal' | 'employment' | 'contact'>(
-=======
   const [showSubDepartmentModal, setShowSubDepartmentModal] = useState(false);
   const [newSubDepartmentName, setNewSubDepartmentName] = useState('');
   const [subDepartmentError, setSubDepartmentError] = useState('');
@@ -52,14 +52,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [showCertificationModal, setShowCertificationModal] = useState(false);
   const [showKnownLanguageModal, setShowKnownLanguageModal] = useState(false);
 
-  const dateOfBirthRef = useRef<any>(null);
-  const joiningDateRef = useRef<any>(null);
-  const passportExpiryRef = useRef<any>(null);
-  const drivingLicenseExpiryRef = useRef<any>(null);
-  const dateOfWeddingRef = useRef<any>(null);
-  const familyDateOfBirthRef = useRef<any>(null);
-  const familyPassportIssueDateRef = useRef<any>(null);
-  const familyPassportExpiryDateRef = useRef<any>(null);
   const [salaryTab, setSalaryTab] = useState<'earnings' | 'deductions' | 'reimbursement'>('earnings');
   const [othersTab, setOthersTab] = useState<'certifications' | 'knownLanguages'>('certifications');
   const [assets, setAssets] = useState<Array<{
@@ -192,7 +184,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [currentTab, setCurrentTab] = useState<
     'company' | 'personal' | 'statutory' | 'bank' | 'salary' | 'assets' | 'academic' | 'previousEmployment' | 'family' | 'others' | 'newFields'
   >(
->>>>>>> Stashed changes
     initialPaygroupId || (employee as any)?.paygroupId || (employee as any)?.paygroup ? 'company' : 'personal'
   );
 
@@ -208,6 +199,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     officialEmail: (employee as any)?.officialEmail || '',
     officialMobile: (employee as any)?.officialMobile || '',
     departmentId: employee?.departmentId || '',
+    subDepartmentId: (employee as any)?.subDepartmentId || '',
+    subDepartment: (employee as any)?.subDepartment || '',
     positionId: employee?.positionId || '',
     locationId: (employee as any)?.locationId || '',
     costCentreId: (employee as any)?.costCentreId || '',
@@ -216,10 +209,71 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     grade: (employee as any)?.grade || '',
     placeOfTaxDeduction: (employee as any)?.placeOfTaxDeduction || '',
     jobResponsibility: (employee as any)?.jobResponsibility || '',
+    // Statutory Details
+    pfNumber: (employee as any)?.pfNumber || '',
+    esiNumber: (employee as any)?.esiNumber || '',
+    pfApplicable: (employee as any)?.pfApplicable ?? false,
+    esiApplicable: (employee as any)?.esiApplicable ?? false,
+    taxApplicable: (employee as any)?.taxApplicable ?? false,
+    uanNumber: (employee as any)?.uanNumber || '',
+    panNumber: (employee as any)?.panNumber || '',
+    pTaxLocation: (employee as any)?.pTaxLocation || '',
+    dateOfRetirement: (employee as any)?.dateOfRetirement
+      ? (employee as any).dateOfRetirement.split('T')[0]
+      : '',
+    expatriate: (employee as any)?.expatriate ?? false,
+    pfTransferred: (employee as any)?.pfTransferred ?? false,
+    esiDispensary: (employee as any)?.esiDispensary || '',
+    gratuityApplicable: (employee as any)?.gratuityApplicable ?? false,
+    confirmationPeriod: (employee as any)?.confirmationPeriod || '',
+    pfApplicableFrom: !!(employee as any)?.pfApplicableFrom,
+    lwfLocation: (employee as any)?.lwfLocation || '',
+    taxRegime: (employee as any)?.taxRegime || 'OLD',
+    aadhaarNumber: (employee as any)?.aadhaarNumber || '',
+    dateOfProbationary: employee?.probationEndDate ? employee.probationEndDate.split('T')[0] : '',
+    dateOfConfirmation: employee?.confirmationDate ? employee.confirmationDate.split('T')[0] : '',
+    noticePeriodDays:
+      (employee as any)?.noticePeriodDays !== undefined && (employee as any)?.noticePeriodDays !== null
+        ? String((employee as any).noticePeriodDays)
+        : '',
+    husbandNameOnOnlinePf: (employee as any)?.husbandNameOnOnlinePf || '',
+    // Bank Details
+    bankName: (employee as any)?.bankDetails?.bankName || '',
+    bankAccountNumber: (employee as any)?.bankDetails?.accountNumber || '',
+    bankIfscCode: (employee as any)?.bankDetails?.ifscCode || '',
+    bankPaymentMode: (employee as any)?.bankDetails?.paymentMode || '',
+    bankCurrency: (employee as any)?.bankDetails?.currency || '',
     // Personal (login email required for create)
     email: employee?.email || '',
     phoneNumber: employee?.phone || '',
     maritalStatus: employee?.maritalStatus || '',
+    // Permanent Address (map from API address JSON when no dedicated fields)
+    permanentAddress: (employee as any)?.permanentAddress || (typeof employee?.address === 'object' && employee?.address && 'street' in employee.address ? (employee.address as { street?: string }).street : '') || '',
+    permanentCity: (employee as any)?.permanentCity || (typeof employee?.address === 'object' && employee?.address && 'city' in employee.address ? (employee.address as { city?: string }).city : '') || '',
+    permanentDistrict: (employee as any)?.permanentDistrict || '',
+    permanentState: (employee as any)?.permanentState || (typeof employee?.address === 'object' && employee?.address && 'state' in employee.address ? (employee.address as { state?: string }).state : '') || '',
+    permanentPincode: (employee as any)?.permanentPincode || (typeof employee?.address === 'object' && employee?.address && 'postalCode' in employee.address ? (employee.address as { postalCode?: string }).postalCode : '') || '',
+    permanentPhoneNumber: (employee as any)?.permanentPhoneNumber || employee?.phone || '',
+    personalMobile: (employee as any)?.personalMobile || '',
+    personalEmail: (employee as any)?.personalEmail || employee?.personalEmail || '',
+    // Present Address (from API address JSON when saved)
+    sameAsPermanent: (typeof employee?.address === 'object' && employee?.address && 'sameAsPermanent' in employee.address ? (employee.address as { sameAsPermanent?: boolean }).sameAsPermanent : (employee as any)?.sameAsPermanent) ?? false,
+    presentAddress: (typeof employee?.address === 'object' && employee?.address && 'presentAddress' in employee.address ? (employee.address as { presentAddress?: string }).presentAddress : (employee as any)?.presentAddress) || '',
+    presentCity: (typeof employee?.address === 'object' && employee?.address && 'presentCity' in employee.address ? (employee.address as { presentCity?: string }).presentCity : (employee as any)?.presentCity) || '',
+    presentDistrict: (typeof employee?.address === 'object' && employee?.address && 'presentDistrict' in employee.address ? (employee.address as { presentDistrict?: string }).presentDistrict : (employee as any)?.presentDistrict) || '',
+    presentState: (typeof employee?.address === 'object' && employee?.address && 'presentState' in employee.address ? (employee.address as { presentState?: string }).presentState : (employee as any)?.presentState) || '',
+    presentPincode: (typeof employee?.address === 'object' && employee?.address && 'presentPincode' in employee.address ? (employee.address as { presentPincode?: string }).presentPincode : (employee as any)?.presentPincode) || '',
+    presentPhoneNumber: (typeof employee?.address === 'object' && employee?.address && 'presentPhoneNumber' in employee.address ? (employee.address as { presentPhoneNumber?: string }).presentPhoneNumber : (employee as any)?.presentPhoneNumber) || '',
+    // Others
+    bloodGroup: (employee as any)?.bloodGroup || '',
+    dateOfWedding: (employee as any)?.dateOfWedding ? (employee as any).dateOfWedding.split('T')[0] : '',
+    children: (employee as any)?.children || '',
+    physicallyChallenged: (employee as any)?.physicallyChallenged ?? false,
+    physicallyChallengedRemarks: (employee as any)?.physicallyChallengedRemarks || '',
+    passportNumber: (employee as any)?.passportNumber || '',
+    passportExpiry: (employee as any)?.passportExpiry ? (employee as any).passportExpiry.split('T')[0] : '',
+    drivingLicenseNumber: (employee as any)?.drivingLicenseNumber || '',
+    drivingLicenseExpiry: (employee as any)?.drivingLicenseExpiry ? (employee as any).drivingLicenseExpiry.split('T')[0] : '',
     // Employment
     employeeStatus: employee?.employeeStatus || 'ACTIVE',
     // Contact
@@ -232,6 +286,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     emergencyContactName: employee?.emergencyContacts?.[0]?.name || '',
     emergencyContactRelationship: employee?.emergencyContacts?.[0]?.relationship || '',
     emergencyContactPhone: employee?.emergencyContacts?.[0]?.phone || '',
+    imei: (employee as any)?.imei || '',
+    pfAbrySchemeApplicable: (employee as any)?.pfAbrySchemeApplicable || '',
+    alternateSaturdayOff: (employee as any)?.alternateSaturdayOff || '',
+    compoffApplicable: (employee as any)?.compoffApplicable || '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -316,23 +374,28 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    if (isViewMode) return;
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const updates: Record<string, string> = { [name]: value };
+    // Sync Personal Info fields used for validation/submit
+    if (name === 'personalEmail') updates.email = value;
+    if (name === 'permanentPhoneNumber') updates.phoneNumber = value;
+    setFormData(prev => ({ ...prev, ...updates }));
 
-    // Clear error for this field
-    if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
-    }
+    // Clear error for this field (and synced fields) and any global submit error
+    const keysToClear = [name, 'submit'];
+    if (name === 'personalEmail') keysToClear.push('email');
+    if (name === 'permanentPhoneNumber') keysToClear.push('phoneNumber');
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      keysToClear.forEach(k => delete newErrors[k]);
+      return newErrors;
+    });
   };
 
   const validateCompany = () => {
     const newErrors: Record<string, string> = {};
     if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!formData.gender) newErrors.gender = 'Gender is required';
     if (!formData.dateOfBirth) newErrors.dateOfBirth = 'Date of birth is required';
     if (!formData.joiningDate) newErrors.joiningDate = 'Date of joining is required';
@@ -345,22 +408,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
   const validatePersonal = () => {
     const newErrors: Record<string, string> = {};
+    const emailVal = formData.email?.trim() || formData.personalEmail?.trim() || '';
+    const phoneVal = formData.phoneNumber?.trim() || formData.permanentPhoneNumber?.trim() || '';
 
     if (!formData.firstName.trim()) {
       newErrors.firstName = 'First name is required';
     }
 
-    if (!formData.lastName.trim()) {
-      newErrors.lastName = 'Last name is required';
-    }
-
-    if (!formData.email.trim()) {
+    if (!emailVal) {
       newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
       newErrors.email = 'Invalid email format';
     }
 
-    if (!formData.phoneNumber.trim()) {
+    if (!phoneVal) {
       newErrors.phoneNumber = 'Phone number is required';
     }
 
@@ -378,19 +439,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
   const validateEmployment = () => {
     const newErrors: Record<string, string> = {};
-
-    if (!formData.departmentId) {
-      newErrors.departmentId = 'Department is required';
-    }
-
-    if (!formData.positionId) {
-      newErrors.positionId = 'Position is required';
-    }
-
-    if (!formData.joiningDate) {
-      newErrors.joiningDate = 'Joining date is required';
-    }
-
+    if (!formData.departmentId) newErrors.departmentId = 'Department is required';
+    if (!formData.positionId) newErrors.positionId = 'Position is required';
+    if (!formData.joiningDate) newErrors.joiningDate = 'Joining date is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -399,11 +450,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     if (currentTab === 'company' && validateCompany()) {
       setCurrentTab('personal');
     } else if (currentTab === 'personal' && validatePersonal()) {
-<<<<<<< Updated upstream
-      setCurrentTab('employment');
-    } else if (currentTab === 'employment' && validateEmployment()) {
-      setCurrentTab('contact');
-=======
       setCurrentTab('statutory');
     } else if (currentTab === 'statutory') {
       setCurrentTab('bank');
@@ -421,15 +467,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       setCurrentTab('others');
     } else if (currentTab === 'others') {
       setCurrentTab('newFields');
->>>>>>> Stashed changes
     }
   };
 
   const handleBack = () => {
-<<<<<<< Updated upstream
-    if (currentTab === 'contact') setCurrentTab('employment');
-    else if (currentTab === 'employment') setCurrentTab('personal');
-=======
     if (currentTab === 'newFields') setCurrentTab('others');
     else if (currentTab === 'others') setCurrentTab('family');
     else if (currentTab === 'family') setCurrentTab('previousEmployment');
@@ -439,7 +480,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     else if (currentTab === 'salary') setCurrentTab('bank');
     else if (currentTab === 'bank') setCurrentTab('statutory');
     else if (currentTab === 'statutory') setCurrentTab('personal');
->>>>>>> Stashed changes
     else if (currentTab === 'personal' && initialPaygroupId) setCurrentTab('company');
     else if (currentTab === 'personal') setCurrentTab('company');
   };
@@ -448,14 +488,13 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     e.preventDefault();
 
     if (initialPaygroupId) {
-      if (!validateCompany() || !validatePersonal() || !validateEmployment()) {
+      if (!validateCompany() || !validatePersonal()) {
         if (!validateCompany()) setCurrentTab('company');
-        else if (!validatePersonal()) setCurrentTab('personal');
-        else setCurrentTab('company');
+        else setCurrentTab('personal');
         return;
       }
     } else {
-      if (!validatePersonal() || !validateEmployment()) {
+      if (!validatePersonal()) {
         setCurrentTab('personal');
         return;
       }
@@ -492,9 +531,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         organizationId,
         firstName: formData.firstName.trim(),
         middleName: emptyToUndefined(formData.middleName),
-        lastName: formData.lastName.trim(),
-        email: formData.email.trim(),
-        phone: emptyToUndefined(formData.phoneNumber),
+        lastName: employee ? formData.lastName.trim() : (formData.lastName.trim() || 'N/A'),
+        email: (formData.email || formData.personalEmail || '').trim(),
+        phone: emptyToUndefined(formData.phoneNumber || formData.permanentPhoneNumber),
         officialEmail: emptyToUndefined(formData.officialEmail) || null,
         officialMobile: emptyToUndefined(formData.officialMobile) || null,
         dateOfBirth: emptyToUndefined(formData.dateOfBirth),
@@ -513,31 +552,59 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         grade: emptyToUndefined(formData.grade) || null,
         placeOfTaxDeduction: formData.placeOfTaxDeduction ? (formData.placeOfTaxDeduction as 'METRO' | 'NON_METRO') : null,
         jobResponsibility: emptyToUndefined(formData.jobResponsibility) || null,
-        dateOfJoining: formData.joiningDate && formData.joiningDate.trim() ? formData.joiningDate.trim() : undefined,
+        dateOfJoining: formData.joiningDate?.trim() || new Date().toISOString().split('T')[0],
         employeeStatus: formData.employeeStatus as EmployeeStatus,
-        address: hasAddress ? addressFields : undefined,
+        personalEmail: emptyToUndefined(formData.personalEmail) || null,
+        address: (() => {
+          const fromPermanent = formData.permanentAddress || formData.permanentCity || formData.permanentState || formData.permanentPincode;
+          const fromPresent = formData.presentAddress || formData.presentCity || formData.presentState || formData.presentPincode;
+          const base = fromPermanent ? {
+            street: emptyToUndefined(formData.permanentAddress),
+            city: emptyToUndefined(formData.permanentCity),
+            state: emptyToUndefined(formData.permanentState),
+            postalCode: emptyToUndefined(formData.permanentPincode),
+          } : (hasAddress ? addressFields : {});
+          if (Object.keys(base).length === 0 && !fromPresent) return undefined;
+          return {
+            ...base,
+            sameAsPermanent: formData.sameAsPermanent,
+            presentAddress: emptyToUndefined(formData.presentAddress),
+            presentCity: emptyToUndefined(formData.presentCity),
+            presentDistrict: emptyToUndefined(formData.presentDistrict),
+            presentState: emptyToUndefined(formData.presentState),
+            presentPincode: emptyToUndefined(formData.presentPincode),
+            presentPhoneNumber: emptyToUndefined(formData.presentPhoneNumber),
+          };
+        })(),
         emergencyContacts: hasCompleteEmergencyContact ? [{
           name: emergencyContactName!,
           relationship: emergencyContactRelationship!,
           phone: emergencyContactPhone!,
         }] : undefined,
+        bankDetails: (formData.bankName || formData.bankAccountNumber || formData.bankIfscCode)
+          ? {
+              bankName: emptyToUndefined(formData.bankName),
+              accountNumber: emptyToUndefined(formData.bankAccountNumber),
+              ifscCode: emptyToUndefined(formData.bankIfscCode),
+            }
+          : undefined,
       };
       if (initialPaygroupId) {
         submitData.paygroupId = initialPaygroupId;
       }
 
       // Remove undefined values for optional fields only (keep required fields even if undefined for validation)
-      const requiredFields = ['organizationId', 'firstName', 'lastName', 'email', 'dateOfJoining'];
+      const requiredFields = ['organizationId', 'firstName', 'email', 'dateOfJoining'];
       Object.keys(submitData).forEach(key => {
         if (submitData[key] === undefined && !requiredFields.includes(key)) {
           delete submitData[key];
         }
       });
       
-      // Final validation check - ensure required fields are present
+      // Ensure dateOfJoining is set (we default to today above; this is a safety check)
       if (!submitData.dateOfJoining) {
         setErrors({ joiningDate: 'Joining date is required' });
-        setCurrentTab('company');
+        setCurrentTab(initialPaygroupId ? 'company' : 'personal');
         return;
       }
 
@@ -549,7 +616,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         // Show temporary password modal if it was generated
         if (result.temporaryPassword) {
           setTemporaryPassword(result.temporaryPassword);
-          setCreatedEmployeeEmail(formData.email.trim());
+          setCreatedEmployeeEmail((formData.email || formData.personalEmail || '').trim());
           setShowPasswordModal(true);
         } else {
           onSuccess?.();
@@ -562,24 +629,21 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
         const validationErrors: Record<string, string> = {};
         error.response.data.errors.forEach((err: { field: string; message: string }) => {
-          // Map backend field names to form field names
           const fieldMap: Record<string, string> = {
             'dateOfJoining': 'joiningDate',
             'phoneNumber': 'phoneNumber',
             'dateOfBirth': 'dateOfBirth',
+            'lastName': 'lastName',
           };
           const formField = fieldMap[err.field] || err.field;
           validationErrors[formField] = err.message;
         });
-        
         if (Object.keys(validationErrors).length > 0) {
-          setErrors(validationErrors);
-          // Switch to the appropriate tab based on the first error
-          if (validationErrors.joiningDate || validationErrors.departmentId || validationErrors.positionId) {
-            setCurrentTab('company');
-          } else if (validationErrors.firstName || validationErrors.lastName || validationErrors.email) {
-            setCurrentTab('personal');
-          }
+          setErrors({ ...validationErrors, submit: 'Please fix the errors below.' });
+          const hasCompanyError = !!(validationErrors.joiningDate || validationErrors.departmentId || validationErrors.positionId || validationErrors.lastName);
+          const hasPersonalError = !!(validationErrors.firstName || validationErrors.email || validationErrors.phoneNumber);
+          if (initialPaygroupId && hasCompanyError) setCurrentTab('company');
+          else if (hasPersonalError) setCurrentTab('personal');
           return;
         }
       }
@@ -592,19 +656,21 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
   return (
     <>
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Tab Navigation */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8 overflow-x-auto">
+    <form onSubmit={handleSubmit} className="space-y-6 w-full h-full">
+      {/* Layout: Vertical tab menu on the left, content on the right */}
+      <div className="flex gap-6 h-full">
+        {/* Tab Navigation - vertical menu */}
+        <div className="w-56 flex-shrink-0">
+          <nav className="flex flex-col space-y-2 bg-white rounded-lg border border-gray-200 p-3">
           {(initialPaygroupId || (employee as any)?.paygroupId || (employee as any)?.paygroup) && (
             <button
               type="button"
               onClick={() => setCurrentTab('company')}
               className={`${
                 currentTab === 'company'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-black'
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                  ? 'bg-blue-50 text-blue-600 border-blue-500'
+                  : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+              } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
             >
               Company Details
             </button>
@@ -614,40 +680,122 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             onClick={() => setCurrentTab('personal')}
             className={`${
               currentTab === 'personal'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-black'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
           >
             Personal Info
           </button>
           <button
             type="button"
-<<<<<<< Updated upstream
-            onClick={() => setCurrentTab('employment')}
+            onClick={() => setCurrentTab('statutory')}
             className={`${
-              currentTab === 'employment'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-black'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+              currentTab === 'statutory'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
           >
-            Employment
+            Statutory Details
           </button>
           <button
             type="button"
-            onClick={() => setCurrentTab('contact')}
-=======
-            onClick={() => setCurrentTab('statutory')}
->>>>>>> Stashed changes
+            onClick={() => setCurrentTab('bank')}
             className={`${
-              currentTab === 'contact'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-black'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+              currentTab === 'bank'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
           >
-            Contact & Address
+            Bank Details
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('salary')}
+            className={`${
+              currentTab === 'salary'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
+          >
+            Salary Details
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('assets')}
+            className={`${
+              currentTab === 'assets'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
+          >
+            Assets
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('academic')}
+            className={`${
+              currentTab === 'academic'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
+          >
+            Academic Qualification
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('previousEmployment')}
+            className={`${
+              currentTab === 'previousEmployment'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
+          >
+            Previous Employment
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('family')}
+            className={`${
+              currentTab === 'family'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium flex items-center gap-2`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            Family Details
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('others')}
+            className={`${
+              currentTab === 'others'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium flex items-center gap-2`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Others
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('newFields')}
+            className={`${
+              currentTab === 'newFields'
+                ? 'bg-blue-50 text-blue-600 border-blue-500'
+                : 'bg-white text-gray-600 border-transparent hover:bg-gray-50 hover:text-gray-800'
+            } w-full text-left px-3 py-2 rounded-md border text-sm font-medium`}
+          >
+            New Fields
           </button>
         </nav>
       </div>
+
+      {/* Tab Content */}
+      <div className="flex-1 space-y-6">
 
       {/* Company Details Tab */}
       {(initialPaygroupId || (employee as any)?.paygroupId || (employee as any)?.paygroup) && currentTab === 'company' && (
@@ -665,26 +813,73 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700">First Name <span className="text-red-500">*</span></label>
               <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} placeholder="First Name"
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${errors.firstName ? 'border-red-500' : 'border-gray-300'}`} />
+                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                  errors.firstName
+                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                }`} />
               {errors.firstName && <p className="mt-1 text-sm text-red-600">{errors.firstName}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Middle Name</label>
               <input type="text" name="middleName" value={formData.middleName} onChange={handleChange} placeholder="Middle Name"
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm" />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Last Name <span className="text-red-500">*</span></label>
-              <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} placeholder="Last Name"
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${errors.lastName ? 'border-red-500' : 'border-gray-300'}`} />
-              {errors.lastName && <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>}
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Last Name</label>
+              <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} placeholder="Last Name"
+                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                  errors.lastName
+                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                }`} />
+              {errors.lastName && <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Date Of Birth <span className="text-red-500">*</span>
+              </label>
+              <div
+                className={`relative mt-1 h-10 rounded-md bg-white shadow-sm border ${
+                  errors.dateOfBirth
+                    ? 'border-red-500 focus-within:ring-2 focus-within:ring-red-500 focus-within:border-red-500'
+                    : 'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
+                }`}
+              >
+                <input
+                  type="date"
+                  value={formData.dateOfBirth || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFormData((prev) => ({ ...prev, dateOfBirth: value }));
+                    if (errors.dateOfBirth) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.dateOfBirth;
+                        return next;
+                      });
+                    }
+                  }}
+                  className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
+                />
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </span>
+              </div>
+              {errors.dateOfBirth && <p className="mt-1 text-sm text-red-600">{errors.dateOfBirth}</p>}
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Gender <span className="text-red-500">*</span></label>
               <select name="gender" value={formData.gender} onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${errors.gender ? 'border-red-500' : 'border-gray-300'}`}>
+                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                  errors.gender
+                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                }`}>
                 <option value="">-- Select --</option>
                 <option value="MALE">Male</option>
                 <option value="FEMALE">Female</option>
@@ -693,46 +888,115 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               {errors.gender && <p className="mt-1 text-sm text-red-600">{errors.gender}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Date Of Birth <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <input type="date" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleChange}
-                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm pl-10 pr-3 ${errors.dateOfBirth ? 'border-red-500' : 'border-gray-300'}`} />
-                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              {errors.dateOfBirth && <p className="mt-1 text-sm text-red-600">{errors.dateOfBirth}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Date Of Joining <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <input type="date" name="joiningDate" value={formData.joiningDate} onChange={handleChange}
-                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm pl-10 pr-3 ${errors.joiningDate ? 'border-red-500' : 'border-gray-300'}`} />
-                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+              <label className="block text-sm font-medium text-gray-700">
+                Date Of Joining <span className="text-red-500">*</span>
+              </label>
+              <div
+                className={`relative mt-1 h-10 rounded-md bg-white shadow-sm border ${
+                  errors.joiningDate
+                    ? 'border-red-500 focus-within:ring-2 focus-within:ring-red-500 focus-within:border-red-500'
+                    : 'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
+                }`}
+              >
+                <input
+                  type="date"
+                  value={formData.joiningDate || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFormData((prev) => ({ ...prev, joiningDate: value }));
+                    if (errors.joiningDate) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.joiningDate;
+                        return next;
+                      });
+                    }
+                  }}
+                  className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
+                />
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </span>
               </div>
               {errors.joiningDate && <p className="mt-1 text-sm text-red-600">{errors.joiningDate}</p>}
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Marital Status</label>
+              <select
+                name="maritalStatus"
+                value={formData.maritalStatus}
+                onChange={handleChange}
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
+                <option value="">Select</option>
+                <option value="SINGLE">Single</option>
+                <option value="MARRIED">Married</option>
+                <option value="DIVORCED">Divorced</option>
+                <option value="WIDOWED">Widowed</option>
+              </select>
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Official Email</label>
-              <input type="email" name="officialEmail" value={formData.officialEmail} onChange={handleChange} placeholder="Official Email"
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm" />
+              <input
+                type="email"
+                name="officialEmail"
+                value={formData.officialEmail}
+                onChange={handleChange}
+                placeholder="Official Email"
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Official Mobile</label>
-              <input type="tel" name="officialMobile" value={formData.officialMobile} onChange={handleChange} placeholder="Official Mobile"
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm" />
+              <input
+                type="tel"
+                name="officialMobile"
+                value={formData.officialMobile}
+                onChange={handleChange}
+                placeholder="Official Mobile"
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Place of Tax Deduction <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="placeOfTaxDeduction"
+                value={formData.placeOfTaxDeduction}
+                onChange={handleChange}
+                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                  errors.placeOfTaxDeduction
+                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                }`}
+              >
+                <option value="">-- Select --</option>
+                <option value="METRO">Metro</option>
+                <option value="NON_METRO">Non-Metro</option>
+              </select>
+              {errors.placeOfTaxDeduction && (
+                <p className="mt-1 text-sm text-red-600">{errors.placeOfTaxDeduction}</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Department <span className="text-red-500">*</span></label>
               <div className="flex gap-2">
-                <select name="departmentId" value={formData.departmentId} onChange={handleChange}
-                  className={`flex-1 mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${errors.departmentId ? 'border-red-500' : 'border-gray-300'}`}>
+                <select name="departmentId" value={formData.departmentId} onChange={(e) => {
+                  handleChange(e);
+                  setFormData((prev) => ({ ...prev, subDepartment: '' }));
+                }}
+                  className={`flex-1 mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                    errors.departmentId
+                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                      : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                  }`}>
                   <option value="">Department</option>
                   {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
@@ -750,8 +1014,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               {errors.departmentId && <p className="mt-1 text-sm text-red-600">{errors.departmentId}</p>}
             </div>
             <div>
-<<<<<<< Updated upstream
-=======
               <label className="block text-sm font-medium text-gray-700">Sub-Department</label>
               <div className="flex gap-2">
                 <select
@@ -784,11 +1046,14 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               </div>
             </div>
             <div>
->>>>>>> Stashed changes
               <label className="block text-sm font-medium text-gray-700">Designation <span className="text-red-500">*</span></label>
               <div className="flex gap-2">
                 <select name="positionId" value={formData.positionId} onChange={handleChange}
-                  className={`flex-1 mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${errors.positionId ? 'border-red-500' : 'border-gray-300'}`}>
+                  className={`flex-1 mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                    errors.positionId
+                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                      : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                  }`}>
                   <option value="">Designation</option>
                   {positions.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
                 </select>
@@ -808,7 +1073,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700">Location</label>
               <select name="locationId" value={formData.locationId} onChange={handleChange}
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm">
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 <option value="">Location</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
@@ -816,17 +1081,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700">Grade</label>
               <input type="text" name="grade" value={formData.grade} onChange={handleChange} placeholder="Grade"
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm" />
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Cost Centre</label>
-<<<<<<< Updated upstream
-              <select name="costCentreId" value={formData.costCentreId} onChange={handleChange}
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm">
-                <option value="">Cost Centre</option>
-                {costCentres.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-=======
               <input
                 type="text"
                 name="costCentre"
@@ -835,25 +1093,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 placeholder="Cost Centre"
                 className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               />
->>>>>>> Stashed changes
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Place of Tax Deduction <span className="text-red-500">*</span></label>
-              <select name="placeOfTaxDeduction" value={formData.placeOfTaxDeduction} onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${errors.placeOfTaxDeduction ? 'border-red-500' : 'border-gray-300'}`}>
-                <option value="">-- Select --</option>
-                <option value="METRO">Metro</option>
-                <option value="NON_METRO">Non-Metro</option>
-              </select>
-              {errors.placeOfTaxDeduction && <p className="mt-1 text-sm text-red-600">{errors.placeOfTaxDeduction}</p>}
-            </div>
-            <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">Reporting Manager</label>
-              <select name="managerId" value={formData.managerId} onChange={handleChange}
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm">
+              <select
+                name="managerId"
+                value={formData.managerId}
+                onChange={handleChange}
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
                 <option value="">Reporting Manager</option>
                 {availableManagers.map((m) => (
-                  <option key={m.id} value={m.id}>{m.firstName} {m.lastName} ({m.employeeCode})</option>
+                  <option key={m.id} value={m.id}>
+                    {m.firstName} {m.lastName} ({m.employeeCode})
+                  </option>
                 ))}
               </select>
             </div>
@@ -861,449 +1114,1533 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-700">Job Responsibility</label>
             <textarea name="jobResponsibility" value={formData.jobResponsibility} onChange={handleChange} rows={3} placeholder="Job Responsibility"
-              className="mt-1 block w-full bg-white text-black rounded-md border border-gray-300 shadow-sm sm:text-sm" />
+              className="mt-1 block w-full bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
           </div>
         </div>
       )}
 
       {/* Personal Information Tab */}
       {currentTab === 'personal' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* First Name */}
-            <div>
-              <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
-                First Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                id="firstName"
-                name="firstName"
-                value={formData.firstName}
-                onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
-                  errors.firstName
-                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                }`}
-              />
-              {errors.firstName && <p className="mt-1 text-sm text-red-600">{errors.firstName}</p>}
+        <div className="space-y-6">
+          {/* Permanent Address Section */}
+          <div className="bg-gray-50 border rounded-lg p-4 text-left">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Permanent Address</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700">Address</label>
+                <textarea
+                  name="permanentAddress"
+                  value={formData.permanentAddress}
+                  onChange={handleChange}
+                  rows={3}
+                  className="mt-1 block w-full bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-left"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Personal Email <span className="text-red-500">*</span></label>
+                <input
+                  type="email"
+                  name="personalEmail"
+                  value={formData.personalEmail}
+                  onChange={handleChange}
+                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                    (errors.email || errors.personalEmail)
+                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                      : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                  }`}
+                />
+                {(errors.email || errors.personalEmail) && (
+                  <p className="mt-1 text-sm text-red-600">{errors.email || errors.personalEmail}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">City</label>
+                <input
+                  type="text"
+                  name="permanentCity"
+                  value={formData.permanentCity}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">District</label>
+                <input
+                  type="text"
+                  name="permanentDistrict"
+                  value={formData.permanentDistrict}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">State</label>
+                <input
+                  type="text"
+                  name="permanentState"
+                  value={formData.permanentState}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
             </div>
-
-            {/* Last Name */}
-            <div>
-              <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
-                Last Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                id="lastName"
-                name="lastName"
-                value={formData.lastName}
-                onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
-                  errors.lastName
-                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                }`}
-              />
-              {errors.lastName && <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Pincode</label>
+                <input
+                  type="text"
+                  name="permanentPincode"
+                  value={formData.permanentPincode}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Phone Number <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  name="permanentPhoneNumber"
+                  value={formData.permanentPhoneNumber}
+                  onChange={handleChange}
+                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
+                    (errors.phoneNumber || errors.permanentPhoneNumber)
+                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
+                      : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                  }`}
+                />
+                {(errors.phoneNumber || errors.permanentPhoneNumber) && (
+                  <p className="mt-1 text-sm text-red-600">{errors.phoneNumber || errors.permanentPhoneNumber}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Personal Mobile</label>
+                <input
+                  type="tel"
+                  name="personalMobile"
+                  value={formData.personalMobile}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="email"
-                id="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
-                  errors.email
-                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                }`}
-              />
-              {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+          {/* Present Address Section */}
+          <div className="bg-gray-50 border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-gray-900">Present Address</h3>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-700">Same as permanent</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sameAsPermanent = !formData.sameAsPermanent;
+                    setFormData(prev => ({
+                      ...prev,
+                      sameAsPermanent,
+                      ...(sameAsPermanent ? {
+                        presentAddress: prev.permanentAddress,
+                        presentCity: prev.permanentCity,
+                        presentDistrict: prev.permanentDistrict,
+                        presentState: prev.permanentState,
+                        presentPincode: prev.permanentPincode,
+                        presentPhoneNumber: prev.permanentPhoneNumber,
+                      } : {})
+                    }));
+                  }}
+                  className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                    formData.sameAsPermanent
+                      ? 'bg-green-500 border-green-600 text-white'
+                      : 'bg-red-500 border-red-600 text-white'
+                  }`}
+                >
+                  {formData.sameAsPermanent ? 'YES' : 'NO'}
+                </button>
+              </div>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-gray-700">Address</label>
+                <textarea
+                  name="presentAddress"
+                  value={formData.presentAddress}
+                  onChange={handleChange}
+                  rows={3}
+                  disabled={formData.sameAsPermanent}
+                  className={`mt-1 block w-full bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    formData.sameAsPermanent ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">City</label>
+                <input
+                  type="text"
+                  name="presentCity"
+                  value={formData.presentCity}
+                  onChange={handleChange}
+                  disabled={formData.sameAsPermanent}
+                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    formData.sameAsPermanent ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">District</label>
+                <input
+                  type="text"
+                  name="presentDistrict"
+                  value={formData.presentDistrict}
+                  onChange={handleChange}
+                  disabled={formData.sameAsPermanent}
+                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    formData.sameAsPermanent ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">State</label>
+                <input
+                  type="text"
+                  name="presentState"
+                  value={formData.presentState}
+                  onChange={handleChange}
+                  disabled={formData.sameAsPermanent}
+                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    formData.sameAsPermanent ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Pincode</label>
+                <input
+                  type="text"
+                  name="presentPincode"
+                  value={formData.presentPincode}
+                  onChange={handleChange}
+                  disabled={formData.sameAsPermanent}
+                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    formData.sameAsPermanent ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+                <input
+                  type="tel"
+                  name="presentPhoneNumber"
+                  value={formData.presentPhoneNumber}
+                  onChange={handleChange}
+                  disabled={formData.sameAsPermanent}
+                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    formData.sameAsPermanent ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
+            </div>
+          </div>
 
-            {/* Phone Number */}
+          {/* Others Section */}
+          <div className="bg-gray-50 border rounded-lg p-4 text-left">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Others</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Blood Group</label>
+                <select
+                  name="bloodGroup"
+                  value={formData.bloodGroup}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                >
+                  <option value="">Blood Group</option>
+                  <option value="A+">A+</option>
+                  <option value="A-">A-</option>
+                  <option value="B+">B+</option>
+                  <option value="B-">B-</option>
+                  <option value="AB+">AB+</option>
+                  <option value="AB-">AB-</option>
+                  <option value="O+">O+</option>
+                  <option value="O-">O-</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Date of Wedding</label>
+                <div className="relative mt-1 h-10 rounded-md bg-white shadow-sm border border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                  <input
+                    type="date"
+                    value={formData.dateOfWedding || ''}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, dateOfWedding: e.target.value }))}
+                  className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
+                  />
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Children</label>
+                <input
+                  type="text"
+                  name="children"
+                  value={formData.children}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Physically Challenged</label>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, physicallyChallenged: true }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      formData.physicallyChallenged
+                        ? 'bg-green-500 border-green-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, physicallyChallenged: false }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      !formData.physicallyChallenged
+                        ? 'bg-red-500 border-red-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700">Physically Challenged Remarks</label>
+                <textarea
+                  name="physicallyChallengedRemarks"
+                  value={formData.physicallyChallengedRemarks}
+                  onChange={handleChange}
+                  rows={3}
+                  className="mt-1 block w-full bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Passport Number</label>
+                <input
+                  type="text"
+                  name="passportNumber"
+                  value={formData.passportNumber}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Passport Expiry</label>
+                <div className="relative mt-1 h-10 rounded-md bg-white shadow-sm border border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                  <input
+                    type="date"
+                    value={formData.passportExpiry || ''}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, passportExpiry: e.target.value }))}
+                  className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
+                  />
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Driving License Number</label>
+                <input
+                  type="text"
+                  name="drivingLicenseNumber"
+                  value={formData.drivingLicenseNumber}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Driving License Expiry</label>
+                <div className="relative mt-1 h-10 rounded-md bg-white shadow-sm border border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                  <input
+                    type="date"
+                    value={formData.drivingLicenseExpiry || ''}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, drivingLicenseExpiry: e.target.value }))}
+                  className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
+                  />
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Statutory Details Tab */}
+      {currentTab === 'statutory' && (
+        <div className="space-y-6">
+          {/* Statutory fields – first 12 in specified order, then rest */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+            <h3 className="text-base font-medium text-gray-900">Statutory Numbers & Locations</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 1. PF Applicable */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">PF Applicable</label>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, pfApplicable: true }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      formData.pfApplicable
+                        ? 'bg-green-500 border-green-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, pfApplicable: false }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      !formData.pfApplicable
+                        ? 'bg-red-500 border-red-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+              {/* 2. PF Number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">PF Number</label>
+                <input
+                  type="text"
+                  name="pfNumber"
+                  value={formData.pfNumber}
+                  onChange={handleChange}
+                  placeholder="PF Number"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              {/* 3. UAN Number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">UAN Number</label>
+                <input
+                  type="text"
+                  name="uanNumber"
+                  value={formData.uanNumber}
+                  onChange={handleChange}
+                  placeholder="UAN Number"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              {/* 4. ESI Number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">ESI Number</label>
+                <input
+                  type="text"
+                  name="esiNumber"
+                  value={formData.esiNumber}
+                  onChange={handleChange}
+                  placeholder="ESI Number"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              {/* 5. ESI Applicable */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">ESI Applicable</label>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, esiApplicable: true }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      formData.esiApplicable
+                        ? 'bg-green-500 border-green-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, esiApplicable: false }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      !formData.esiApplicable
+                        ? 'bg-red-500 border-red-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+              {/* 6. Gratuity Applicable */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Gratuity Applicable</label>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, gratuityApplicable: true }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      formData.gratuityApplicable
+                        ? 'bg-green-500 border-green-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, gratuityApplicable: false }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      !formData.gratuityApplicable
+                        ? 'bg-red-500 border-red-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+              {/* 7. LWF Location */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">LWF Location</label>
+                <input
+                  type="text"
+                  name="lwfLocation"
+                  value={formData.lwfLocation}
+                  onChange={handleChange}
+                  placeholder="LWF Location"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              {/* 8. Tax Regime */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tax Regime</label>
+                <select
+                  name="taxRegime"
+                  value={formData.taxRegime}
+                  onChange={handleChange}
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                >
+                  <option value="OLD">Old</option>
+                  <option value="NEW">New</option>
+                </select>
+              </div>
+              {/* 9. Date Of Probationary */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Date Of Probationary</label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="dateOfProbationary"
+                    value={formData.dateOfProbationary}
+                    onChange={handleChange}
+                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm pl-3 pr-10"
+                  />
+                  <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+              {/* 10. Date Of Confirmation */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Date Of Confirmation</label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="dateOfConfirmation"
+                    value={formData.dateOfConfirmation}
+                    onChange={handleChange}
+                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm pl-3 pr-10"
+                  />
+                  <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+              {/* 11. Confirmation Period */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Confirmation Period</label>
+                <input
+                  type="text"
+                  name="confirmationPeriod"
+                  value={formData.confirmationPeriod}
+                  onChange={handleChange}
+                  placeholder="Confirmation Period"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              {/* 12. Notice Period Days */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Notice Period Days</label>
+                <input
+                  type="number"
+                  min={0}
+                  name="noticePeriodDays"
+                  value={formData.noticePeriodDays}
+                  onChange={handleChange}
+                  placeholder="Notice Period Days"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+
+              {/* Rest of fields */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">PTax Location</label>
+                <input
+                  type="text"
+                  name="pTaxLocation"
+                  value={formData.pTaxLocation}
+                  onChange={handleChange}
+                  placeholder="PTax Location"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">PAN Card Number</label>
+                <input
+                  type="text"
+                  name="panNumber"
+                  value={formData.panNumber}
+                  onChange={handleChange}
+                  placeholder="PAN Card Number"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Aadhaar Number</label>
+                <input
+                  type="text"
+                  name="aadhaarNumber"
+                  value={formData.aadhaarNumber}
+                  onChange={handleChange}
+                  placeholder="Aadhaar Number"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Date Of Retirement</label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="dateOfRetirement"
+                    value={formData.dateOfRetirement}
+                    onChange={handleChange}
+                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm pl-3 pr-10"
+                  />
+                  <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">ESI Dispensary</label>
+                <input
+                  type="text"
+                  name="esiDispensary"
+                  value={formData.esiDispensary}
+                  onChange={handleChange}
+                  placeholder="ESI Dispensary"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Husband Name On Online PF</label>
+                <input
+                  type="text"
+                  name="husbandNameOnOnlinePf"
+                  value={formData.husbandNameOnOnlinePf}
+                  onChange={handleChange}
+                  placeholder="Husband Name On Online PF"
+                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+              </div>
+              {/* Tax Applicable */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tax Applicable</label>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, taxApplicable: true }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      formData.taxApplicable
+                        ? 'bg-green-500 border-green-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, taxApplicable: false }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      !formData.taxApplicable
+                        ? 'bg-red-500 border-red-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+              {/* Expatriate */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Expatriate</label>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, expatriate: true }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      formData.expatriate
+                        ? 'bg-green-500 border-green-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, expatriate: false }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      !formData.expatriate
+                        ? 'bg-red-500 border-red-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+              {/* PF Transferred */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">PF Transferred</label>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, pfTransferred: true }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      formData.pfTransferred
+                        ? 'bg-green-500 border-green-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, pfTransferred: false }))}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium border ${
+                      !formData.pfTransferred
+                        ? 'bg-red-500 border-red-600 text-white'
+                        : 'bg-white border-black text-gray-700'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bank Details Tab */}
+      {currentTab === 'bank' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700">
-                Phone Number <span className="text-red-500">*</span>
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Bank Name</label>
               <input
-                type="tel"
-                id="phoneNumber"
-                name="phoneNumber"
-                value={formData.phoneNumber}
+                type="text"
+                name="bankName"
+                value={formData.bankName}
                 onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
-                  errors.phoneNumber
-                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                }`}
+                placeholder="Bank Name"
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               />
-              {errors.phoneNumber && <p className="mt-1 text-sm text-red-600">{errors.phoneNumber}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Account Number</label>
+              <input
+                type="text"
+                name="bankAccountNumber"
+                value={formData.bankAccountNumber}
+                onChange={handleChange}
+                placeholder="Account Number"
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">IFSC Code</label>
+              <input
+                type="text"
+                name="bankIfscCode"
+                value={formData.bankIfscCode}
+                onChange={handleChange}
+                placeholder="IFSC Code"
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Date of Birth */}
             <div>
-              <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700">
-                Date of Birth <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  id="dateOfBirth"
-                  name="dateOfBirth"
-                  value={formData.dateOfBirth}
-                  onChange={handleChange}
-                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm pl-10 pr-3 ${
-                    errors.dateOfBirth
-                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                      : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                  }`}
-                />
-                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              {errors.dateOfBirth && <p className="mt-1 text-sm text-red-600">{errors.dateOfBirth}</p>}
-            </div>
-
-            {/* Gender */}
-            <div>
-              <label htmlFor="gender" className="block text-sm font-medium text-gray-700">
-                Gender <span className="text-red-500">*</span>
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Payment Mode</label>
               <select
-                id="gender"
-                name="gender"
-                value={formData.gender}
-                onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
-                  errors.gender
-                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                }`}
-              >
-                <option value="">Select</option>
-                <option value="MALE">Male</option>
-                <option value="FEMALE">Female</option>
-                <option value="OTHER">Other</option>
-                <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
-              </select>
-              {errors.gender && <p className="mt-1 text-sm text-red-600">{errors.gender}</p>}
-            </div>
-
-            {/* Marital Status */}
-            <div>
-              <label htmlFor="maritalStatus" className="block text-sm font-medium text-gray-700">
-                Marital Status
-              </label>
-              <select
-                id="maritalStatus"
-                name="maritalStatus"
-                value={formData.maritalStatus}
+                name="bankPaymentMode"
+                value={formData.bankPaymentMode}
                 onChange={handleChange}
                 className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
-                <option value="">Select</option>
-                <option value="SINGLE">Single</option>
-                <option value="MARRIED">Married</option>
-                <option value="DIVORCED">Divorced</option>
-                <option value="WIDOWED">Widowed</option>
+                <option value="">Payment Mode</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+                <option value="CHEQUE">Cheque</option>
+                <option value="CASH">Cash</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Currency</label>
+              <select
+                name="bankCurrency"
+                value={formData.bankCurrency}
+                onChange={handleChange}
+                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
+                <option value="">Currency</option>
+                <option value="INR">INR - Indian Rupee</option>
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
               </select>
             </div>
           </div>
         </div>
       )}
 
-<<<<<<< Updated upstream
-      {/* Employment Tab */}
-      {currentTab === 'employment' && (
+      {/* Salary Details Tab */}
+      {currentTab === 'salary' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Department */}
-            <div>
-              <label htmlFor="departmentId" className="block text-sm font-medium text-gray-700">
-                Department <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="departmentId"
-                name="departmentId"
-                value={formData.departmentId}
-                onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
-                  errors.departmentId
-                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                }`}
-              >
-                <option value="">Select a department</option>
-                {departments.map(dept => (
-                  <option key={dept.id} value={dept.id}>
-                    {dept.name}
-                  </option>
-                ))}
-              </select>
-              {errors.departmentId && <p className="mt-1 text-sm text-red-600">{errors.departmentId}</p>}
-            </div>
-
-            {/* Position */}
-            <div>
-              <label htmlFor="positionId" className="block text-sm font-medium text-gray-700">
-                Position <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="positionId"
-                name="positionId"
-                value={formData.positionId}
-                onChange={handleChange}
-                className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm ${
-                  errors.positionId
-                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                    : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                }`}
-              >
-                <option value="">Select a position</option>
-                {positions.map(pos => (
-                  <option key={pos.id} value={pos.id}>
-                    {pos.title}
-                  </option>
-                ))}
-              </select>
-              {errors.positionId && <p className="mt-1 text-sm text-red-600">{errors.positionId}</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Manager */}
-            <div>
-              <label htmlFor="managerId" className="block text-sm font-medium text-gray-700">
-                Reporting Manager
-              </label>
-              <select
-                id="managerId"
-                name="managerId"
-                value={formData.managerId}
-                onChange={handleChange}
-                className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              >
-                <option value="">No manager</option>
-                {availableManagers.map(mgr => (
-                  <option key={mgr.id} value={mgr.id}>
-                    {mgr.firstName} {mgr.lastName} ({mgr.employeeCode})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Joining Date */}
-            <div>
-              <label htmlFor="joiningDate" className="block text-sm font-medium text-gray-700">
-                Joining Date <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  id="joiningDate"
-                  name="joiningDate"
-                  value={formData.joiningDate}
-                  onChange={handleChange}
-                  className={`mt-1 block w-full h-10 bg-white text-black rounded-md border shadow-sm sm:text-sm pl-10 pr-3 ${
-                    errors.joiningDate
-                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500'
-                      : 'border-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-                  }`}
-                />
-                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              {errors.joiningDate && <p className="mt-1 text-sm text-red-600">{errors.joiningDate}</p>}
-            </div>
-          </div>
-
-          {/* Employee Status */}
-          <div>
-            <label htmlFor="employeeStatus" className="block text-sm font-medium text-gray-700">
-              Employee Status
-            </label>
-            <select
-              id="employeeStatus"
-              name="employeeStatus"
-              value={formData.employeeStatus}
-              onChange={handleChange}
-              className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm max-w-xs"
+          <div className="flex border-b border-gray-200">
+            <button
+              type="button"
+              onClick={() => setSalaryTab('earnings')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                salaryTab === 'earnings'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+              }`}
             >
-              <option value="ACTIVE">Active</option>
-              <option value="ON_LEAVE">On Leave</option>
-              <option value="SUSPENDED">Suspended</option>
-              <option value="TERMINATED">Terminated</option>
-              <option value="RESIGNED">Resigned</option>
-            </select>
+              Earnings
+            </button>
+            <button
+              type="button"
+              onClick={() => setSalaryTab('deductions')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                salaryTab === 'deductions'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+              }`}
+            >
+              Deductions
+            </button>
+            <button
+              type="button"
+              onClick={() => setSalaryTab('reimbursement')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                salaryTab === 'reimbursement'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+              }`}
+            >
+              Reimbursement
+            </button>
+          </div>
+
+          {salaryTab === 'earnings' && (
+            <div className="overflow-hidden border border-gray-200 rounded-md">
+              <table className="min-w-full divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {[
+                    'Fixed Gross',
+                    'Vehicle Allowances',
+                  ].map((label) => (
+                    <tr key={label}>
+                      <td className="px-4 py-2 text-sm text-gray-700 text-left">{label}</td>
+                      <td className="px-4 py-2 text-left">:</td>
+                      <td className="px-4 py-2 text-left">
+                        <input
+                          type="number"
+                          min={0}
+                          className="block w-32 h-9 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left"
+                          defaultValue={0}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-50">
+                    <td className="px-4 py-2 text-sm font-semibold text-gray-900 text-left">Total</td>
+                    <td className="px-4 py-2 text-left">:</td>
+                    <td className="px-4 py-2 text-left">
+                      <span className="block w-32 h-9 flex items-center text-sm font-semibold text-gray-900">0.00</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {salaryTab === 'deductions' && (
+            <div className="overflow-hidden border border-gray-200 rounded-md">
+              <table className="min-w-full divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {[
+                    'VPF Amount',
+                    'Labour Welfare Fund',
+                    'Bus Deduction',
+                  ].map((label) => (
+                    <tr key={label}>
+                      <td className="px-4 py-2 text-sm text-gray-700 text-left">{label}</td>
+                      <td className="px-4 py-2 text-left">:</td>
+                      <td className="px-4 py-2 text-left">
+                        <input
+                          type="number"
+                          min={0}
+                          className="block w-32 h-9 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left"
+                          defaultValue={0}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {salaryTab === 'reimbursement' && (
+            <div className="text-sm text-gray-500">Reimbursement structure can be configured here (coming soon).</div>
+          )}
+        </div>
+      )}
+
+      {/* Assets Tab */}
+      {currentTab === 'assets' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Assets</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setAssetFormData({
+                  assetName: '',
+                  serialNumber: '',
+                  dateOfIssuance: '',
+                  assetId: '',
+                  make: '',
+                  model: '',
+                  colour: '',
+                  inchargeName: '',
+                  remarks: '',
+                  released: false,
+                });
+                setShowAssetModal(true);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add
+            </button>
+          </div>
+
+          <div className="overflow-hidden border border-gray-200 rounded-md">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Asset Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Serial Number</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Date of Issuance</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Asset ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Make</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Model</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Colour</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Incharge Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Remarks</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Released</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Action</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {assets.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500">
+                      No data available in table
+                    </td>
+                  </tr>
+                ) : (
+                  assets.map((asset) => (
+                    <tr key={asset.id}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.assetName}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.serialNumber}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.dateOfIssuance}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.assetId}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.make}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.model}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.colour}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.inchargeName}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.remarks}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{asset.released ? 'Yes' : 'No'}</td>
+                      <td className="px-4 py-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const assetToEdit = assets.find(a => a.id === asset.id);
+                            if (assetToEdit) {
+                              setAssetFormData(assetToEdit);
+                              setShowAssetModal(true);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800 mr-3"
+                          title="Edit"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAssets(assets.filter(a => a.id !== asset.id))}
+                          className="text-red-600 hover:text-red-800"
+                          title="Delete"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* Contact & Address Tab */}
-      {currentTab === 'contact' && (
-=======
-      {/* Statutory Details Tab */}
-      {currentTab === 'statutory' && (
->>>>>>> Stashed changes
-        <div className="space-y-6">
-          {/* Address Section */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Address</h3>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="addressLine1" className="block text-sm font-medium text-gray-700">
-                  Address Line 1
-                </label>
-                <input
-                  type="text"
-                  id="addressLine1"
-                  name="addressLine1"
-                  value={formData.addressLine1}
-                  onChange={handleChange}
-                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="addressLine2" className="block text-sm font-medium text-gray-700">
-                  Address Line 2
-                </label>
-                <input
-                  type="text"
-                  id="addressLine2"
-                  name="addressLine2"
-                  value={formData.addressLine2}
-                  onChange={handleChange}
-                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label htmlFor="city" className="block text-sm font-medium text-gray-700">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    id="city"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleChange}
-                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="state" className="block text-sm font-medium text-gray-700">
-                    State/Province
-                  </label>
-                  <input
-                    type="text"
-                    id="state"
-                    name="state"
-                    value={formData.state}
-                    onChange={handleChange}
-                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="postalCode" className="block text-sm font-medium text-gray-700">
-                    Postal Code
-                  </label>
-                  <input
-                    type="text"
-                    id="postalCode"
-                    name="postalCode"
-                    value={formData.postalCode}
-                    onChange={handleChange}
-                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="country" className="block text-sm font-medium text-gray-700">
-                  Country
-                </label>
-                <input
-                  type="text"
-                  id="country"
-                  name="country"
-                  value={formData.country}
-                  onChange={handleChange}
-                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-            </div>
+      {/* Academic Qualification Tab */}
+      {currentTab === 'academic' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Academic Qualification</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setAcademicFormData({
+                  degree: '',
+                  discipline: '',
+                  university: '',
+                  grade: '',
+                  percentage: '',
+                  yearOfPassing: '',
+                  nameOfInstitution: '',
+                  remarks: '',
+                });
+                setShowAcademicModal(true);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add
+            </button>
           </div>
 
-          {/* Emergency Contact Section */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Emergency Contact</h3>
+          <div className="bg-orange-50 border border-orange-200 rounded-md p-3">
+            <p className="text-sm text-orange-700 font-medium">Higher degree should be added first</p>
+          </div>
+
+          <div className="overflow-hidden border border-gray-200 rounded-md">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Degree</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Discipline</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">University</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Grade</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Percentage</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Year of Passing</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Name of Institution</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Remarks</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Action</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {academicQualifications.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
+                      No data available in table
+                    </td>
+                  </tr>
+                ) : (
+                  academicQualifications.map((qualification) => (
+                    <tr key={qualification.id}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.degree}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.discipline}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.university}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.grade}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.percentage}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.yearOfPassing}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.nameOfInstitution}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{qualification.remarks}</td>
+                      <td className="px-4 py-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const qualToEdit = academicQualifications.find(q => q.id === qualification.id);
+                            if (qualToEdit) {
+                              setAcademicFormData(qualToEdit);
+                              setShowAcademicModal(true);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800 mr-3"
+                          title="Edit"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAcademicQualifications(academicQualifications.filter(q => q.id !== qualification.id))}
+                          className="text-red-600 hover:text-red-800"
+                          title="Delete"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Family Details Tab */}
+      {currentTab === 'family' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Family Details</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setFamilyFormData({
+                  firstName: '',
+                  lastName: '',
+                  relationship: '',
+                  dateOfBirth: '',
+                  phoneNumber: '',
+                  occupation: '',
+                  address: '',
+                  aadhaarNumber: '',
+                  passportNumber: '',
+                  passportIssueDate: '',
+                  passportExpiryDate: '',
+                  pfShare: '',
+                  gratuityShare: '',
+                  nominationRemarks: '',
+                });
+                setShowFamilyModal(true);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+            >
+              + Add
+            </button>
+          </div>
+          <div className="bg-white shadow overflow-hidden sm:rounded-md">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">First Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Last Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Relationship</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">DOB</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Phone #</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Passport #</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Passport Issue Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Passport Expiry Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">PF Share</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Gratuity Share</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Nomination Remarks</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Action</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {familyMembers.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-500">
+                      No data available in table
+                    </td>
+                  </tr>
+                ) : (
+                  familyMembers.map((member) => (
+                    <tr key={member.id}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.firstName}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.lastName}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.relationship}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.dateOfBirth}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.phoneNumber}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.passportNumber}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.passportIssueDate}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.passportExpiryDate}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.pfShare}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.gratuityShare}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{member.nominationRemarks}</td>
+                      <td className="px-4 py-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const memberToEdit = familyMembers.find(m => m.id === member.id);
+                            if (memberToEdit) {
+                              setFamilyFormData(memberToEdit);
+                              setShowFamilyModal(true);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800 mr-3"
+                          title="Edit"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFamilyMembers(familyMembers.filter(m => m.id !== member.id))}
+                          className="text-red-600 hover:text-red-800"
+                          title="Delete"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Previous Employment Tab */}
+      {currentTab === 'previousEmployment' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Previous Employment</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setPreviousEmploymentFormData({
+                  organization: '',
+                  designation: '',
+                  fromDate: '',
+                  toDate: '',
+                  yearsOfExperience: '',
+                  relevantExperience: '',
+                  remarks: '',
+                  ctc: '',
+                });
+                setShowPreviousEmploymentModal(true);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add
+            </button>
+          </div>
+
+          <div className="overflow-hidden border border-gray-200 rounded-md">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Organization</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Designation</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">From Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">To Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Years of Experience</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Relevant experience</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Remarks</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">CTC</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Action</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {previousEmployments.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
+                      No data available in table
+                    </td>
+                  </tr>
+                ) : (
+                  previousEmployments.map((employment) => (
+                    <tr key={employment.id}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.organization}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.designation}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.fromDate}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.toDate}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.yearsOfExperience}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.relevantExperience}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.remarks}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{employment.ctc}</td>
+                      <td className="px-4 py-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const empToEdit = previousEmployments.find(e => e.id === employment.id);
+                            if (empToEdit) {
+                              setPreviousEmploymentFormData(empToEdit);
+                              setShowPreviousEmploymentModal(true);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800 mr-3"
+                          title="Edit"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviousEmployments(previousEmployments.filter(e => e.id !== employment.id))}
+                          className="text-red-600 hover:text-red-800"
+                          title="Delete"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Others Tab */}
+      {currentTab === 'others' && (
+        <div className="space-y-4">
+          {/* Sub-tab Navigation */}
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                type="button"
+                onClick={() => setOthersTab('certifications')}
+                className={`${
+                  othersTab === 'certifications'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+              >
+                Certifications
+              </button>
+              <button
+                type="button"
+                onClick={() => setOthersTab('knownLanguages')}
+                className={`${
+                  othersTab === 'knownLanguages'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+              >
+                Known Language
+              </button>
+            </nav>
+          </div>
+
+          {/* Certifications Tab */}
+          {othersTab === 'certifications' && (
             <div className="space-y-4">
-              <div>
-                <label htmlFor="emergencyContactName" className="block text-sm font-medium text-gray-700">
-                  Contact Name
-                </label>
-                <input
-                  type="text"
-                  id="emergencyContactName"
-                  name="emergencyContactName"
-                  value={formData.emergencyContactName}
-                  onChange={handleChange}
-                  className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Certifications</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCertificationFormData({
+                      skillSet: '',
+                      yearsOfExperience: '',
+                      certifiedBy: '',
+                      remarks: '',
+                    });
+                    setShowCertificationModal(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                >
+                  + Add
+                </button>
               </div>
-
-<<<<<<< Updated upstream
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="emergencyContactRelationship" className="block text-sm font-medium text-gray-700">
-                    Relationship
-                  </label>
-                  <input
-                    type="text"
-                    id="emergencyContactRelationship"
-                    name="emergencyContactRelationship"
-                    value={formData.emergencyContactRelationship}
-                    onChange={handleChange}
-                    placeholder="e.g., Spouse, Parent, Sibling"
-                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="emergencyContactPhone" className="block text-sm font-medium text-gray-700">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    id="emergencyContactPhone"
-                    name="emergencyContactPhone"
-                    value={formData.emergencyContactPhone}
-                    onChange={handleChange}
-                    className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
+              <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Skill Set</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Remarks</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {certifications.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">
+                          No data available in table
+                        </td>
+                      </tr>
+                    ) : (
+                      certifications.map((cert) => (
+                        <tr key={cert.id}>
+                          <td className="px-4 py-2 text-sm text-gray-900">{cert.skillSet}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900">{cert.remarks}</td>
+                          <td className="px-4 py-2 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const certToEdit = certifications.find(c => c.id === cert.id);
+                                if (certToEdit) {
+                                  setCertificationFormData(certToEdit);
+                                  setShowCertificationModal(true);
+                                }
+                              }}
+                              className="text-blue-600 hover:text-blue-800 mr-3"
+                              title="Edit"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCertifications(certifications.filter(c => c.id !== cert.id))}
+                              className="text-red-600 hover:text-red-800"
+                              title="Delete"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-=======
+            </div>
+          )}
+
+          {/* Known Languages Tab */}
+          {othersTab === 'knownLanguages' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Known Languages</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKnownLanguageFormData({
+                      language: '',
+                      speak: '',
+                      write: '',
+                      read: '',
+                    });
+                    setShowKnownLanguageModal(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                >
+                  + Add
+                </button>
+              </div>
+              <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Language</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Read</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {knownLanguages.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">
+                          No data available in table
+                        </td>
+                      </tr>
+                    ) : (
+                      knownLanguages.map((lang) => (
+                        <tr key={lang.id}>
+                          <td className="px-4 py-2 text-sm text-gray-900">{lang.language}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900">{lang.read}</td>
+                          <td className="px-4 py-2 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const langToEdit = knownLanguages.find(l => l.id === lang.id);
+                                if (langToEdit) {
+                                  setKnownLanguageFormData(langToEdit);
+                                  setShowKnownLanguageModal(true);
+                                }
+                              }}
+                              className="text-blue-600 hover:text-blue-800 mr-3"
+                              title="Edit"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setKnownLanguages(knownLanguages.filter(l => l.id !== lang.id))}
+                              className="text-red-600 hover:text-red-800"
+                              title="Delete"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* New Fields Tab */}
       {currentTab === 'newFields' && (
         <div className="space-y-4">
@@ -1372,7 +2709,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
               </select>
->>>>>>> Stashed changes
             </div>
           </div>
         </div>
@@ -1392,7 +2728,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             <button
               type="button"
               onClick={handleBack}
-              className="px-4 py-2 border border-black rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
             >
               Back
             </button>
@@ -1403,12 +2739,12 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             <button
               type="button"
               onClick={onCancel}
-              className="px-4 py-2 border border-black rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
             >
               Cancel
             </button>
           )}
-          {currentTab === 'contact' ? (
+          {currentTab === 'newFields' && !isViewMode ? (
             <button
               type="submit"
               disabled={loading}
@@ -1416,7 +2752,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             >
               {loading ? 'Saving...' : employee ? 'Update Employee' : 'Create Employee'}
             </button>
-          ) : (
+          ) : currentTab === 'newFields' && isViewMode ? null : (
             <button
               type="button"
               onClick={handleNext}
@@ -1461,7 +2797,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password:</label>
-                <div className="flex items-center justify-between bg-white border border-black rounded px-3 py-2">
+                <div className="flex items-center justify-between bg-white border border-gray-300 rounded px-3 py-2">
                   <p className="text-sm font-mono text-gray-900 font-bold">{temporaryPassword}</p>
                   <button
                     type="button"
@@ -1499,6 +2835,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           </div>
         </div>
       )}
+      </div> {/* end tab content */}
+      </div> {/* end layout flex */}
     </form>
 
     {/* Department Modal - Outside form to avoid nested forms */}
@@ -1550,8 +2888,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         />
       </Modal>
     )}
-<<<<<<< Updated upstream
-=======
 
     {/* Add Sub-Department Modal */}
     {showSubDepartmentModal && (
@@ -1714,7 +3050,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                   onChange={(e) => setAssetFormData({ ...assetFormData, dateOfIssuance: e.target.value })}
                   className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm pl-3 pr-10"
                 />
-                <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
@@ -2011,7 +3347,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                   onChange={(e) => setPreviousEmploymentFormData({ ...previousEmploymentFormData, fromDate: e.target.value })}
                   className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm pl-3 pr-10"
                 />
-                <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
@@ -2027,7 +3363,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                   onChange={(e) => setPreviousEmploymentFormData({ ...previousEmploymentFormData, toDate: e.target.value })}
                   className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm pl-3 pr-10"
                 />
-                <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
@@ -2176,38 +3512,18 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Date of Birth</label>
-              <div
-                className={`relative mt-1 h-10 rounded-md bg-white shadow-sm border ${
-                  'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
-                }`}
-              >
-                <DatePicker
-                  ref={familyDateOfBirthRef}
-                  selected={familyFormData.dateOfBirth ? new Date(familyFormData.dateOfBirth) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
-                    setFamilyFormData((prev) => ({ ...prev, dateOfBirth: value }));
-                  }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Date of Birth"
+              <div className="relative mt-1 h-10 rounded-md bg-white shadow-sm border border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                <input
+                  type="date"
+                  value={familyFormData.dateOfBirth || ''}
+                  onChange={(e) => setFamilyFormData((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (familyDateOfBirthRef.current?.setOpen) {
-                      familyDateOfBirthRef.current.setOpen(true);
-                    } else if (familyDateOfBirthRef.current?.input?.focus) {
-                      familyDateOfBirthRef.current.input.focus();
-                    }
-                  }}
-                >
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
             </div>
             <div>
@@ -2262,74 +3578,34 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Passport Issue Date</label>
-              <div
-                className={`relative mt-1 h-10 rounded-md bg-white shadow-sm border ${
-                  'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
-                }`}
-              >
-                <DatePicker
-                  ref={familyPassportIssueDateRef}
-                  selected={familyFormData.passportIssueDate ? new Date(familyFormData.passportIssueDate) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
-                    setFamilyFormData((prev) => ({ ...prev, passportIssueDate: value }));
-                  }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Passport Issue Date"
+              <div className="relative mt-1 h-10 rounded-md bg-white shadow-sm border border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                <input
+                  type="date"
+                  value={familyFormData.passportIssueDate || ''}
+                  onChange={(e) => setFamilyFormData((prev) => ({ ...prev, passportIssueDate: e.target.value }))}
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (familyPassportIssueDateRef.current?.setOpen) {
-                      familyPassportIssueDateRef.current.setOpen(true);
-                    } else if (familyPassportIssueDateRef.current?.input?.focus) {
-                      familyPassportIssueDateRef.current.input.focus();
-                    }
-                  }}
-                >
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Passport Expiry Date</label>
-              <div
-                className={`relative mt-1 h-10 rounded-md bg-white shadow-sm border ${
-                  'border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'
-                }`}
-              >
-                <DatePicker
-                  ref={familyPassportExpiryDateRef}
-                  selected={familyFormData.passportExpiryDate ? new Date(familyFormData.passportExpiryDate) : null}
-                  onChange={(date: Date | null) => {
-                    const value = date ? date.toISOString().slice(0, 10) : '';
-                    setFamilyFormData((prev) => ({ ...prev, passportExpiryDate: value }));
-                  }}
-                  dateFormat="dd-MM-yyyy"
-                  placeholderText="Passport Expiry Date"
+              <div className="relative mt-1 h-10 rounded-md bg-white shadow-sm border border-black focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                <input
+                  type="date"
+                  value={familyFormData.passportExpiryDate || ''}
+                  onChange={(e) => setFamilyFormData((prev) => ({ ...prev, passportExpiryDate: e.target.value }))}
                   className="block w-full h-full bg-transparent text-black rounded-md border-none outline-none focus:outline-none sm:text-sm pl-3 pr-10"
-                  popperPlacement="bottom-start"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  onClick={() => {
-                    if (familyPassportExpiryDateRef.current?.setOpen) {
-                      familyPassportExpiryDateRef.current.setOpen(true);
-                    } else if (familyPassportExpiryDateRef.current?.input?.focus) {
-                      familyPassportExpiryDateRef.current.input.focus();
-                    }
-                  }}
-                >
+                <span role="button" tabIndex={0} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 cursor-pointer hover:text-gray-600" onClick={(e) => { e.preventDefault(); e.stopPropagation(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const input = (e.currentTarget.parentElement as HTMLElement).querySelector('input[type=date]'); if (input && typeof (input as HTMLInputElement).showPicker === 'function') (input as HTMLInputElement).showPicker(); } }}>
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                </button>
+                </span>
               </div>
             </div>
           </div>
@@ -2601,7 +3877,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         </form>
       </Modal>
     )}
->>>>>>> Stashed changes
   </>
   );
 };

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useEmployeeStore } from '../store/employeeStore';
 import { useAuthStore } from '../store/authStore';
 import { Employee } from '../services/employee.service';
@@ -25,6 +25,8 @@ export default function EmployeesPage() {
   const [selectedPaygroupId, setSelectedPaygroupId] = useState<string | null>(null);
   const [selectedPaygroupName, setSelectedPaygroupName] = useState<string | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [viewMode, setViewMode] = useState(false);
+  const [loadingEmployee, setLoadingEmployee] = useState(false);
   const [loadingUser, setLoadingUser] = useState(false);
   const [loadUserAttempted, setLoadUserAttempted] = useState(false);
   const [showCredentials, setShowCredentials] = useState(false);
@@ -84,6 +86,26 @@ export default function EmployeesPage() {
     fetchEmployees(params);
   }, [organizationId, currentPage, searchTerm, statusFilter, departmentFilter, fetchEmployees]);
 
+  const fetchCredentials = useCallback(async () => {
+    try {
+      setLoadingCredentials(true);
+      const data = await employeeService.getCredentials();
+      setCredentials(data);
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } }; message?: string };
+      console.error('Failed to fetch credentials:', error);
+      alert(error.response?.data?.message || 'Failed to fetch employee credentials');
+    } finally {
+      setLoadingCredentials(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showCredentials && canManageCredentials && credentials.length === 0 && !loadingCredentials) {
+      fetchCredentials();
+    }
+  }, [showCredentials, canManageCredentials, credentials.length, loadingCredentials, fetchCredentials]);
+
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this employee? This will also deactivate their user account.')) {
       try {
@@ -102,9 +124,34 @@ export default function EmployeesPage() {
     setShowPaygroupModal(true);
   };
 
-  const handleEdit = (employee: Employee) => {
-    setEditingEmployee(employee);
-    setShowForm(true);
+  const handleView = async (employee: Employee) => {
+    setLoadingEmployee(true);
+    try {
+      const full = await employeeService.getById(employee.id);
+      setEditingEmployee(full);
+      setViewMode(true);
+      setShowForm(true);
+    } catch (err) {
+      console.error('Failed to load employee', err);
+      alert('Failed to load employee details');
+    } finally {
+      setLoadingEmployee(false);
+    }
+  };
+
+  const handleEdit = async (employee: Employee) => {
+    setLoadingEmployee(true);
+    try {
+      const full = await employeeService.getById(employee.id);
+      setEditingEmployee(full);
+      setViewMode(false);
+      setShowForm(true);
+    } catch (err) {
+      console.error('Failed to load employee', err);
+      alert('Failed to load employee details');
+    } finally {
+      setLoadingEmployee(false);
+    }
   };
 
   const handleFormSuccess = () => {
@@ -125,6 +172,7 @@ export default function EmployeesPage() {
   const handleFormCancel = () => {
     setShowForm(false);
     setEditingEmployee(null);
+    setViewMode(false);
     setSelectedPaygroupId(null);
     setSelectedPaygroupName(null);
   };
@@ -202,26 +250,6 @@ export default function EmployeesPage() {
 
   const isOrgAdmin = user?.role === 'ORG_ADMIN';
 
-  // Fetch credentials when ORG_ADMIN or HR_MANAGER opens credentials view
-  useEffect(() => {
-    if (showCredentials && canManageCredentials && credentials.length === 0 && !loadingCredentials) {
-      fetchCredentials();
-    }
-  }, [showCredentials, canManageCredentials]);
-
-  const fetchCredentials = async () => {
-    try {
-      setLoadingCredentials(true);
-      const data = await employeeService.getCredentials();
-      setCredentials(data);
-    } catch (error: any) {
-      console.error('Failed to fetch credentials:', error);
-      alert(error.response?.data?.message || 'Failed to fetch employee credentials');
-    } finally {
-      setLoadingCredentials(false);
-    }
-  };
-
   const handleChangeRole = async (employeeId: string, newRole: string) => {
     if (!roleChangeModal) return;
 
@@ -230,7 +258,7 @@ export default function EmployeesPage() {
       
       // The employeeId from credentials is the employee record ID
       // Update employee with role
-      await employeeService.update(employeeId, { role: newRole as any });
+      await employeeService.update(employeeId, { role: newRole } as Partial<Employee> & { role?: string });
 
       alert(`Role updated successfully to ${newRole}`);
       setRoleChangeModal(null);
@@ -253,10 +281,9 @@ export default function EmployeesPage() {
 
     try {
       setResettingPassword(resetPasswordModal.employeeId);
-      const response = await api.post(`/auth/admin/reset-password/${resetPasswordModal.employeeId}`, {
+      await api.post(`/auth/admin/reset-password/${resetPasswordModal.employeeId}`, {
         newPassword,
       });
-      
       setShowNewPassword(newPassword);
       setNewPassword('');
       // Refresh credentials after reset to show new password in table
@@ -809,15 +836,17 @@ export default function EmployeesPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
-                        onClick={() => handleEdit(emp)}
-                        className="text-blue-600 hover:text-blue-900 mr-4"
+                        onClick={() => handleView(emp)}
+                        disabled={loadingEmployee}
+                        className="text-blue-600 hover:text-blue-900 mr-4 disabled:opacity-50"
                       >
                         View
                       </button>
                       {canUpdate && (
                         <button
                           onClick={() => handleEdit(emp)}
-                          className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          disabled={loadingEmployee}
+                          className="text-indigo-600 hover:text-indigo-900 mr-4 disabled:opacity-50"
                         >
                           Edit
                         </button>
@@ -903,12 +932,12 @@ export default function EmployeesPage() {
         />
       )}
 
-      {/* Employee Form Modal */}
+      {/* Employee Form Modal - full width for large form */}
       <Modal
         isOpen={showForm}
         onClose={handleFormCancel}
-        title={editingEmployee ? 'Edit Employee' : 'Create Employee'}
-        size="2xl"
+        title={editingEmployee ? (viewMode ? 'View Employee' : 'Edit Employee') : 'Create Employee'}
+        size="full"
       >
         {organizationId && (
           <EmployeeForm
@@ -918,6 +947,7 @@ export default function EmployeesPage() {
             initialPaygroupName={selectedPaygroupName ?? undefined}
             onSuccess={handleFormSuccess}
             onCancel={handleFormCancel}
+            mode={editingEmployee && viewMode ? 'view' : 'edit'}
           />
         )}
       </Modal>

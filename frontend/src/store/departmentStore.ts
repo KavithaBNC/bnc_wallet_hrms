@@ -34,7 +34,7 @@ export const useDepartmentStore = create<DepartmentStore>((set) => ({
         limit: 100,
         listView: options?.listView ?? true,
       });
-      const departments = response.departments || response.data?.departments || [];
+      const departments = response.departments || [];
       set({ departments, loading: false });
     } catch (error: any) {
       console.error('Error fetching departments:', error);
