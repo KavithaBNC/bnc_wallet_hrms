@@ -498,6 +498,14 @@ const getModules = (canManagePermissions: boolean) => {
     enabled: canManagePermissions,
   },
   {
+    name: 'Transaction',
+    icon: '🔄',
+    description: 'View and manage transactions',
+    status: 'Active',
+    route: '/transaction',
+    enabled: true,
+  },
+  {
     name: 'Recruitment (ATS)',
     icon: '🎯',
     description: 'AI-powered applicant tracking and hiring',

@@ -91,6 +91,26 @@ const ICONS_BY_PATH: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
     </svg>
   ),
+  '/transaction': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l4-4m0 6H4m0 0l4 4m-4-4l4-4" />
+    </svg>
+  ),
+  '/transaction/transfer-promotions': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l4-4m0 6H4m0 0l4 4m-4-4l4-4" />
+    </svg>
+  ),
+  '/transaction/transfer-promotion-entry': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l4-4m0 6H4m0 0l4 4m-4-4l4-4" />
+    </svg>
+  ),
+  '/transaction/emp-code-transfer': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l4-4m0 6H4m0 0l4 4m-4-4l4-4" />
+    </svg>
+  ),
 };
 
 const bottomNavItems = [
@@ -158,6 +178,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     if (payrollMasterDropdownOpen) setPayrollMasterExpanded(true);
   }, [payrollMasterDropdownOpen]);
 
+  // Transaction dropdown: open when current path is under /transaction
+  const transactionDropdownOpen = location.pathname.startsWith('/transaction');
+  const [transactionExpanded, setTransactionExpanded] = useState(transactionDropdownOpen);
+  useEffect(() => {
+    if (transactionDropdownOpen) setTransactionExpanded(true);
+  }, [transactionDropdownOpen]);
+  useEffect(() => {
+    if (location.pathname.startsWith('/transaction')) setTransactionExpanded(true);
+  }, [location.pathname]);
+
   const topLevelNavItems = useMemo(() => visibleNavItems.filter((m) => !m.parentPath), [visibleNavItems]);
 
   const handleLogout = async () => {
@@ -189,7 +219,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="p-6 flex items-center justify-center">
           <span className="text-2xl font-bold tracking-tight text-black">HRMS</span>
         </div>
-
         <nav className="flex-1 py-4 px-4 space-y-2 overflow-y-auto">
           {topLevelNavItems.map((mod) => {
             const isActive = location.pathname === mod.path;
@@ -197,9 +226,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             const childItems = visibleNavItems.filter((m) => m.parentPath === mod.path);
             const isParentWithChildren = childItems.length > 0;
             const isPayrollMaster = mod.path === '/payroll-master';
-            const expanded = isPayrollMaster ? payrollMasterExpanded : false;
-            const setExpanded = isPayrollMaster ? setPayrollMasterExpanded : () => {};
-            const dropdownOpen = isPayrollMaster ? payrollMasterDropdownOpen : false;
+            const isTransaction = mod.path === '/transaction';
+            const expanded = isPayrollMaster ? payrollMasterExpanded : isTransaction ? transactionExpanded : false;
+            const setExpanded = isPayrollMaster ? setPayrollMasterExpanded : isTransaction ? setTransactionExpanded : () => {};
+            const dropdownOpen = isPayrollMaster ? payrollMasterDropdownOpen : isTransaction ? transactionDropdownOpen : false;
 
             if (isParentWithChildren) {
               return (

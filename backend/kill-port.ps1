@@ -2,20 +2,20 @@
 $port = 5000
 Write-Host "🔍 Checking for processes using port $port..."
 
-$processes = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+$processes = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | Where-Object { $_ -gt 4 }
 
 if ($processes) {
     Write-Host "Found processes: $($processes -join ', ')"
     $processes | ForEach-Object {
-        $pid = $_
+        $processId = $_
         try {
-            $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+            $proc = Get-Process -Id $processId -ErrorAction SilentlyContinue
             if ($proc) {
-                Write-Host "  Killing PID $pid ($($proc.ProcessName))..."
-                Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                Write-Host "  Killing PID $processId ($($proc.ProcessName))..."
+                Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
             }
         } catch {
-            Write-Host "  Could not kill PID $pid"
+            Write-Host "  Could not kill PID $processId"
         }
     }
     Write-Host "✅ Done! Port $port should now be free."

@@ -125,6 +125,8 @@ import entityRoutes from './routes/entity.routes';
 import costCentreRoutes from './routes/cost-centre.routes';
 import subDepartmentRoutes from './routes/sub-department.routes';
 import atsRoutes from './routes/ats.routes';
+import transferPromotionRoutes from './routes/transfer-promotion.routes';
+import transferPromotionEntryRoutes from './routes/transfer-promotion-entry.routes';
 
 // Mount routes
 app.use('/api/v1/auth', authRoutes);
@@ -146,6 +148,8 @@ app.use('/api/v1/entities', entityRoutes);
 app.use('/api/v1/cost-centres', costCentreRoutes);
 app.use('/api/v1/sub-departments', subDepartmentRoutes);
 app.use('/api/v1/ats', atsRoutes);
+app.use('/api/v1/transaction/transfer-promotions', transferPromotionRoutes);
+app.use('/api/v1/transaction/transfer-promotion-entry', transferPromotionEntryRoutes);
 
 // ============================================================================
 // ERROR HANDLING

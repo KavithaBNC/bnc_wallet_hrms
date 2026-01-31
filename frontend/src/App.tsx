@@ -19,6 +19,12 @@ import EmployeeSeparationPage from './pages/EmployeeSeparationPage';
 import EmployeeRejoinPage from './pages/EmployeeRejoinPage';
 import SalaryStructurePage from './pages/SalaryStructurePage';
 import EmployeeSalariesPage from './pages/EmployeeSalariesPage';
+import TransactionPage from './pages/TransactionPage';
+import TransferAndPromotionsPage from './pages/TransferAndPromotionsPage';
+import TransferPromotionEntryPage from './pages/TransferPromotionEntryPage';
+import AddTransferPromotionEntryPage from './pages/AddTransferPromotionEntryPage';
+import AddTransferPromotionPage from './pages/AddTransferPromotionPage';
+import EmpCodeTransferPage from './pages/EmpCodeTransferPage';
 import OrganizationsPage from './pages/OrganizationsPage';
 import PermissionsPage from './pages/PermissionsPage';
 import HRAuditSettingsPage from './pages/HRAuditSettingsPage';
@@ -184,6 +190,76 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <EmployeeSalariesPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <TransactionPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction/transfer-promotions"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <TransferAndPromotionsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction/transfer-promotion-entry"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <TransferPromotionEntryPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction/emp-code-transfer"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EmpCodeTransferPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction/transfer-promotion-entry/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AddTransferPromotionEntryPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction/transfer-promotions/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AddTransferPromotionPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction/transfer-promotions/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AddTransferPromotionPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }

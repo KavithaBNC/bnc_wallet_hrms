@@ -1,6 +1,3 @@
-// This is your Prisma schema file for HRMS Portal 2026
-// Learn more: https://pris.ly/d/prisma-schema
-
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
@@ -9,12 +6,8 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  extensions = [uuidOssp(map: "uuid-ossp")]
+  extensions = [uuid_ossp(map: "uuid-ossp")]
 }
-
-// ============================================================================
-// CORE HR MODULE - Phase 1 & 2
-// ============================================================================
 
 model Organization {
   id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
@@ -59,6 +52,8 @@ model Organization {
   jobOpenings          JobOpening[]
   organizationModules  OrganizationModule[]
   employeeSeparations  EmployeeSeparation[]
+  transferPromotionEntries TransferPromotionEntry[]
+  transferPromotions      TransferPromotion[]
 
   @@map("organizations")
 }
@@ -99,97 +94,74 @@ model User {
   // Relations
   organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   employee           Employee?
-  // ATS Relations
   createdJobOpenings JobOpening[]  @relation("JobOpeningCreator")
   createdInterviews  Interview[]   @relation("InterviewCreator")
   createdOffers      Offer[]       @relation("OfferCreator")
-  // Employee Master Approval
   submittedChangeRequests EmployeeChangeRequest[] @relation("EmployeeChangeRequestSubmissions")
   approvedChangeRequests  EmployeeChangeRequest[] @relation("EmployeeChangeRequestApprovals")
 
   @@map("users")
 }
 
-enum UserRole {
-  SUPER_ADMIN
-  ORG_ADMIN
-  HR_MANAGER
-  MANAGER
-  EMPLOYEE
-
-  @@map("user_role")
-}
-
-// ============================================================================
-// ROLE & PERMISSION MANAGEMENT
-// ============================================================================
-
 model Permission {
-  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name        String   @unique @db.VarChar(100)
-  resource    String   @db.VarChar(100) // e.g., "employees", "departments", "attendance"
-  action      String   @db.VarChar(50) // e.g., "create", "read", "update", "delete", "approve"
-  description String?  @db.Text
-  module      String?  @db.VarChar(100) // e.g., "Employee Management", "Leave Management"
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
+  id              String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name            String           @unique @db.VarChar(100)
+  resource        String           @db.VarChar(100)
+  action          String           @db.VarChar(50)
+  description     String?
+  module          String?          @db.VarChar(100)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
   rolePermissions RolePermission[]
 
   @@map("permissions")
 }
 
 model RolePermission {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id             String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   role           UserRole
-  permissionId   String   @map("permission_id") @db.Uuid
-  organizationId String?  @map("organization_id") @db.Uuid // null = system-wide, set = org-specific
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  // Relations
-  permission   Permission    @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissionId   String        @map("permission_id") @db.Uuid
+  organizationId String?       @map("organization_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permission     Permission    @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([role, permissionId, organizationId])
   @@map("role_permissions")
 }
 
 model Department {
-  id                 String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId     String   @map("organization_id") @db.Uuid
-  name               String   @db.VarChar(255)
-  code               String?  @unique @db.VarChar(50)
-  description        String?  @db.Text
-  parentDepartmentId String?  @map("parent_department_id") @db.Uuid
-  managerId          String?  @map("manager_id") @db.Uuid
-  costCenter         String?  @map("cost_center") @db.VarChar(50)
-  location           String?  @db.VarChar(255)
-  isActive           Boolean  @default(true) @map("is_active")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  parentDepartment Department?   @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull)
-  subDepartments   Department[]  @relation("DepartmentHierarchy")
-  manager          Employee?     @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
-  employees        Employee[]    @relation("EmployeeDepartment")
-  jobPositions     JobPosition[]
-  jobOpenings      JobOpening[]
+  id                 String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId     String        @map("organization_id") @db.Uuid
+  name               String        @db.VarChar(255)
+  code               String?       @unique @db.VarChar(50)
+  description        String?
+  parentDepartmentId String?       @map("parent_department_id") @db.Uuid
+  managerId          String?       @map("manager_id") @db.Uuid
+  costCenter         String?       @map("cost_center") @db.VarChar(50)
+  location           String?       @db.VarChar(255)
+  isActive           Boolean       @default(true) @map("is_active")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  manager            Employee?     @relation("DepartmentManager", fields: [managerId], references: [id])
+  organization       Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentDepartment   Department?   @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
+  subDepartments     Department[]  @relation("DepartmentHierarchy")
+  employees          Employee[]    @relation("EmployeeDepartment")
+  jobOpenings        JobOpening[]
+  jobPositions       JobPosition[]
 
   @@map("departments")
 }
 
 model SubDepartment {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String   @db.VarChar(255)
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  name           String       @db.VarChar(255)
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, name])
   @@map("sub_departments")
@@ -203,7 +175,7 @@ model JobPosition {
   departmentId     String?         @map("department_id") @db.Uuid
   level            PositionLevel?
   employmentType   EmploymentType? @map("employment_type")
-  description      String?         @db.Text
+  description      String?
   requirements     Json?
   responsibilities Json?
   salaryRangeMin   Decimal?        @map("salary_range_min") @db.Decimal(15, 2)
@@ -211,28 +183,28 @@ model JobPosition {
   isActive         Boolean         @default(true) @map("is_active")
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation("OrganizationToJobPosition", fields: [organizationId], references: [id], onDelete: Cascade)
-  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  employees    Employee[]
-  jobOpenings  JobOpening[]
+  employees        Employee[]
+  jobOpenings      JobOpening[]
+  transferPromotionEntriesFrom TransferPromotionEntry[] @relation("EntryPromotionFrom")
+  transferPromotionEntriesTo   TransferPromotionEntry[] @relation("EntryPromotionTo")
+  department       Department?     @relation(fields: [departmentId], references: [id])
+  organization     Organization    @relation("OrganizationToJobPosition", fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("job_positions")
 }
 
 model Paygroup {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String   @db.VarChar(255)
-  code           String?  @unique @db.VarChar(50)
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employees    Employee[]
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  name           String       @db.VarChar(255)
+  code           String?      @unique @db.VarChar(50)
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  employees      Employee[]
+  transferPromotionEntries TransferPromotionEntry[]
+  transferPromotions TransferPromotion[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, name])
   @@map("paygroups")
@@ -274,18 +246,737 @@ model Location {
 }
 
 model CostCentre {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String   @db.VarChar(255)
-  code           String?  @unique @db.VarChar(50)
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employees    Employee[]
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  name           String       @db.VarChar(255)
+  code           String?      @unique @db.VarChar(50)
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees      Employee[]
 
   @@map("cost_centres")
+}
+
+model Employee {
+  id                        String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId            String                     @map("organization_id") @db.Uuid
+  employeeCode              String                     @unique @map("employee_code") @db.VarChar(50)
+  userId                    String                     @unique @map("user_id") @db.Uuid
+  paygroupId                String?                    @map("paygroup_id") @db.Uuid
+  firstName                 String                     @map("first_name") @db.VarChar(100)
+  middleName                String?                    @map("middle_name") @db.VarChar(100)
+  lastName                  String                     @map("last_name") @db.VarChar(100)
+  email                     String                     @unique @db.VarChar(255)
+  personalEmail             String?                    @map("personal_email") @db.VarChar(255)
+  phone                     String?                    @db.VarChar(20)
+  officialEmail             String?                    @map("official_email") @db.VarChar(255)
+  officialMobile            String?                    @map("official_mobile") @db.VarChar(20)
+  dateOfBirth               DateTime?                  @map("date_of_birth") @db.Date
+  gender                    Gender?
+  maritalStatus             MaritalStatus?             @map("marital_status")
+  nationality               String?                    @db.VarChar(100)
+  profilePictureUrl         String?                    @map("profile_picture_url") @db.VarChar(500)
+  departmentId              String?                    @map("department_id") @db.Uuid
+  positionId                String?                    @map("position_id") @db.Uuid
+  reportingManagerId        String?                    @map("reporting_manager_id") @db.Uuid
+  shiftId                   String?                    @map("shift_id") @db.Uuid
+  workLocation              String?                    @map("work_location") @db.VarChar(255)
+  locationId                String?                    @map("location_id") @db.Uuid
+  costCentreId              String?                    @map("cost_centre_id") @db.Uuid
+  grade                     String?                    @db.VarChar(50)
+  placeOfTaxDeduction       PlaceOfTaxDeduction?       @map("place_of_tax_deduction")
+  jobResponsibility         String?                    @map("job_responsibility")
+  employmentType            EmploymentType?            @map("employment_type")
+  employeeStatus            EmployeeStatus             @default(ACTIVE) @map("employee_status")
+  dateOfJoining             DateTime                   @map("date_of_joining") @db.Date
+  probationEndDate          DateTime?                  @map("probation_end_date") @db.Date
+  confirmationDate          DateTime?                  @map("confirmation_date") @db.Date
+  dateOfLeaving             DateTime?                  @map("date_of_leaving") @db.Date
+  terminationReason         String?                    @map("termination_reason")
+  address                   Json?
+  emergencyContacts         Json?                      @map("emergency_contacts")
+  bankDetails               Json?                      @map("bank_details")
+  taxInformation            Json?                      @map("tax_information")
+  documents                 Json?
+  createdAt                 DateTime                   @default(now()) @map("created_at")
+  updatedAt                 DateTime                   @updatedAt @map("updated_at")
+  deletedAt                 DateTime?                  @map("deleted_at")
+  entityId                  String?                    @map("entity_id") @db.Uuid
+  profileExtensions         Json?                      @map("profile_extensions")
+  assignedApplications      Application[]              @relation("ApplicationRecruiter")
+  attendanceRecords         AttendanceRecord[]
+  attendanceRegularizations AttendanceRegularization[]
+  referredCandidates        Candidate[]                @relation("CandidateReferrer")
+  managedDepartments        Department[]               @relation("DepartmentManager")
+  bankAccounts              EmployeeBankAccount[]
+  changeRequests            EmployeeChangeRequest[]   @relation("EmployeeChangeRequests")
+  leaveBalances             EmployeeLeaveBalance[]
+  salaries                  EmployeeSalary[]
+  separations               EmployeeSeparation[]
+  costCentre                CostCentre?                @relation(fields: [costCentreId], references: [id])
+  department                Department?                @relation("EmployeeDepartment", fields: [departmentId], references: [id])
+  entity                    Entity?                    @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  location                  Location?                  @relation(fields: [locationId], references: [id])
+  organization              Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paygroup                  Paygroup?                  @relation(fields: [paygroupId], references: [id])
+  position                  JobPosition?               @relation(fields: [positionId], references: [id])
+  reportingManager          Employee?                  @relation("EmployeeHierarchy", fields: [reportingManagerId], references: [id])
+  subordinates              Employee[]                 @relation("EmployeeHierarchy")
+  shift                     Shift?                     @relation(fields: [shiftId], references: [id])
+  user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hiringManagerJobs         JobOpening[]               @relation("HiringManager")
+  leaveRequests             LeaveRequest[]
+  payslips                  Payslip[]
+  transferPromotionEntries  TransferPromotionEntry[]
+  transferPromotions        TransferPromotion[]
+
+  @@map("employees")
+}
+
+model TransferPromotion {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  employeeId           String    @map("employee_id") @db.Uuid
+  paygroupId           String?   @map("paygroup_id") @db.Uuid
+  effectiveDate        DateTime  @map("effective_date") @db.Date
+  appliedFrom          String    @map("applied_from") @db.VarChar(50)
+  isIncrement          Boolean   @default(true) @map("is_increment")
+  incrementFrom        DateTime?  @map("increment_from") @db.Date
+  afterLOP             Decimal   @default(0) @map("after_lop") @db.Decimal(12, 2)
+  beforeLOP             Decimal   @default(0) @map("before_lop") @db.Decimal(12, 2)
+  incrementComponents  Json?      @map("increment_components")
+  notes                String?   @db.VarChar(500)
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  paygroup     Paygroup?    @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+
+  @@map("transfer_promotions")
+}
+
+model TransferPromotionEntry {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String        @map("organization_id") @db.Uuid
+  employeeId           String        @map("employee_id") @db.Uuid
+  paygroupId           String?       @map("paygroup_id") @db.Uuid
+  effectiveDate        DateTime      @map("effective_date") @db.Date
+  remarks              String?       @db.VarChar(500)
+  promotionEnabled     Boolean       @default(false) @map("promotion_enabled")
+  promotionFromId      String?       @map("promotion_from_id") @db.Uuid
+  promotionToId        String?       @map("promotion_to_id") @db.Uuid
+  transferComponents   Json?         @map("transfer_components")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  paygroup       Paygroup?    @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  promotionFrom  JobPosition? @relation("EntryPromotionFrom", fields: [promotionFromId], references: [id], onDelete: SetNull)
+  promotionTo    JobPosition? @relation("EntryPromotionTo", fields: [promotionToId], references: [id], onDelete: SetNull)
+
+  @@map("transfer_promotion_entry")
+}
+
+model AttendanceRecord {
+  id              String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId      String                     @map("employee_id") @db.Uuid
+  shiftId         String?                    @map("shift_id") @db.Uuid
+  date            DateTime                   @db.Date
+  checkIn         DateTime?                  @map("check_in")
+  checkOut        DateTime?                  @map("check_out")
+  totalHours      Decimal?                   @map("total_hours") @db.Decimal(5, 2)
+  breakHours      Decimal?                   @map("break_hours") @db.Decimal(5, 2)
+  workHours       Decimal?                   @map("work_hours") @db.Decimal(5, 2)
+  overtimeHours   Decimal?                   @map("overtime_hours") @db.Decimal(5, 2)
+  status          AttendanceStatus?
+  location        Json?
+  checkInMethod   CheckInMethod?             @map("check_in_method")
+  notes           String?
+  approvedBy      String?                    @map("approved_by") @db.Uuid
+  approvedAt      DateTime?                  @map("approved_at")
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
+  employee        Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift           Shift?                     @relation(fields: [shiftId], references: [id])
+  regularizations AttendanceRegularization[]
+
+  @@unique([employeeId, date])
+  @@map("attendance_records")
+}
+
+model Shift {
+  id                String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId    String             @map("organization_id") @db.Uuid
+  name              String             @db.VarChar(100)
+  code              String?            @unique @db.VarChar(50)
+  description       String?
+  startTime         String             @map("start_time") @db.VarChar(10)
+  endTime           String             @map("end_time") @db.VarChar(10)
+  breakDuration     Int?               @map("break_duration")
+  workHours         Decimal?           @map("work_hours") @db.Decimal(5, 2)
+  isFlexible        Boolean            @default(false) @map("is_flexible")
+  gracePeriod       Int?               @map("grace_period")
+  earlyLeaveAllowed Boolean            @default(false) @map("early_leave_allowed")
+  overtimeEnabled   Boolean            @default(true) @map("overtime_enabled")
+  overtimeThreshold Decimal?           @map("overtime_threshold") @db.Decimal(5, 2)
+  geofenceEnabled   Boolean            @default(false) @map("geofence_enabled")
+  geofenceRadius    Decimal?           @map("geofence_radius") @db.Decimal(10, 2)
+  geofenceLocation  Json?              @map("geofence_location")
+  isActive          Boolean            @default(true) @map("is_active")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  attendanceRecords AttendanceRecord[]
+  employees         Employee[]
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("shifts")
+}
+
+model AttendanceRegularization {
+  id                  String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId          String               @map("employee_id") @db.Uuid
+  attendanceRecordId  String?              @map("attendance_record_id") @db.Uuid
+  date                DateTime             @db.Date
+  requestedCheckIn    DateTime?            @map("requested_check_in")
+  requestedCheckOut   DateTime?            @map("requested_check_out")
+  reason              String
+  supportingDocuments Json?                @map("supporting_documents")
+  status              RegularizationStatus @default(PENDING)
+  appliedOn           DateTime             @default(now()) @map("applied_on")
+  reviewedBy          String?              @map("reviewed_by") @db.Uuid
+  reviewedAt          DateTime?            @map("reviewed_at")
+  reviewComments      String?              @map("review_comments")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  attendanceRecord    AttendanceRecord?    @relation(fields: [attendanceRecordId], references: [id])
+  employee            Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("attendance_regularizations")
+}
+
+model LeaveType {
+  id                 String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId     String                 @map("organization_id") @db.Uuid
+  name               String                 @db.VarChar(100)
+  code               String?                @unique @db.VarChar(50)
+  description        String?
+  isPaid             Boolean                @default(true) @map("is_paid")
+  defaultDaysPerYear Decimal?               @map("default_days_per_year") @db.Decimal(5, 2)
+  maxCarryForward    Decimal?               @map("max_carry_forward") @db.Decimal(5, 2)
+  maxConsecutiveDays Int?                   @map("max_consecutive_days")
+  requiresDocument   Boolean                @default(false) @map("requires_document")
+  requiresApproval   Boolean                @default(true) @map("requires_approval")
+  canBeNegative      Boolean                @default(false) @map("can_be_negative")
+  accrualType        AccrualType?           @map("accrual_type")
+  colorCode          String?                @map("color_code") @db.VarChar(20)
+  isActive           Boolean                @default(true) @map("is_active")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+  leaveBalances      EmployeeLeaveBalance[]
+  leavePolicies      LeavePolicy[]
+  leaveRequests      LeaveRequest[]
+  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("leave_types")
+}
+
+model EmployeeLeaveBalance {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId     String    @map("employee_id") @db.Uuid
+  leaveTypeId    String    @map("leave_type_id") @db.Uuid
+  year           Int
+  openingBalance Decimal   @default(0) @map("opening_balance") @db.Decimal(5, 2)
+  accrued        Decimal   @default(0) @db.Decimal(5, 2)
+  used           Decimal   @default(0) @db.Decimal(5, 2)
+  carriedForward Decimal   @default(0) @map("carried_forward") @db.Decimal(5, 2)
+  available      Decimal   @default(0) @db.Decimal(5, 2)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType      LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@map("employee_leave_balances")
+}
+
+model LeaveRequest {
+  id                  String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId          String      @map("employee_id") @db.Uuid
+  leaveTypeId         String      @map("leave_type_id") @db.Uuid
+  startDate           DateTime    @map("start_date") @db.Date
+  endDate             DateTime    @map("end_date") @db.Date
+  totalDays           Decimal     @map("total_days") @db.Decimal(5, 2)
+  reason              String
+  supportingDocuments Json?       @map("supporting_documents")
+  status              LeaveStatus @default(PENDING)
+  appliedOn           DateTime    @default(now()) @map("applied_on")
+  reviewedBy          String?     @map("reviewed_by") @db.Uuid
+  reviewedAt          DateTime?   @map("reviewed_at")
+  reviewComments      String?     @map("review_comments")
+  cancellationReason  String?     @map("cancellation_reason")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+  employee            Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType           LeaveType   @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@map("leave_requests")
+}
+
+model Holiday {
+  id                  String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId      String       @map("organization_id") @db.Uuid
+  name                String       @db.VarChar(255)
+  date                DateTime     @db.Date
+  isOptional          Boolean      @default(false) @map("is_optional")
+  applicableLocations Json?        @map("applicable_locations")
+  description         String?
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("holidays")
+}
+
+model LeavePolicy {
+  id                       String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId           String       @map("organization_id") @db.Uuid
+  leaveTypeId              String?      @map("leave_type_id") @db.Uuid
+  name                     String       @db.VarChar(255)
+  description              String?
+  minServiceMonths         Int?         @map("min_service_months")
+  eligibleDepartments      Json?        @map("eligible_departments")
+  eligiblePositions        Json?        @map("eligible_positions")
+  eligibleEmploymentTypes  Json?        @map("eligible_employment_types")
+  accrualType              AccrualType  @default(ANNUALLY) @map("accrual_type")
+  accrualRate              Decimal?     @map("accrual_rate") @db.Decimal(5, 2)
+  accrualStartDate         DateTime?    @map("accrual_start_date") @db.Date
+  prorateOnJoining         Boolean      @default(true) @map("prorate_on_joining")
+  prorateOnLeaving         Boolean      @default(true) @map("prorate_on_leaving")
+  allowCarryForward        Boolean      @default(false) @map("allow_carry_forward")
+  maxCarryForwardDays      Decimal?     @map("max_carry_forward_days") @db.Decimal(5, 2)
+  carryForwardExpiryMonths Int?         @map("carry_forward_expiry_months")
+  requiresApproval         Boolean      @default(true) @map("requires_approval")
+  approvalLevels           Json?        @map("approval_levels")
+  autoApproveDays          Int?         @map("auto_approve_days")
+  minDaysPerRequest        Decimal?     @map("min_days_per_request") @db.Decimal(5, 2)
+  maxDaysPerRequest        Decimal?     @map("max_days_per_request") @db.Decimal(5, 2)
+  advanceNoticeDays        Int?         @map("advance_notice_days")
+  blackoutPeriods          Json?        @map("blackout_periods")
+  isActive                 Boolean      @default(true) @map("is_active")
+  createdAt                DateTime     @default(now()) @map("created_at")
+  updatedAt                DateTime     @updatedAt @map("updated_at")
+  leaveType                LeaveType?   @relation(fields: [leaveTypeId], references: [id])
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("leave_policies")
+}
+
+model SalaryStructure {
+  id               String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId   String           @map("organization_id") @db.Uuid
+  name             String           @db.VarChar(255)
+  description      String?
+  components       Json
+  isActive         Boolean          @default(true) @map("is_active")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  employeeSalaries EmployeeSalary[]
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  salaryTemplates  SalaryTemplate[]
+
+  @@map("salary_structures")
+}
+
+model SalaryTemplate {
+  id                String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId    String           @map("organization_id") @db.Uuid
+  salaryStructureId String           @map("salary_structure_id") @db.Uuid
+  name              String           @db.VarChar(255)
+  grade             String?          @db.VarChar(50)
+  level             String?          @db.VarChar(50)
+  description       String?
+  ctc               Decimal          @map("ctc") @db.Decimal(15, 2)
+  basicSalary       Decimal          @map("basic_salary") @db.Decimal(15, 2)
+  grossSalary       Decimal          @map("gross_salary") @db.Decimal(15, 2)
+  netSalary         Decimal          @map("net_salary") @db.Decimal(15, 2)
+  components        Json
+  currency          String           @default("USD") @db.VarChar(3)
+  paymentFrequency  PaymentFrequency @map("payment_frequency")
+  isActive          Boolean          @default(true) @map("is_active")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  salaryStructure   SalaryStructure  @relation(fields: [salaryStructureId], references: [id], onDelete: Cascade)
+
+  @@map("salary_templates")
+}
+
+model EmployeeBankAccount {
+  id               String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId       String           @map("employee_id") @db.Uuid
+  bankName         String           @map("bank_name") @db.VarChar(255)
+  accountNumber    String           @map("account_number") @db.VarChar(50)
+  routingNumber    String?          @map("routing_number") @db.VarChar(50)
+  accountType      BankAccountType  @map("account_type")
+  isPrimary        Boolean          @default(false) @map("is_primary")
+  isActive         Boolean          @default(true) @map("is_active")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeSalaries EmployeeSalary[]
+
+  @@map("employee_bank_accounts")
+}
+
+model EmployeeSalary {
+  id                String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId        String               @map("employee_id") @db.Uuid
+  salaryStructureId String?              @map("salary_structure_id") @db.Uuid
+  salaryTemplateId  String?              @map("salary_template_id") @db.Uuid
+  effectiveDate     DateTime             @map("effective_date") @db.Date
+  endDate           DateTime?            @map("end_date") @db.Date
+  basicSalary       Decimal              @map("basic_salary") @db.Decimal(15, 2)
+  grossSalary       Decimal              @map("gross_salary") @db.Decimal(15, 2)
+  netSalary         Decimal              @map("net_salary") @db.Decimal(15, 2)
+  ctc               Decimal?             @map("ctc") @db.Decimal(15, 2)
+  components        Json
+  ctcBreakdown      Json?                @map("ctc_breakdown")
+  revisionReason    String?              @map("revision_reason")
+  currency          String               @default("USD") @db.VarChar(3)
+  paymentFrequency  PaymentFrequency     @map("payment_frequency")
+  bankAccountId     String?              @map("bank_account_id") @db.Uuid
+  isActive          Boolean              @default(true) @map("is_active")
+  createdBy         String?              @map("created_by") @db.Uuid
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  bankAccount       EmployeeBankAccount? @relation(fields: [bankAccountId], references: [id])
+  employee          Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  salaryStructure   SalaryStructure?     @relation(fields: [salaryStructureId], references: [id])
+  payslips          Payslip[]
+
+  @@index([employeeId, effectiveDate])
+  @@map("employee_salary")
+}
+
+model PayrollCycle {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String        @map("organization_id") @db.Uuid
+  name            String        @db.VarChar(255)
+  periodStart     DateTime      @map("period_start") @db.Date
+  periodEnd       DateTime      @map("period_end") @db.Date
+  paymentDate     DateTime      @map("payment_date") @db.Date
+  payrollMonth    Int           @map("payroll_month")
+  payrollYear     Int           @map("payroll_year")
+  status          PayrollStatus @default(DRAFT)
+  isLocked        Boolean       @default(false) @map("is_locked")
+  totalEmployees  Int?          @map("total_employees")
+  totalGross      Decimal?      @map("total_gross") @db.Decimal(15, 2)
+  totalDeductions Decimal?      @map("total_deductions") @db.Decimal(15, 2)
+  totalNet        Decimal?      @map("total_net") @db.Decimal(15, 2)
+  approvedBy      String?       @map("approved_by") @db.Uuid
+  approvedAt      DateTime?     @map("approved_at")
+  processedBy     String?       @map("processed_by") @db.Uuid
+  processedAt     DateTime?     @map("processed_at")
+  finalizedBy     String?       @map("finalized_by") @db.Uuid
+  finalizedAt     DateTime?     @map("finalized_at")
+  paidBy          String?       @map("paid_by") @db.Uuid
+  paidAt          DateTime?     @map("paid_at")
+  notes           String?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payslips        Payslip[]
+
+  @@unique([organizationId, payrollMonth, payrollYear])
+  @@index([organizationId, payrollYear, payrollMonth])
+  @@map("payroll_cycles")
+}
+
+model Payslip {
+  id                  String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  payrollCycleId      String          @map("payroll_cycle_id") @db.Uuid
+  employeeId          String          @map("employee_id") @db.Uuid
+  employeeSalaryId    String?         @map("employee_salary_id") @db.Uuid
+  periodStart         DateTime        @map("period_start") @db.Date
+  periodEnd           DateTime        @map("period_end") @db.Date
+  paymentDate         DateTime        @map("payment_date") @db.Date
+  basicSalary         Decimal?        @map("basic_salary") @db.Decimal(15, 2)
+  earnings            Json?
+  deductions          Json?
+  grossSalary         Decimal         @map("gross_salary") @db.Decimal(15, 2)
+  totalDeductions     Decimal?        @map("total_deductions") @db.Decimal(15, 2)
+  netSalary           Decimal         @map("net_salary") @db.Decimal(15, 2)
+  attendanceDays      Decimal?        @map("attendance_days") @db.Decimal(5, 2)
+  paidDays            Decimal?        @map("paid_days") @db.Decimal(5, 2)
+  unpaidDays          Decimal?        @map("unpaid_days") @db.Decimal(5, 2)
+  overtimeHours       Decimal?        @map("overtime_hours") @db.Decimal(8, 2)
+  taxDetails          Json?           @map("tax_details")
+  statutoryDeductions Json?           @map("statutory_deductions")
+  ytdGrossSalary      Decimal?        @map("ytd_gross_salary") @db.Decimal(15, 2)
+  ytdDeductions       Decimal?        @map("ytd_deductions") @db.Decimal(15, 2)
+  ytdNetSalary        Decimal?        @map("ytd_net_salary") @db.Decimal(15, 2)
+  ytdTaxPaid          Decimal?        @map("ytd_tax_paid") @db.Decimal(15, 2)
+  status              PayslipStatus   @default(DRAFT)
+  pdfUrl              String?         @map("pdf_url") @db.VarChar(500)
+  paymentMethod       PaymentMethod?  @map("payment_method")
+  paymentReference    String?         @map("payment_reference") @db.VarChar(100)
+  paymentStatus       PaymentStatus?  @map("payment_status")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+  employee            Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeSalary      EmployeeSalary? @relation(fields: [employeeSalaryId], references: [id])
+  payrollCycle        PayrollCycle    @relation(fields: [payrollCycleId], references: [id], onDelete: Cascade)
+
+  @@map("payslips")
+}
+
+model TaxConfiguration {
+  id               String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId   String       @map("organization_id") @db.Uuid
+  country          String       @db.VarChar(100)
+  region           String?      @db.VarChar(100)
+  taxType          TaxType      @map("tax_type")
+  name             String       @db.VarChar(255)
+  calculationRules Json         @map("calculation_rules")
+  effectiveFrom    DateTime     @map("effective_from") @db.Date
+  effectiveTo      DateTime?    @map("effective_to") @db.Date
+  isActive         Boolean      @default(true) @map("is_active")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("tax_configurations")
+}
+
+model StatutoryCompliance {
+  id              String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String           @map("organization_id") @db.Uuid
+  country         String           @db.VarChar(100)
+  complianceType  String           @map("compliance_type") @db.VarChar(100)
+  name            String           @db.VarChar(255)
+  description     String?
+  rules           Json
+  filingFrequency FilingFrequency? @map("filing_frequency")
+  nextDueDate     DateTime?        @map("next_due_date") @db.Date
+  isMandatory     Boolean          @default(false) @map("is_mandatory")
+  isActive        Boolean          @default(true) @map("is_active")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("statutory_compliances")
+}
+
+model JobOpening {
+  id                    String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId        String           @map("organization_id") @db.Uuid
+  positionId            String?          @map("position_id") @db.Uuid
+  title                 String           @db.VarChar(255)
+  departmentId          String?          @map("department_id") @db.Uuid
+  hiringManagerId       String?          @map("hiring_manager_id") @db.Uuid
+  recruiters            Json?
+  employmentType        EmploymentType?
+  jobType               JobType?         @map("job_type")
+  location              String?          @db.VarChar(255)
+  experienceRequired    Json?            @map("experience_required")
+  salaryRange           Json?            @map("salary_range")
+  description           String
+  requirements          Json?
+  responsibilities      Json?
+  skillsRequired        Json?            @map("skills_required")
+  qualifications        Json?
+  benefits              Json?
+  numberOfPositions     Int              @default(1) @map("number_of_positions")
+  positionsFilled       Int              @default(0) @map("positions_filled")
+  status                JobOpeningStatus @default(DRAFT)
+  postingDate           DateTime?        @map("posting_date") @db.Date
+  applicationDeadline   DateTime?        @map("application_deadline") @db.Date
+  targetClosureDate     DateTime?        @map("target_closure_date") @db.Date
+  applicationFormFields Json?            @map("application_form_fields")
+  screeningQuestions    Json?            @map("screening_questions")
+  internalJob           Boolean          @default(false) @map("internal_job")
+  isConfidential        Boolean          @default(false) @map("is_confidential")
+  createdBy             String?          @map("created_by") @db.Uuid
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+  applications          Application[]
+  interviews            Interview[]
+  creator               User?            @relation("JobOpeningCreator", fields: [createdBy], references: [id])
+  department            Department?      @relation(fields: [departmentId], references: [id])
+  hiringManager         Employee?        @relation("HiringManager", fields: [hiringManagerId], references: [id])
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  position              JobPosition?     @relation(fields: [positionId], references: [id])
+  offers                Offer[]
+
+  @@map("job_openings")
+}
+
+model Candidate {
+  id                      String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  firstName               String           @map("first_name") @db.VarChar(100)
+  lastName                String           @map("last_name") @db.VarChar(100)
+  email                   String           @unique @db.VarChar(255)
+  phone                   String?          @db.VarChar(20)
+  alternatePhone          String?          @map("alternate_phone") @db.VarChar(20)
+  currentLocation         String?          @map("current_location") @db.VarChar(255)
+  preferredLocations      Json?            @map("preferred_locations")
+  currentCompany          String?          @map("current_company") @db.VarChar(255)
+  currentDesignation      String?          @map("current_designation") @db.VarChar(255)
+  totalExperienceYears    Decimal?         @map("total_experience_years") @db.Decimal(5, 2)
+  relevantExperienceYears Decimal?         @map("relevant_experience_years") @db.Decimal(5, 2)
+  currentSalary           Decimal?         @map("current_salary") @db.Decimal(15, 2)
+  expectedSalary          Decimal?         @map("expected_salary") @db.Decimal(15, 2)
+  noticePeriod            Int?             @map("notice_period")
+  highestQualification    String?          @map("highest_qualification") @db.VarChar(255)
+  education               Json?
+  certifications          Json?
+  skills                  Json?
+  linkedinUrl             String?          @map("linkedin_url") @db.VarChar(500)
+  portfolioUrl            String?          @map("portfolio_url") @db.VarChar(500)
+  githubUrl               String?          @map("github_url") @db.VarChar(500)
+  otherProfiles           Json?            @map("other_profiles")
+  resumeUrl               String?          @map("resume_url") @db.VarChar(500)
+  resumeParsedData        Json?            @map("resume_parsed_data")
+  source                  CandidateSource?
+  sourceDetails           Json?            @map("source_details")
+  referredBy              String?          @map("referred_by") @db.Uuid
+  tags                    Json?
+  notes                   String?
+  createdAt               DateTime         @default(now()) @map("created_at")
+  updatedAt               DateTime         @updatedAt @map("updated_at")
+  applications            Application[]
+  referrer                Employee?        @relation("CandidateReferrer", fields: [referredBy], references: [id])
+  interviews              Interview[]
+  offers                  Offer[]
+
+  @@map("candidates")
+}
+
+model Application {
+  id                String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  jobOpeningId      String                    @map("job_opening_id") @db.Uuid
+  candidateId       String                    @map("candidate_id") @db.Uuid
+  appliedDate       DateTime                  @default(now()) @map("applied_date")
+  currentStage      ApplicationStageEnum      @default(NEW) @map("current_stage")
+  status            ApplicationStatus         @default(ACTIVE)
+  coverLetter       String?                   @map("cover_letter")
+  screeningAnswers  Json?                     @map("screening_answers")
+  aiResumeScore     Decimal?                  @map("ai_resume_score") @db.Decimal(5, 2)
+  aiSkillMatch      Json?                     @map("ai_skill_match")
+  aiExperienceMatch Json?                     @map("ai_experience_match")
+  aiEducationMatch  Json?                     @map("ai_education_match")
+  aiOverallRanking  Int?                      @map("ai_overall_ranking")
+  aiSummary         String?                   @map("ai_summary")
+  aiRecommendations Json?                     @map("ai_recommendations")
+  overallRating     Decimal?                  @map("overall_rating") @db.Decimal(3, 2)
+  recruiterRating   Decimal?                  @map("recruiter_rating") @db.Decimal(3, 2)
+  recruiterNotes    String?                   @map("recruiter_notes")
+  rejectionReason   String?                   @map("rejection_reason")
+  rejectionDate     DateTime?                 @map("rejection_date")
+  withdrawnReason   String?                   @map("withdrawn_reason")
+  withdrawnDate     DateTime?                 @map("withdrawn_date")
+  assignedTo        String?                   @map("assigned_to") @db.Uuid
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+  applicationStages ApplicationStageHistory[]
+  assignedRecruiter Employee?                 @relation("ApplicationRecruiter", fields: [assignedTo], references: [id])
+  candidate         Candidate                 @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOpening        JobOpening                @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  interviews        Interview[]
+  offers            Offer[]
+
+  @@unique([jobOpeningId, candidateId])
+  @@map("applications")
+}
+
+model ApplicationStageHistory {
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  applicationId String      @map("application_id") @db.Uuid
+  stage         String      @db.VarChar(50)
+  status        StageStatus
+  startedAt     DateTime?   @map("started_at")
+  completedAt   DateTime?   @map("completed_at")
+  notes         String?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("application_stages")
+}
+
+model Interview {
+  id                 String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  applicationId      String                   @map("application_id") @db.Uuid
+  jobOpeningId       String                   @map("job_opening_id") @db.Uuid
+  candidateId        String                   @map("candidate_id") @db.Uuid
+  round              Int
+  type               InterviewType?
+  title              String                   @db.VarChar(255)
+  scheduledAt        DateTime?                @map("scheduled_at")
+  durationMinutes    Int?                     @map("duration_minutes")
+  meetingLink        String?                  @map("meeting_link") @db.VarChar(500)
+  location           String?                  @db.VarChar(255)
+  interviewers       Json?
+  interviewPanel     Json?                    @map("interview_panel")
+  status             InterviewStatus          @default(SCHEDULED)
+  feedback           Json?
+  overallRating      Decimal?                 @map("overall_rating") @db.Decimal(3, 2)
+  recommendation     InterviewRecommendation?
+  cancellationReason String?                  @map("cancellation_reason")
+  rescheduleCount    Int                      @default(0) @map("reschedule_count")
+  createdBy          String?                  @map("created_by") @db.Uuid
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+  application        Application              @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  candidate          Candidate                @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  creator            User?                    @relation("InterviewCreator", fields: [createdBy], references: [id])
+  jobOpening         JobOpening               @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+
+  @@map("interviews")
+}
+
+model Offer {
+  id                   String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  applicationId        String      @map("application_id") @db.Uuid
+  candidateId          String      @map("candidate_id") @db.Uuid
+  jobOpeningId         String      @map("job_opening_id") @db.Uuid
+  offerLetterUrl       String?     @map("offer_letter_url") @db.VarChar(500)
+  offeredPosition      String      @map("offered_position") @db.VarChar(255)
+  offeredSalary        Decimal     @map("offered_salary") @db.Decimal(15, 2)
+  salaryComponents     Json?       @map("salary_components")
+  benefits             Json?
+  joiningBonus         Decimal?    @map("joining_bonus") @db.Decimal(15, 2)
+  relocationAssistance Decimal?    @map("relocation_assistance") @db.Decimal(15, 2)
+  offeredDate          DateTime    @map("offered_date") @db.Date
+  validUntil           DateTime    @map("valid_until") @db.Date
+  expectedJoiningDate  DateTime?   @map("expected_joining_date") @db.Date
+  status               OfferStatus @default(DRAFT)
+  acceptedDate         DateTime?   @map("accepted_date")
+  rejectedDate         DateTime?   @map("rejected_date")
+  rejectionReason      String?     @map("rejection_reason")
+  negotiationNotes     String?     @map("negotiation_notes")
+  createdBy            String?     @map("created_by") @db.Uuid
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+  application          Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  candidate            Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  creator              User?       @relation("OfferCreator", fields: [createdBy], references: [id])
+  jobOpening           JobOpening  @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+
+  @@map("offers")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ORG_ADMIN
+  HR_MANAGER
+  MANAGER
+  EMPLOYEE
+
+  @@map("user_role")
 }
 
 enum PositionLevel {
@@ -308,94 +999,6 @@ enum EmploymentType {
   INTERN
 
   @@map("employment_type")
-}
-
-model Employee {
-  id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String @map("organization_id") @db.Uuid
-  employeeCode   String @unique @map("employee_code") @db.VarChar(50)
-  userId         String @unique @map("user_id") @db.Uuid
-
-  // Paygroup (from Associate create flow)
-  paygroupId String? @map("paygroup_id") @db.Uuid
-
-  // Personal Information
-  firstName         String         @map("first_name") @db.VarChar(100)
-  middleName        String?        @map("middle_name") @db.VarChar(100)
-  lastName          String         @map("last_name") @db.VarChar(100)
-  email             String         @unique @db.VarChar(255)
-  personalEmail     String?        @map("personal_email") @db.VarChar(255)
-  phone             String?        @db.VarChar(20)
-  officialEmail     String?        @map("official_email") @db.VarChar(255)
-  officialMobile    String?        @map("official_mobile") @db.VarChar(20)
-  dateOfBirth       DateTime?      @map("date_of_birth") @db.Date
-  gender            Gender?
-  maritalStatus     MaritalStatus? @map("marital_status")
-  nationality       String?        @db.VarChar(100)
-  profilePictureUrl String?        @map("profile_picture_url") @db.VarChar(500)
-
-  // Employment Information
-  departmentId          String?         @map("department_id") @db.Uuid
-  positionId            String?         @map("position_id") @db.Uuid
-  reportingManagerId    String?         @map("reporting_manager_id") @db.Uuid
-  shiftId              String?         @map("shift_id") @db.Uuid
-  workLocation         String?         @map("work_location") @db.VarChar(255)
-  entityId             String?         @map("entity_id") @db.Uuid
-  locationId           String?         @map("location_id") @db.Uuid
-  costCentreId         String?         @map("cost_centre_id") @db.Uuid
-  grade                String?         @db.VarChar(50)
-  placeOfTaxDeduction  PlaceOfTaxDeduction? @map("place_of_tax_deduction")
-  jobResponsibility    String?         @map("job_responsibility") @db.Text
-  employmentType       EmploymentType? @map("employment_type")
-  employeeStatus       EmployeeStatus  @default(ACTIVE) @map("employee_status")
-
-  // Dates
-  dateOfJoining     DateTime  @map("date_of_joining") @db.Date
-  probationEndDate  DateTime? @map("probation_end_date") @db.Date
-  confirmationDate  DateTime? @map("confirmation_date") @db.Date
-  dateOfLeaving     DateTime? @map("date_of_leaving") @db.Date
-  terminationReason String?   @map("termination_reason") @db.Text
-
-  // Additional Information (JSONB)
-  address            Json?
-  emergencyContacts  Json? @map("emergency_contacts")
-  bankDetails        Json? @map("bank_details")
-  taxInformation     Json? @map("tax_information")
-  documents          Json?
-  profileExtensions  Json? @map("profile_extensions") // academicQualifications, previousEmployments, familyMembers
-
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-
-  // Relations
-  organization              Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  paygroup                  Paygroup?                  @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
-  user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  department                Department?                @relation("EmployeeDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
-  position                  JobPosition?               @relation(fields: [positionId], references: [id], onDelete: SetNull)
-  reportingManager          Employee?                  @relation("EmployeeHierarchy", fields: [reportingManagerId], references: [id], onDelete: SetNull)
-  entity                    Entity?                    @relation(fields: [entityId], references: [id], onDelete: SetNull)
-  location                  Location?                  @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  costCentre                CostCentre?                @relation(fields: [costCentreId], references: [id], onDelete: SetNull)
-  shift                     Shift?                     @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  subordinates              Employee[]                 @relation("EmployeeHierarchy")
-  managedDepartments        Department[]               @relation("DepartmentManager")
-  attendanceRecords         AttendanceRecord[]
-  leaveRequests             LeaveRequest[]
-  leaveBalances             EmployeeLeaveBalance[]
-  attendanceRegularizations AttendanceRegularization[]
-  bankAccounts              EmployeeBankAccount[]
-  salaries                  EmployeeSalary[]
-  payslips                  Payslip[]
-  // ATS Relations
-  hiringManagerJobs         JobOpening[]               @relation("HiringManager")
-  referredCandidates        Candidate[]                @relation("CandidateReferrer")
-  assignedApplications      Application[]              @relation("ApplicationRecruiter")
-  changeRequests            EmployeeChangeRequest[]     @relation("EmployeeChangeRequests")
-  separations               EmployeeSeparation[]
-
-  @@map("employees")
 }
 
 // Employee Master Approval: pending changes submitted by employee (or approval-required role)
@@ -464,39 +1067,6 @@ enum PlaceOfTaxDeduction {
   @@map("place_of_tax_deduction")
 }
 
-// ============================================================================
-// ATTENDANCE & LEAVE MODULE - Phase 3
-// ============================================================================
-
-model AttendanceRecord {
-  id            String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId    String            @map("employee_id") @db.Uuid
-  shiftId       String?           @map("shift_id") @db.Uuid
-  date          DateTime          @db.Date
-  checkIn       DateTime?         @map("check_in")
-  checkOut      DateTime?         @map("check_out")
-  totalHours    Decimal?          @map("total_hours") @db.Decimal(5, 2)
-  breakHours    Decimal?          @map("break_hours") @db.Decimal(5, 2)
-  workHours     Decimal?          @map("work_hours") @db.Decimal(5, 2)
-  overtimeHours Decimal?          @map("overtime_hours") @db.Decimal(5, 2)
-  status        AttendanceStatus?
-  location      Json?
-  checkInMethod CheckInMethod?    @map("check_in_method")
-  notes         String?           @db.Text
-  approvedBy    String?           @map("approved_by") @db.Uuid
-  approvedAt    DateTime?         @map("approved_at")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
-
-  // Relations
-  employee        Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  shift           Shift?                     @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  regularizations AttendanceRegularization[]
-
-  @@unique([employeeId, date])
-  @@map("attendance_records")
-}
-
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -518,68 +1088,6 @@ enum CheckInMethod {
   @@map("check_in_method")
 }
 
-// ============================================================================
-// SHIFT MANAGEMENT
-// ============================================================================
-
-model Shift {
-  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId    String   @map("organization_id") @db.Uuid
-  name              String   @db.VarChar(100)
-  code              String?  @unique @db.VarChar(50)
-  description       String?  @db.Text
-  startTime         String   @map("start_time") @db.VarChar(10) // HH:mm format
-  endTime           String   @map("end_time") @db.VarChar(10) // HH:mm format
-  breakDuration     Int?     @map("break_duration") // minutes
-  workHours         Decimal? @map("work_hours") @db.Decimal(5, 2)
-  isFlexible        Boolean  @default(false) @map("is_flexible")
-  gracePeriod       Int?     @map("grace_period") // minutes for late check-in
-  earlyLeaveAllowed Boolean  @default(false) @map("early_leave_allowed")
-  overtimeEnabled   Boolean  @default(true) @map("overtime_enabled")
-  overtimeThreshold Decimal? @map("overtime_threshold") @db.Decimal(5, 2) // hours
-  geofenceEnabled   Boolean  @default(false) @map("geofence_enabled")
-  geofenceRadius    Decimal? @map("geofence_radius") @db.Decimal(10, 2) // meters
-  geofenceLocation  Json?    @map("geofence_location") // {lat, lng, address}
-  isActive          Boolean  @default(true) @map("is_active")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employees         Employee[]
-  attendanceRecords AttendanceRecord[]
-
-  @@map("shifts")
-}
-
-// ============================================================================
-// ATTENDANCE REGULARIZATION
-// ============================================================================
-
-model AttendanceRegularization {
-  id                  String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId          String               @map("employee_id") @db.Uuid
-  attendanceRecordId  String?              @map("attendance_record_id") @db.Uuid
-  date                DateTime             @db.Date
-  requestedCheckIn    DateTime?            @map("requested_check_in")
-  requestedCheckOut   DateTime?            @map("requested_check_out")
-  reason              String               @db.Text
-  supportingDocuments Json?                @map("supporting_documents")
-  status              RegularizationStatus @default(PENDING)
-  appliedOn           DateTime             @default(now()) @map("applied_on")
-  reviewedBy          String?              @map("reviewed_by") @db.Uuid
-  reviewedAt          DateTime?            @map("reviewed_at")
-  reviewComments      String?              @map("review_comments") @db.Text
-  createdAt           DateTime             @default(now()) @map("created_at")
-  updatedAt           DateTime             @updatedAt @map("updated_at")
-
-  // Relations
-  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  attendanceRecord AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
-
-  @@map("attendance_regularizations")
-}
-
 enum RegularizationStatus {
   PENDING
   APPROVED
@@ -587,34 +1095,6 @@ enum RegularizationStatus {
   CANCELLED
 
   @@map("regularization_status")
-}
-
-model LeaveType {
-  id                 String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId     String       @map("organization_id") @db.Uuid
-  name               String       @db.VarChar(100)
-  code               String?      @unique @db.VarChar(50)
-  description        String?      @db.Text
-  isPaid             Boolean      @default(true) @map("is_paid")
-  defaultDaysPerYear Decimal?     @map("default_days_per_year") @db.Decimal(5, 2)
-  maxCarryForward    Decimal?     @map("max_carry_forward") @db.Decimal(5, 2)
-  maxConsecutiveDays Int?         @map("max_consecutive_days")
-  requiresDocument   Boolean      @default(false) @map("requires_document")
-  requiresApproval   Boolean      @default(true) @map("requires_approval")
-  canBeNegative      Boolean      @default(false) @map("can_be_negative")
-  accrualType        AccrualType? @map("accrual_type")
-  colorCode          String?      @map("color_code") @db.VarChar(20)
-  isActive           Boolean      @default(true) @map("is_active")
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
-
-  // Relations
-  organization  Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  leaveRequests LeaveRequest[]
-  leaveBalances EmployeeLeaveBalance[]
-  leavePolicies LeavePolicy[]
-
-  @@map("leave_types")
 }
 
 enum AccrualType {
@@ -626,52 +1106,6 @@ enum AccrualType {
   @@map("accrual_type")
 }
 
-model EmployeeLeaveBalance {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId     String   @map("employee_id") @db.Uuid
-  leaveTypeId    String   @map("leave_type_id") @db.Uuid
-  year           Int
-  openingBalance Decimal  @default(0) @map("opening_balance") @db.Decimal(5, 2)
-  accrued        Decimal  @default(0) @db.Decimal(5, 2)
-  used           Decimal  @default(0) @db.Decimal(5, 2)
-  carriedForward Decimal  @default(0) @map("carried_forward") @db.Decimal(5, 2)
-  available      Decimal  @default(0) @db.Decimal(5, 2)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
-
-  @@unique([employeeId, leaveTypeId, year])
-  @@map("employee_leave_balances")
-}
-
-model LeaveRequest {
-  id                  String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId          String      @map("employee_id") @db.Uuid
-  leaveTypeId         String      @map("leave_type_id") @db.Uuid
-  startDate           DateTime    @map("start_date") @db.Date
-  endDate             DateTime    @map("end_date") @db.Date
-  totalDays           Decimal     @map("total_days") @db.Decimal(5, 2)
-  reason              String      @db.Text
-  supportingDocuments Json?       @map("supporting_documents")
-  status              LeaveStatus @default(PENDING)
-  appliedOn           DateTime    @default(now()) @map("applied_on")
-  reviewedBy          String?     @map("reviewed_by") @db.Uuid
-  reviewedAt          DateTime?   @map("reviewed_at")
-  reviewComments      String?     @map("review_comments") @db.Text
-  cancellationReason  String?     @map("cancellation_reason") @db.Text
-  createdAt           DateTime    @default(now()) @map("created_at")
-  updatedAt           DateTime    @updatedAt @map("updated_at")
-
-  // Relations
-  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
-
-  @@map("leave_requests")
-}
-
 enum LeaveStatus {
   PENDING
   APPROVED
@@ -681,180 +1115,11 @@ enum LeaveStatus {
   @@map("leave_status")
 }
 
-model Holiday {
-  id                  String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId      String   @map("organization_id") @db.Uuid
-  name                String   @db.VarChar(255)
-  date                DateTime @db.Date
-  isOptional          Boolean  @default(false) @map("is_optional")
-  applicableLocations Json?    @map("applicable_locations")
-  description         String?  @db.Text
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@map("holidays")
-}
-
-// ============================================================================
-// LEAVE POLICY MODULE
-// ============================================================================
-
-model LeavePolicy {
-  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String  @map("organization_id") @db.Uuid
-  leaveTypeId    String? @map("leave_type_id") @db.Uuid
-  name           String  @db.VarChar(255)
-  description    String? @db.Text
-
-  // Eligibility Rules
-  minServiceMonths        Int?  @map("min_service_months") // Minimum months of service required
-  eligibleDepartments     Json? @map("eligible_departments") // Array of department IDs
-  eligiblePositions       Json? @map("eligible_positions") // Array of position IDs
-  eligibleEmploymentTypes Json? @map("eligible_employment_types") // ['FULL_TIME', 'PART_TIME']
-
-  // Accrual Rules
-  accrualType      AccrualType @default(ANNUALLY) @map("accrual_type")
-  accrualRate      Decimal?    @map("accrual_rate") @db.Decimal(5, 2) // Days per period
-  accrualStartDate DateTime?   @map("accrual_start_date") @db.Date
-  prorateOnJoining Boolean     @default(true) @map("prorate_on_joining")
-  prorateOnLeaving Boolean     @default(true) @map("prorate_on_leaving")
-
-  // Carryover Rules
-  allowCarryForward        Boolean  @default(false) @map("allow_carry_forward")
-  maxCarryForwardDays      Decimal? @map("max_carry_forward_days") @db.Decimal(5, 2)
-  carryForwardExpiryMonths Int?     @map("carry_forward_expiry_months")
-
-  // Approval Rules
-  requiresApproval Boolean @default(true) @map("requires_approval")
-  approvalLevels   Json?   @map("approval_levels") // Multi-level approval config
-  autoApproveDays  Int?    @map("auto_approve_days") // Auto-approve if <= X days
-
-  // Usage Rules
-  minDaysPerRequest Decimal? @map("min_days_per_request") @db.Decimal(5, 2)
-  maxDaysPerRequest Decimal? @map("max_days_per_request") @db.Decimal(5, 2)
-  advanceNoticeDays Int?     @map("advance_notice_days") // Minimum days in advance
-
-  // Blackout Periods
-  blackoutPeriods Json? @map("blackout_periods") // Array of {start, end} periods
-
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  leaveType    LeaveType?   @relation(fields: [leaveTypeId], references: [id], onDelete: SetNull)
-
-  @@map("leave_policies")
-}
-
-// ============================================================================
-// PAYROLL MODULE - Phase 4
-// ============================================================================
-
-model SalaryStructure {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String   @db.VarChar(255)
-  description    String?  @db.Text
-  components     Json // Array of {name, type, calculation_type, value, is_taxable, is_statutory}
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employeeSalaries EmployeeSalary[]
-  salaryTemplates  SalaryTemplate[]
-
-  @@map("salary_structures")
-}
-
-model SalaryTemplate {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  salaryStructureId String @map("salary_structure_id") @db.Uuid
-  name           String   @db.VarChar(255)
-  grade          String?  @db.VarChar(50) // e.g., "L1", "L2", "Senior", "Junior"
-  level          String?  @db.VarChar(50) // e.g., "Entry", "Mid", "Senior", "Executive"
-  description    String?  @db.Text
-  ctc            Decimal  @map("ctc") @db.Decimal(15, 2) // Cost to Company
-  basicSalary    Decimal  @map("basic_salary") @db.Decimal(15, 2)
-  grossSalary    Decimal  @map("gross_salary") @db.Decimal(15, 2)
-  netSalary      Decimal  @map("net_salary") @db.Decimal(15, 2)
-  components     Json // Actual component values for this template
-  currency       String   @default("USD") @db.VarChar(3)
-  paymentFrequency PaymentFrequency @map("payment_frequency")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  salaryStructure SalaryStructure @relation(fields: [salaryStructureId], references: [id], onDelete: Cascade)
-
-  @@map("salary_templates")
-}
-
-model EmployeeBankAccount {
-  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId    String          @map("employee_id") @db.Uuid
-  bankName      String          @map("bank_name") @db.VarChar(255)
-  accountNumber String          @map("account_number") @db.VarChar(50) // Should be encrypted
-  routingNumber String?         @map("routing_number") @db.VarChar(50)
-  accountType   BankAccountType @map("account_type")
-  isPrimary     Boolean         @default(false) @map("is_primary")
-  isActive      Boolean         @default(true) @map("is_active")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-
-  // Relations
-  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeSalaries EmployeeSalary[]
-
-  @@map("employee_bank_accounts")
-}
-
 enum BankAccountType {
   CHECKING
   SAVINGS
 
   @@map("bank_account_type")
-}
-
-model EmployeeSalary {
-  id                String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId        String           @map("employee_id") @db.Uuid
-  salaryStructureId String?          @map("salary_structure_id") @db.Uuid
-  salaryTemplateId  String?          @map("salary_template_id") @db.Uuid
-  effectiveDate     DateTime         @map("effective_date") @db.Date
-  endDate           DateTime?        @map("end_date") @db.Date // For revision history
-  basicSalary       Decimal          @map("basic_salary") @db.Decimal(15, 2)
-  grossSalary       Decimal          @map("gross_salary") @db.Decimal(15, 2)
-  netSalary         Decimal          @map("net_salary") @db.Decimal(15, 2)
-  ctc               Decimal?         @map("ctc") @db.Decimal(15, 2) // Cost to Company
-  components        Json // Actual component values
-  ctcBreakdown      Json?            @map("ctc_breakdown") // Detailed CTC breakdown
-  revisionReason    String?          @map("revision_reason") @db.Text // Reason for salary revision
-  currency          String           @default("USD") @db.VarChar(3)
-  paymentFrequency  PaymentFrequency @map("payment_frequency")
-  bankAccountId     String?          @map("bank_account_id") @db.Uuid
-  isActive          Boolean          @default(true) @map("is_active")
-  createdBy         String?          @map("created_by") @db.Uuid
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
-
-  // Relations
-  employee        Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  salaryStructure SalaryStructure?     @relation(fields: [salaryStructureId], references: [id], onDelete: SetNull)
-  bankAccount     EmployeeBankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
-  payslips        Payslip[]
-
-  @@map("employee_salary")
-  @@index([employeeId, effectiveDate])
 }
 
 enum PaymentFrequency {
@@ -863,42 +1128,6 @@ enum PaymentFrequency {
   WEEKLY
 
   @@map("payment_frequency")
-}
-
-model PayrollCycle {
-  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId  String        @map("organization_id") @db.Uuid
-  name            String        @db.VarChar(255)
-  periodStart     DateTime      @map("period_start") @db.Date
-  periodEnd       DateTime      @map("period_end") @db.Date
-  paymentDate     DateTime      @map("payment_date") @db.Date
-  payrollMonth    Int           @map("payroll_month") // 1-12
-  payrollYear     Int           @map("payroll_year") // e.g., 2026
-  status          PayrollStatus @default(DRAFT)
-  isLocked        Boolean       @default(false) @map("is_locked") // Lock after finalization
-  totalEmployees  Int?          @map("total_employees")
-  totalGross      Decimal?      @map("total_gross") @db.Decimal(15, 2)
-  totalDeductions Decimal?      @map("total_deductions") @db.Decimal(15, 2)
-  totalNet        Decimal?      @map("total_net") @db.Decimal(15, 2)
-  approvedBy      String?       @map("approved_by") @db.Uuid
-  approvedAt      DateTime?     @map("approved_at")
-  processedBy     String?       @map("processed_by") @db.Uuid
-  processedAt     DateTime?     @map("processed_at")
-  finalizedBy     String?       @map("finalized_by") @db.Uuid
-  finalizedAt     DateTime?     @map("finalized_at")
-  paidBy          String?       @map("paid_by") @db.Uuid
-  paidAt          DateTime?     @map("paid_at")
-  notes           String?       @db.Text
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payslips     Payslip[]
-
-  @@unique([organizationId, payrollMonth, payrollYear])
-  @@map("payroll_cycles")
-  @@index([organizationId, payrollYear, payrollMonth])
 }
 
 enum PayrollStatus {
@@ -946,57 +1175,6 @@ enum SeparationType {
   @@map("separation_type")
 }
 
-model Payslip {
-  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  payrollCycleId   String   @map("payroll_cycle_id") @db.Uuid
-  employeeId       String   @map("employee_id") @db.Uuid
-  employeeSalaryId String?  @map("employee_salary_id") @db.Uuid
-  periodStart      DateTime @map("period_start") @db.Date
-  periodEnd        DateTime @map("period_end") @db.Date
-  paymentDate      DateTime @map("payment_date") @db.Date
-
-  // Salary Components
-  basicSalary     Decimal? @map("basic_salary") @db.Decimal(15, 2)
-  earnings        Json? // [{component, amount, is_taxable}]
-  deductions      Json? // [{component, amount, type}]
-  grossSalary     Decimal  @map("gross_salary") @db.Decimal(15, 2)
-  totalDeductions Decimal? @map("total_deductions") @db.Decimal(15, 2)
-  netSalary       Decimal  @map("net_salary") @db.Decimal(15, 2)
-
-  // Attendance
-  attendanceDays Decimal? @map("attendance_days") @db.Decimal(5, 2)
-  paidDays       Decimal? @map("paid_days") @db.Decimal(5, 2)
-  unpaidDays     Decimal? @map("unpaid_days") @db.Decimal(5, 2)
-  overtimeHours  Decimal? @map("overtime_hours") @db.Decimal(8, 2)
-
-  // Tax and Statutory
-  taxDetails          Json? @map("tax_details")
-  statutoryDeductions Json? @map("statutory_deductions")
-
-  // YTD Totals (Year-to-Date)
-  ytdGrossSalary      Decimal? @map("ytd_gross_salary") @db.Decimal(15, 2)
-  ytdDeductions       Decimal? @map("ytd_deductions") @db.Decimal(15, 2)
-  ytdNetSalary        Decimal? @map("ytd_net_salary") @db.Decimal(15, 2)
-  ytdTaxPaid          Decimal? @map("ytd_tax_paid") @db.Decimal(15, 2)
-
-  // Payment
-  status           PayslipStatus  @default(DRAFT)
-  pdfUrl           String?        @map("pdf_url") @db.VarChar(500)
-  paymentMethod    PaymentMethod? @map("payment_method")
-  paymentReference String?        @map("payment_reference") @db.VarChar(100)
-  paymentStatus    PaymentStatus? @map("payment_status")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  payrollCycle   PayrollCycle    @relation(fields: [payrollCycleId], references: [id], onDelete: Cascade)
-  employee       Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeSalary EmployeeSalary? @relation(fields: [employeeSalaryId], references: [id], onDelete: SetNull)
-
-  @@map("payslips")
-}
-
 enum PayslipStatus {
   DRAFT
   GENERATED
@@ -1023,26 +1201,6 @@ enum PaymentStatus {
   @@map("payment_status")
 }
 
-model TaxConfiguration {
-  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId   String    @map("organization_id") @db.Uuid
-  country          String    @db.VarChar(100)
-  region           String?   @db.VarChar(100)
-  taxType          TaxType   @map("tax_type")
-  name             String    @db.VarChar(255)
-  calculationRules Json      @map("calculation_rules") // Slabs, rates, exemptions
-  effectiveFrom    DateTime  @map("effective_from") @db.Date
-  effectiveTo      DateTime? @map("effective_to") @db.Date
-  isActive         Boolean   @default(true) @map("is_active")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@map("tax_configurations")
-}
-
 enum TaxType {
   INCOME_TAX
   SOCIAL_SECURITY
@@ -1053,90 +1211,12 @@ enum TaxType {
   @@map("tax_type")
 }
 
-model StatutoryCompliance {
-  id              String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId  String           @map("organization_id") @db.Uuid
-  country         String           @db.VarChar(100)
-  complianceType  String           @map("compliance_type") @db.VarChar(100)
-  name            String           @db.VarChar(255)
-  description     String?          @db.Text
-  rules           Json
-  filingFrequency FilingFrequency? @map("filing_frequency")
-  nextDueDate     DateTime?        @map("next_due_date") @db.Date
-  isMandatory     Boolean          @default(false) @map("is_mandatory")
-  isActive        Boolean          @default(true) @map("is_active")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@map("statutory_compliances")
-}
-
 enum FilingFrequency {
   MONTHLY
   QUARTERLY
   ANNUALLY
 
   @@map("filing_frequency")
-}
-
-// ============================================================================
-// ATS MODULE - Phase 5
-// ============================================================================
-
-model JobOpening {
-  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId  String  @map("organization_id") @db.Uuid
-  positionId      String? @map("position_id") @db.Uuid
-  title           String  @db.VarChar(255)
-  departmentId    String? @map("department_id") @db.Uuid
-  hiringManagerId String? @map("hiring_manager_id") @db.Uuid
-  recruiters      Json? // Array of employee IDs
-
-  employmentType     EmploymentType?
-  jobType            JobType?        @map("job_type")
-  location           String?         @db.VarChar(255)
-  experienceRequired Json?           @map("experience_required") // {min, max}
-  salaryRange        Json?           @map("salary_range") // {min, max, currency}
-
-  description      String @db.Text
-  requirements     Json?
-  responsibilities Json?
-  skillsRequired   Json?  @map("skills_required")
-  qualifications   Json?
-  benefits         Json?
-
-  numberOfPositions Int              @default(1) @map("number_of_positions")
-  positionsFilled   Int              @default(0) @map("positions_filled")
-  status            JobOpeningStatus @default(DRAFT)
-
-  postingDate         DateTime? @map("posting_date") @db.Date
-  applicationDeadline DateTime? @map("application_deadline") @db.Date
-  targetClosureDate   DateTime? @map("target_closure_date") @db.Date
-
-  applicationFormFields Json? @map("application_form_fields")
-  screeningQuestions    Json? @map("screening_questions")
-
-  internalJob    Boolean @default(false) @map("internal_job")
-  isConfidential Boolean @default(false) @map("is_confidential")
-
-  createdBy String?  @map("created_by") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  position      JobPosition?  @relation(fields: [positionId], references: [id], onDelete: SetNull)
-  department    Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  hiringManager Employee?     @relation("HiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
-  applications  Application[]
-  interviews    Interview[]
-  offers        Offer[]
-  creator       User?         @relation("JobOpeningCreator", fields: [createdBy], references: [id], onDelete: SetNull)
-
-  @@map("job_openings")
 }
 
 enum JobType {
@@ -1157,63 +1237,6 @@ enum JobOpeningStatus {
   @@map("job_opening_status")
 }
 
-model Candidate {
-  id                 String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  firstName          String  @map("first_name") @db.VarChar(100)
-  lastName           String  @map("last_name") @db.VarChar(100)
-  email              String  @unique @db.VarChar(255)
-  phone              String? @db.VarChar(20)
-  alternatePhone     String? @map("alternate_phone") @db.VarChar(20)
-  currentLocation    String? @map("current_location") @db.VarChar(255)
-  preferredLocations Json?   @map("preferred_locations")
-
-  // Professional Info
-  currentCompany          String?  @map("current_company") @db.VarChar(255)
-  currentDesignation      String?  @map("current_designation") @db.VarChar(255)
-  totalExperienceYears    Decimal? @map("total_experience_years") @db.Decimal(5, 2)
-  relevantExperienceYears Decimal? @map("relevant_experience_years") @db.Decimal(5, 2)
-  currentSalary           Decimal? @map("current_salary") @db.Decimal(15, 2)
-  expectedSalary          Decimal? @map("expected_salary") @db.Decimal(15, 2)
-  noticePeriod            Int?     @map("notice_period") // in days
-
-  // Education
-  highestQualification String? @map("highest_qualification") @db.VarChar(255)
-  education            Json?
-  certifications       Json?
-  skills               Json?
-
-  // Online Profiles
-  linkedinUrl   String? @map("linkedin_url") @db.VarChar(500)
-  portfolioUrl  String? @map("portfolio_url") @db.VarChar(500)
-  githubUrl     String? @map("github_url") @db.VarChar(500)
-  otherProfiles Json?   @map("other_profiles")
-
-  // Resume
-  resumeUrl        String? @map("resume_url") @db.VarChar(500)
-  resumeParsedData Json?   @map("resume_parsed_data")
-  // Note: resume_embedding (VECTOR) will be handled separately as Prisma doesn't support pgvector directly
-  // We'll store it as a separate field or use raw SQL
-
-  // Source
-  source        CandidateSource?
-  sourceDetails Json?            @map("source_details")
-  referredBy    String?          @map("referred_by") @db.Uuid
-
-  tags  Json?
-  notes String? @db.Text
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  applications Application[]
-  interviews   Interview[]
-  offers       Offer[]
-  referrer     Employee?     @relation("CandidateReferrer", fields: [referredBy], references: [id], onDelete: SetNull)
-
-  @@map("candidates")
-}
-
 enum CandidateSource {
   CAREER_SITE
   JOB_PORTAL
@@ -1224,53 +1247,6 @@ enum CandidateSource {
   OTHER
 
   @@map("candidate_source")
-}
-
-model Application {
-  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  jobOpeningId String   @map("job_opening_id") @db.Uuid
-  candidateId  String   @map("candidate_id") @db.Uuid
-  appliedDate  DateTime @default(now()) @map("applied_date")
-
-  currentStage ApplicationStageEnum @default(NEW) @map("current_stage")
-  status       ApplicationStatus    @default(ACTIVE)
-
-  coverLetter      String? @map("cover_letter") @db.Text
-  screeningAnswers Json?   @map("screening_answers")
-
-  // AI-powered insights
-  aiResumeScore     Decimal? @map("ai_resume_score") @db.Decimal(5, 2) // 0-100
-  aiSkillMatch      Json?    @map("ai_skill_match") // {matched_skills, missing_skills, score}
-  aiExperienceMatch Json?    @map("ai_experience_match")
-  aiEducationMatch  Json?    @map("ai_education_match")
-  aiOverallRanking  Int?     @map("ai_overall_ranking")
-  aiSummary         String?  @map("ai_summary") @db.Text
-  aiRecommendations Json?    @map("ai_recommendations")
-
-  overallRating   Decimal? @map("overall_rating") @db.Decimal(3, 2)
-  recruiterRating Decimal? @map("recruiter_rating") @db.Decimal(3, 2)
-  recruiterNotes  String?  @map("recruiter_notes") @db.Text
-
-  rejectionReason String?   @map("rejection_reason") @db.Text
-  rejectionDate   DateTime? @map("rejection_date")
-  withdrawnReason String?   @map("withdrawn_reason") @db.Text
-  withdrawnDate   DateTime? @map("withdrawn_date")
-
-  assignedTo String? @map("assigned_to") @db.Uuid
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  jobOpening        JobOpening                @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
-  candidate         Candidate                 @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  assignedRecruiter Employee?                 @relation("ApplicationRecruiter", fields: [assignedTo], references: [id], onDelete: SetNull)
-  applicationStages ApplicationStageHistory[]
-  interviews        Interview[]
-  offers            Offer[]
-
-  @@unique([jobOpeningId, candidateId])
-  @@map("applications")
 }
 
 enum ApplicationStageEnum {
@@ -1300,22 +1276,6 @@ enum ApplicationStatus {
   @@map("application_status")
 }
 
-model ApplicationStageHistory {
-  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  applicationId String      @map("application_id") @db.Uuid
-  stage         String      @db.VarChar(50)
-  status        StageStatus
-  startedAt     DateTime?   @map("started_at")
-  completedAt   DateTime?   @map("completed_at")
-  notes         String?     @db.Text
-  createdAt     DateTime    @default(now()) @map("created_at")
-
-  // Relations
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  @@map("application_stages")
-}
-
 enum StageStatus {
   PENDING
   IN_PROGRESS
@@ -1323,46 +1283,6 @@ enum StageStatus {
   SKIPPED
 
   @@map("stage_status")
-}
-
-model Interview {
-  id            String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  applicationId String @map("application_id") @db.Uuid
-  jobOpeningId  String @map("job_opening_id") @db.Uuid
-  candidateId   String @map("candidate_id") @db.Uuid
-
-  round Int
-  type  InterviewType?
-  title String         @db.VarChar(255)
-
-  scheduledAt     DateTime? @map("scheduled_at")
-  durationMinutes Int?      @map("duration_minutes")
-  meetingLink     String?   @map("meeting_link") @db.VarChar(500)
-  location        String?   @db.VarChar(255)
-
-  interviewers   Json? // Array of employee IDs
-  interviewPanel Json? @map("interview_panel")
-
-  status InterviewStatus @default(SCHEDULED)
-
-  feedback       Json? // [{interviewer_id, rating, comments, skills_assessed}]
-  overallRating  Decimal?                 @map("overall_rating") @db.Decimal(3, 2)
-  recommendation InterviewRecommendation?
-
-  cancellationReason String? @map("cancellation_reason") @db.Text
-  rescheduleCount    Int     @default(0) @map("reschedule_count")
-
-  createdBy String?  @map("created_by") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  jobOpening  JobOpening  @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
-  candidate   Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  creator     User?       @relation("InterviewCreator", fields: [createdBy], references: [id], onDelete: SetNull)
-
-  @@map("interviews")
 }
 
 enum InterviewType {
@@ -1395,44 +1315,6 @@ enum InterviewRecommendation {
   STRONG_NO
 
   @@map("interview_recommendation")
-}
-
-model Offer {
-  id            String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  applicationId String @map("application_id") @db.Uuid
-  candidateId   String @map("candidate_id") @db.Uuid
-  jobOpeningId  String @map("job_opening_id") @db.Uuid
-
-  offerLetterUrl       String?  @map("offer_letter_url") @db.VarChar(500)
-  offeredPosition      String   @map("offered_position") @db.VarChar(255)
-  offeredSalary        Decimal  @map("offered_salary") @db.Decimal(15, 2)
-  salaryComponents     Json?    @map("salary_components")
-  benefits             Json?
-  joiningBonus         Decimal? @map("joining_bonus") @db.Decimal(15, 2)
-  relocationAssistance Decimal? @map("relocation_assistance") @db.Decimal(15, 2)
-
-  offeredDate         DateTime  @map("offered_date") @db.Date
-  validUntil          DateTime  @map("valid_until") @db.Date
-  expectedJoiningDate DateTime? @map("expected_joining_date") @db.Date
-
-  status OfferStatus @default(DRAFT)
-
-  acceptedDate     DateTime? @map("accepted_date")
-  rejectedDate     DateTime? @map("rejected_date")
-  rejectionReason  String?   @map("rejection_reason") @db.Text
-  negotiationNotes String?   @map("negotiation_notes") @db.Text
-
-  createdBy String?  @map("created_by") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  candidate   Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  jobOpening  JobOpening  @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
-  creator     User?       @relation("OfferCreator", fields: [createdBy], references: [id], onDelete: SetNull)
-
-  @@map("offers")
 }
 
 enum OfferStatus {
