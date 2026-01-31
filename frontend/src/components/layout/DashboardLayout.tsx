@@ -1,9 +1,16 @@
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
+
+const transactionIcon = (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l4-4m0 6H4m0 0l4 4m-4-4l4-4" />
+  </svg>
+);
 
 const mainNavItems = [
   { to: '/dashboard', label: 'Dashboard', icon: (
@@ -51,6 +58,16 @@ const mainNavItems = [
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
     </svg>
   )},
+  {
+    label: 'Transaction',
+    icon: transactionIcon,
+    to: '/transaction',
+    children: [
+      { to: '/transaction/transfer-promotions', label: 'Transfer and Promotions' },
+      { to: '/transaction/transfer-promotion-entry', label: 'Transfer and Promotion Entry' },
+      { to: '/transaction/emp-code-transfer', label: 'Emp Code Transfer' },
+    ],
+  },
 ];
 
 const bottomNavItems = [
@@ -66,6 +83,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuthStore();
+  const [transactionOpen, setTransactionOpen] = useState(() => location.pathname.startsWith('/transaction'));
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/transaction')) setTransactionOpen(true);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     await logout();
@@ -84,6 +106,54 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Main Navigation */}
         <nav className="flex-1 py-4 px-4 space-y-2">
           {mainNavItems.map((item) => {
+            const hasChildren = 'children' in item && item.children && item.children.length > 0;
+            const isTransactionParent = hasChildren && item.to === '/transaction';
+            const isChildActive = hasChildren && item.children?.some((c: { to: string }) => location.pathname === c.to || location.pathname.startsWith(c.to + '/'));
+            const isParentActive = location.pathname === item.to || isChildActive;
+
+            if (hasChildren) {
+              const isOpen = isTransactionParent ? (transactionOpen || location.pathname.startsWith('/transaction')) : false;
+              return (
+                <div key={item.to}>
+                  <button
+                    type="button"
+                    onClick={() => isTransactionParent && setTransactionOpen((prev) => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 text-left ${
+                      isParentActive
+                        ? 'bg-white/20 text-white shadow-lg'
+                        : 'text-white/90 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </span>
+                    <svg className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {isOpen && item.children && (
+                    <div className="mt-1 ml-4 pl-4 border-l border-white/20 space-y-1">
+                      {item.children.map((child: { to: string; label: string }) => {
+                        const isChildCurrent = location.pathname === child.to || location.pathname.startsWith(child.to + '/');
+                        return (
+                          <Link
+                            key={child.to}
+                            to={child.to}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 block ${
+                              isChildCurrent ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             const isActive = location.pathname === item.to;
             return (
               <Link
