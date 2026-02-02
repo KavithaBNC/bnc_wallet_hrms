@@ -32,6 +32,7 @@ export const APP_MODULES: AppModule[] = [
   { path: '/time-attendance', label: 'Time attendance', resource: 'time_attendance', visibility: 'all' },
   { path: '/time-attendance/shift-master', label: 'Shift Master', resource: 'shifts', visibility: 'all', parentPath: '/time-attendance' },
   { path: '/time-attendance/shift-assign', label: 'Shift Assign', resource: 'shifts', visibility: 'all', parentPath: '/time-attendance' },
+  { path: '/time-attendance/associate-shift-change', label: 'Associate Shift Change', resource: 'shifts', visibility: 'all', parentPath: '/time-attendance' },
   { path: '/payroll', label: 'Payroll', resource: 'payroll', visibility: 'all' },
   { path: '/payroll-master', label: 'Payroll Master', resource: 'payroll', visibility: 'all' },
   { path: '/payroll/employee-separation', label: 'Employee Separation', resource: 'employee_separations', visibility: 'all', parentPath: '/payroll-master' },

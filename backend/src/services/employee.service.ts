@@ -631,7 +631,7 @@ export class EmployeeService {
 
     const listView = (query as QueryEmployeesInput & { listView?: string }).listView === 'true';
 
-    // List view: minimal relations (department, position, organization, entity, location for Super Admin)
+    // List view: minimal relations (department, position, organization, entity, location, paygroup, shift)
     if (listView) {
       queryConfig.include = {
         department: { select: { id: true, name: true } },
@@ -639,6 +639,8 @@ export class EmployeeService {
         organization: { select: { id: true, name: true } },
         entity: { select: { id: true, name: true, code: true } },
         location: { select: { id: true, name: true, code: true } },
+        paygroup: { select: { id: true, name: true, code: true } },
+        shift: { select: { id: true, name: true, code: true } },
       };
     } else if (selectFields) {
       // Use select if provided (RBAC optimization)
@@ -658,6 +660,8 @@ export class EmployeeService {
         organization: { select: { id: true, name: true } },
         department: { select: { id: true, name: true, code: true } },
         position: { select: { id: true, title: true, code: true, level: true } },
+        paygroup: { select: { id: true, name: true, code: true } },
+        shift: { select: { id: true, name: true, code: true } },
         reportingManager: {
           select: { id: true, employeeCode: true, firstName: true, lastName: true, email: true },
         },
