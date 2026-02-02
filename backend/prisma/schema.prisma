@@ -55,6 +55,7 @@ model Organization {
   transferPromotionEntries TransferPromotionEntry[]
   transferPromotions      TransferPromotion[]
   retiredEmployeeCodes   RetiredEmployeeCode[]
+  shiftAssignmentRules   ShiftAssignmentRule[]
 
   @@map("organizations")
 }
@@ -164,6 +165,7 @@ model Department {
   employees          Employee[]    @relation("EmployeeDepartment")
   jobOpenings        JobOpening[]
   jobPositions       JobPosition[]
+  shiftAssignmentRules ShiftAssignmentRule[]
 
   @@map("departments")
 }
@@ -218,6 +220,7 @@ model Paygroup {
   employees      Employee[]
   transferPromotionEntries TransferPromotionEntry[]
   transferPromotions TransferPromotion[]
+  shiftAssignmentRules ShiftAssignmentRule[]
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, name])
@@ -457,8 +460,30 @@ model Shift {
   attendanceRecords AttendanceRecord[]
   employees         Employee[]
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignmentRules   ShiftAssignmentRule[]
 
   @@map("shifts")
+}
+
+model ShiftAssignmentRule {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  displayName    String       @map("display_name") @db.VarChar(255)
+  shiftId        String       @map("shift_id") @db.Uuid
+  paygroupId     String?      @map("paygroup_id") @db.Uuid
+  departmentId   String?      @map("department_id") @db.Uuid
+  effectiveDate  DateTime     @map("effective_date") @db.Date
+  priority       Int?         @db.Integer
+  remarks        String?      @db.VarChar(500)
+  employeeIds    Json?        @map("employee_ids") // array of UUID strings
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  shift          Shift        @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  paygroup       Paygroup?    @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  department     Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@map("shift_assignment_rules")
 }
 
 model AttendanceRegularization {

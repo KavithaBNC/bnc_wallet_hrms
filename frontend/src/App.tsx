@@ -18,6 +18,8 @@ import TimeAttendancePage from './pages/TimeAttendancePage';
 import ShiftMasterPage from './pages/ShiftMasterPage';
 import ShiftMasterFormPage from './pages/ShiftMasterFormPage';
 import ShiftAssignPage from './pages/ShiftAssignPage';
+import ShiftAssignFormPage from './pages/ShiftAssignFormPage';
+import AssociateShiftChangePage from './pages/AssociateShiftChangePage';
 import PayrollPage from './pages/PayrollPage';
 import PayrollMasterPage from './pages/PayrollMasterPage';
 import EmployeeSeparationPage from './pages/EmployeeSeparationPage';
@@ -171,6 +173,36 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <ShiftAssignPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/time-attendance/associate-shift-change"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AssociateShiftChangePage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/time-attendance/shift-assign/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ShiftAssignFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/time-attendance/shift-assign/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ShiftAssignFormPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }

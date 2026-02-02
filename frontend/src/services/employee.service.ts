@@ -81,6 +81,16 @@ export interface Employee {
     name: string;
     code?: string;
   };
+  paygroup?: {
+    id: string;
+    name: string;
+    code?: string | null;
+  };
+  shift?: {
+    id: string;
+    name: string;
+    code?: string | null;
+  };
   position?: {
     id: string;
     title: string;
