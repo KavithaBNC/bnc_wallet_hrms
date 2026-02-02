@@ -115,11 +115,6 @@ export interface Employee {
     code?: string | null;
     entityId?: string;
   };
-  paygroup?: {
-    id: string;
-    name: string;
-    code?: string | null;
-  };
   subordinates?: Array<{
     id: string;
     employeeCode: string;

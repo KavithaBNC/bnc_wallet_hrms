@@ -274,6 +274,10 @@ export class RolePermissionService {
         allowedResources.add('employee_separations');
         allowedResources.add('employee_rejoin');
       }
+      // Time attendance implies Shift Master / Shift Assign (resource: shifts)
+      if (allowedResources.has('time_attendance')) {
+        allowedResources.add('shifts');
+      }
       // Transaction modules: always allow so Org Admin can assign Increment, Transfer and Promotion Entry, Emp Code Transfer
       allowedResources.add('transfer_promotions');
       allowedResources.add('transfer_promotion_entry');

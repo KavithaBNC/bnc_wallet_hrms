@@ -134,6 +134,14 @@ const organizationService = {
   },
 
   /**
+   * Backfill Time attendance & Shift Master for all orgs that have modules (fix ABC etc). Super Admin only.
+   */
+  async syncShiftModule(): Promise<{ updated: number; orgIds: string[] }> {
+    const response = await api.post('/organizations/sync-shift-module');
+    return response.data.data;
+  },
+
+  /**
    * Create organization admin user
    */
   async createAdmin(organizationId: string, data: {

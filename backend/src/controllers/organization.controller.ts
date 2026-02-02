@@ -196,6 +196,26 @@ export class OrganizationController {
       next(error);
     }
   }
+
+  /**
+   * Sync shift module for all orgs that already have modules (backfill). Super Admin only.
+   * POST /api/v1/organizations/sync-shift-module
+   */
+  async syncShiftModule(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await organizationModuleService.syncShiftModuleForAllOrgs();
+      res.status(200).json({
+        status: 'success',
+        message:
+          result.updated > 0
+            ? `Added Time attendance & Shift Master to ${result.updated} organization(s). Log in as ABC (Org Admin or HR) to see the shift menu.`
+            : 'All organizations already have the shift module.',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const organizationController = new OrganizationController();

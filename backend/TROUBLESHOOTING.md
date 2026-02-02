@@ -1,5 +1,31 @@
 # Troubleshooting
 
+## Connection pool timeout (Timed out fetching a new connection from the connection pool)
+
+**Error:**
+```
+Invalid `prisma.permission.count()` invocation ... Timed out fetching a new connection from the connection pool.
+(Current connection pool timeout: 10, connection limit: 5)
+```
+
+**Cause:** Default Prisma pool has 5 connections and 10s timeout. Under load (multiple tabs, Permissions page + other API calls), requests wait for a free connection and time out.
+
+**Fix:** Increase pool size and timeout in your `DATABASE_URL` (in **backend/.env**).
+
+1. Open **backend/.env**.
+2. Find the line `DATABASE_URL=postgresql://...`.
+3. If the URL has no `?` yet, add `?connection_limit=20&pool_timeout=30` at the end.
+   If it already has query params (e.g. `?schema=public`), add `&connection_limit=20&pool_timeout=30`.
+
+**Example:**
+```env
+DATABASE_URL=postgresql://postgres:password@localhost:5432/hrms_db?connection_limit=20&pool_timeout=30
+```
+
+4. Restart the backend (`npm run dev`).
+
+---
+
 ## EPERM when running `npx prisma generate` or starting the backend
 
 **Error:**

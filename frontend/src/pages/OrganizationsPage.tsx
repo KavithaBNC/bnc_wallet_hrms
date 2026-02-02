@@ -23,6 +23,7 @@ export default function OrganizationsPage() {
   const [orgModules, setOrgModules] = useState<string[]>([]);
   const [loadingModules, setLoadingModules] = useState(false);
   const [savingModules, setSavingModules] = useState(false);
+  const [syncingShiftModule, setSyncingShiftModule] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -93,6 +94,20 @@ export default function OrganizationsPage() {
   };
 
   const assignableModules = APP_MODULES.filter((m) => m.visibility !== 'super_admin_only');
+
+  const handleSyncShiftModule = async () => {
+    if (!confirm('Add Time attendance & Shift Master to all organizations that already have modules? (Fixes ABC etc.)')) return;
+    try {
+      setSyncingShiftModule(true);
+      setError(null);
+      const result = await organizationService.syncShiftModule();
+      alert(result.updated > 0 ? `Done. Updated ${result.updated} organization(s). Orgs with no modules (e.g. ABC) now have full menus; others got Time attendance & Shift. Log in as Org Admin or HR (e.g. Deepa) to see menus.` : 'All organizations already have the shift module.');
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Sync failed');
+    } finally {
+      setSyncingShiftModule(false);
+    }
+  };
 
   const openAssignModules = async (org: Organization) => {
     setSelectedOrg(org);
@@ -198,6 +213,15 @@ export default function OrganizationsPage() {
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
           >
             + Create Organization
+          </button>
+          <button
+            type="button"
+            onClick={handleSyncShiftModule}
+            disabled={syncingShiftModule}
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
+            title="Add default modules (incl. Time attendance & Shift) to all orgs; fix orgs like ABC so HR (e.g. Deepa) sees menus"
+          >
+            {syncingShiftModule ? 'Syncing...' : 'Sync shift module for all orgs'}
           </button>
         </div>
         {error && (

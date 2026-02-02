@@ -35,6 +35,17 @@ router.get(
 );
 
 /**
+ * @route   POST /api/v1/organizations/sync-shift-module
+ * @desc    Backfill Time attendance & Shift Master for all orgs that have modules (fix ABC etc). Super Admin only.
+ * @access  Private (SUPER_ADMIN only)
+ */
+router.post(
+  '/sync-shift-module',
+  authorize('SUPER_ADMIN'),
+  organizationController.syncShiftModule.bind(organizationController)
+);
+
+/**
  * @route   GET /api/v1/organizations/:id/modules
  * @desc    Get enabled modules for an organization (SAP-style per-org assignment)
  * @access  Private (SUPER_ADMIN for any org; ORG_ADMIN for own org only - enforce in controller if needed)

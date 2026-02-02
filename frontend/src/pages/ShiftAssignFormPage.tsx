@@ -179,7 +179,7 @@ export default function ShiftAssignFormPage() {
         </nav>
 
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="bg-blue-600 px-6 py-4">
+          <div className="bg-gray-700 px-6 py-4">
             <h1 className="text-lg font-semibold text-white">Assign</h1>
           </div>
           <div className="p-6">
@@ -209,13 +209,13 @@ export default function ShiftAssignFormPage() {
                         {selectedEmployees.map((emp) => (
                           <span
                             key={emp.id}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 text-blue-800 text-sm"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-800 text-sm"
                           >
                             {fullName(emp)} [{emp.employeeCode ?? emp.id.slice(0, 4)}]
                             <button
                               type="button"
                               onClick={() => removeEmployee(emp.id)}
-                              className="ml-1 text-blue-600 hover:text-blue-900"
+                              className="ml-1 text-gray-600 hover:text-gray-900"
                             >
                               ×
                             </button>
@@ -240,7 +240,7 @@ export default function ShiftAssignFormPage() {
                               key={emp.id}
                               type="button"
                               onClick={() => addEmployee(emp)}
-                              className="w-full text-left px-3 py-2 text-sm text-gray-900 hover:bg-blue-50"
+                              className="w-full text-left px-3 py-2 text-sm text-gray-900 hover:bg-gray-100"
                             >
                               {fullName(emp)} [{emp.employeeCode ?? ''}]
                             </button>
@@ -351,7 +351,7 @@ export default function ShiftAssignFormPage() {
                   <button
                     type="submit"
                     disabled={saving}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-600 transition disabled:opacity-50"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />

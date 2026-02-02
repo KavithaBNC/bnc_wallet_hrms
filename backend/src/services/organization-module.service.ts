@@ -1,6 +1,7 @@
 import { AppError } from '../middlewares/errorHandler';
 import { prisma } from '../utils/prisma';
 import { rolePermissionService } from './role-permission.service';
+import { permissionService } from './permission.service';
 import { UserRole } from '@prisma/client';
 
 /** Resources that can be assigned per organization (exclude super_admin_only: organizations). */
@@ -12,6 +13,8 @@ export const ASSIGNABLE_MODULE_RESOURCES = [
   'positions',
   'attendance',
   'leaves',
+  'time_attendance',
+  'shifts',
   'payroll',
   'employee_separations',
   'employee_rejoin',
@@ -60,6 +63,10 @@ export class OrganizationModuleService {
       if (!resources.includes('employee_separations')) resources = [...resources, 'employee_separations'];
       if (!resources.includes('employee_rejoin')) resources = [...resources, 'employee_rejoin'];
     }
+    // Time attendance implies Shift Master / Shift Assign / Associate Shift Change (resource: shifts)
+    if (resources.includes('time_attendance') && !resources.includes('shifts')) {
+      resources = [...resources, 'shifts'];
+    }
     // Transaction sub-modules: always include so Org Admin can see and assign Increment, Transfer and Promotion Entry, Emp Code Transfer
     if (!resources.includes('transfer_promotions')) resources = [...resources, 'transfer_promotions'];
     if (!resources.includes('transfer_promotion_entry')) resources = [...resources, 'transfer_promotion_entry'];
@@ -88,6 +95,10 @@ export class OrganizationModuleService {
       if (!unique.includes('employee_separations')) unique = [...unique, 'employee_separations'];
       if (!unique.includes('employee_rejoin')) unique = [...unique, 'employee_rejoin'];
     }
+    // Time attendance implies shifts (Shift Master, Shift Assign, Associate Shift Change)
+    if (unique.includes('time_attendance') && !unique.includes('shifts')) {
+      unique = [...unique, 'shifts'];
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`DELETE FROM organization_modules WHERE organization_id = ${organizationId}::uuid`;
@@ -101,10 +112,15 @@ export class OrganizationModuleService {
       }
     });
 
-    // Set ORG_ADMIN's org-specific permissions so they only see assigned modules
+    // Set ORG_ADMIN's and HR_MANAGER's org-specific permissions so they only see assigned modules
     const permissionIds = await this.getPermissionIdsForResources(unique);
     await rolePermissionService.replaceRolePermissions(
       UserRole.ORG_ADMIN,
+      permissionIds,
+      organizationId
+    );
+    await rolePermissionService.replaceRolePermissions(
+      UserRole.HR_MANAGER,
       permissionIds,
       organizationId
     );
@@ -113,15 +129,13 @@ export class OrganizationModuleService {
   }
 
   /**
-   * Get permission IDs for View (read), and for "permissions" module also Add (create) and Edit (update)
+   * Get permission IDs for View (read), Add (create), Edit (update) for each assigned resource.
+   * So Org Admin and HR can see and use the assigned modules (e.g. Shift Master).
    */
   private async getPermissionIdsForResources(resources: string[]): Promise<string[]> {
     const actionsByResource: Record<string, string[]> = {};
     for (const resource of resources) {
-      actionsByResource[resource] = ['read'];
-      if (resource === 'permissions') {
-        actionsByResource[resource].push('create', 'update');
-      }
+      actionsByResource[resource] = ['read', 'create', 'update'];
     }
     const permissions = await prisma.permission.findMany({
       where: {
@@ -138,6 +152,46 @@ export class OrganizationModuleService {
       }
     }
     return ids;
+  }
+
+  /**
+   * Default modules for orgs that have none (e.g. ABC created manually, never had "Assign modules").
+   * Full list so HR/Org Admin see sidebar and can use shift + other modules.
+   */
+  private getDefaultModulesForOrg(): string[] {
+    return [...(ASSIGNABLE_MODULE_RESOURCES as readonly string[])];
+  }
+
+  /**
+   * Backfill shift module for all organizations, and add default modules to orgs that have none.
+   * Call once (Super Admin) to fix orgs like ABC so Deepa (HR) sees menus and shift modules.
+   * Ensures time_attendance and shifts permissions exist before assigning (so one click is enough).
+   */
+  async syncShiftModuleForAllOrgs(): Promise<{ updated: number; orgIds: string[] }> {
+    await permissionService.syncAppModulePermissions();
+    const allOrgs = await prisma.organization.findMany({ select: { id: true } });
+    const orgIds = allOrgs.map((o) => o.id);
+    let updated = 0;
+    for (const organizationId of orgIds) {
+      const resourceRows = await prisma.$queryRaw<Array<{ resource: string }>>`
+        SELECT resource FROM organization_modules WHERE organization_id = ${organizationId}::uuid
+      `;
+      const resources = resourceRows.map((r) => r.resource);
+      let nextResources: string[];
+      if (resources.length === 0) {
+        nextResources = this.getDefaultModulesForOrg();
+      } else {
+        const hasShifts = resources.includes('shifts');
+        const hasTimeAttendance = resources.includes('time_attendance');
+        if (hasShifts && hasTimeAttendance) continue;
+        nextResources = [...resources];
+        if (!nextResources.includes('time_attendance')) nextResources.push('time_attendance');
+        if (!nextResources.includes('shifts')) nextResources.push('shifts');
+      }
+      await this.setModules(organizationId, nextResources);
+      updated++;
+    }
+    return { updated, orgIds };
   }
 }
 

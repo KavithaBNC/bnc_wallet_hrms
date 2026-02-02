@@ -72,6 +72,7 @@ export class PermissionService {
       where.module = query.module;
     }
 
+    // Run sequentially to avoid holding 2 connections; reduces pool pressure under load
     const [permissions, total] = await Promise.all([
       prisma.permission.findMany({
         where,
@@ -186,6 +187,8 @@ export class PermissionService {
       'positions',
       'attendance',
       'leaves',
+      'time_attendance',
+      'shifts',
       'payroll',
       'employee_separations',
       'employee_rejoin',

@@ -154,6 +154,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [userPermissionKeys, setUserPermissionKeys] = useState<Set<string>>(new Set());
+  const [permissionsLoadFailed, setPermissionsLoadFailed] = useState(false);
 
   const role = (user?.role != null ? String(user.role) : '').toUpperCase();
   const isSuperAdmin = role === 'SUPER_ADMIN';
@@ -162,16 +163,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   useEffect(() => {
     if (!user) {
       setUserPermissionKeys(new Set());
+      setPermissionsLoadFailed(false);
       return;
     }
     if (canSeeAllModules) {
       setUserPermissionKeys(new Set(['*']));
+      setPermissionsLoadFailed(false);
       return;
     }
-    permissionService.getUserPermissions().then((perms) => {
-      const keys = new Set(perms.map((p) => `${p.resource}.${p.action}`));
-      setUserPermissionKeys(keys);
-    }).catch(() => setUserPermissionKeys(new Set()));
+    setPermissionsLoadFailed(false);
+    permissionService
+      .getUserPermissions()
+      .then((perms) => {
+        const keys = new Set(perms.map((p) => `${p.resource}.${p.action}`));
+        setUserPermissionKeys(keys);
+        setPermissionsLoadFailed(false);
+      })
+      .catch(() => {
+        setUserPermissionKeys(new Set());
+        setPermissionsLoadFailed(true);
+      });
   }, [user?.id, user?.role, canSeeAllModules]);
 
   const hasView = useMemo(() => {
@@ -182,6 +193,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [canSeeAllModules, userPermissionKeys]);
 
   // Super Admin always sees all menus; Dashboard is always visible for authenticated users (landing page).
+  // Time attendance: show if user has time_attendance/shifts, or if HR/Org Admin with any permissions (fallback so menu appears after sync).
+  const isHrOrOrgAdmin = role === 'HR_MANAGER' || role === 'ORG_ADMIN';
+  const hasAnyReadPermission = useMemo(
+    () => Array.from(userPermissionKeys).some((k) => k.endsWith('.read')),
+    [userPermissionKeys]
+  );
   const visibleNavItems = useMemo(() => {
     const items: AppModule[] = [];
     for (const mod of APP_MODULES) {
@@ -193,11 +210,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       } else if (mod.visibility === 'module_permission_only') {
         if (isSuperAdmin || hasView('permissions')) items.push(mod);
       } else {
-        if (hasView(mod.resource)) items.push(mod);
+        const hasThisView = hasView(mod.resource);
+        const isTimeAttendanceParent = mod.path === '/time-attendance';
+        const showTimeAttendance =
+          isTimeAttendanceParent &&
+          (hasView('time_attendance') || hasView('shifts') || (isHrOrOrgAdmin && hasAnyReadPermission));
+        if (hasThisView || showTimeAttendance) items.push(mod);
       }
     }
     return items;
-  }, [isSuperAdmin, hasView]);
+  }, [isSuperAdmin, hasView, isHrOrOrgAdmin, hasAnyReadPermission]);
 
   // Payroll Master dropdown: open when current path is under its children (e.g. /payroll/employee-separation)
   const payrollMasterDropdownOpen = location.pathname.startsWith('/payroll/');
@@ -232,8 +254,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   // Page access: redirect to dashboard if user has no view permission for current module.
   // Dashboard and profile are always allowed for authenticated users (landing and settings).
+  // Time attendance: allow if user has time_attendance/shifts or is HR/Org Admin with any permission.
   const currentModule = APP_MODULES.find((m) => m.path === location.pathname);
   const isDashboardOrProfile = location.pathname === '/dashboard' || location.pathname === '/profile';
+  const isTimeAttendanceArea = currentModule?.path === '/time-attendance' || currentModule?.parentPath === '/time-attendance';
+  const hasTimeAttendanceAccess =
+    hasView('time_attendance') || hasView('shifts') || (isHrOrOrgAdmin && hasAnyReadPermission);
   const allowed = isDashboardOrProfile
     ? true
     : !currentModule
@@ -242,7 +268,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         ? isSuperAdmin
         : currentModule.visibility === 'module_permission_only'
           ? isSuperAdmin || hasView('permissions')
-          : hasView(currentModule.resource);
+          : isTimeAttendanceArea
+            ? hasTimeAttendanceAccess
+            : hasView(currentModule.resource);
 
   useEffect(() => {
     if (!isDashboardOrProfile && currentModule && !allowed) {
@@ -375,6 +403,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-auto">
+        {permissionsLoadFailed && !isSuperAdmin && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-sm text-amber-800">
+            Menus could not be loaded. Ask your Super Admin to run &quot;Sync shift module for all orgs&quot; in Organization Management, or try refreshing the page.
+          </div>
+        )}
         {content}
       </div>
     </div>

@@ -43,6 +43,7 @@ const PermissionsPage = () => {
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingShiftModule, setSyncingShiftModule] = useState(false);
   const [rolesDropdownOpen, setRolesDropdownOpen] = useState(false);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -194,6 +195,25 @@ const PermissionsPage = () => {
     }
   };
 
+  const handleSyncShiftModule = async () => {
+    if (!isSuperAdmin) return;
+    try {
+      setSyncingShiftModule(true);
+      setError(null);
+      const result = await organizationService.syncShiftModule();
+      alert(
+        result.updated > 0
+          ? `Done. Updated ${result.updated} organization(s). Orgs with no modules (e.g. ABC) now have full menus; others got Time attendance & Shift. Log in as Org Admin or HR (e.g. Deepa) to see menus.`
+          : 'All organizations already have the shift module.'
+      );
+      if (selectedRole) await loadRolePermissions();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Sync shift module failed');
+    } finally {
+      setSyncingShiftModule(false);
+    }
+  };
+
   const selectRole = (role: UserRole) => {
     if (selectedRole === role) {
       setSelectedRole(null);
@@ -290,6 +310,14 @@ const PermissionsPage = () => {
             <p className="text-sm text-gray-500 mb-4">
               These are the modules Super Admin has enabled for your organization. You can access these in the sidebar and assign permissions for them to HR Manager, Manager, and Employee below.
             </p>
+            {!orgEnabledResources.includes('shifts') && orgEnabledResources.length > 0 && (
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm font-medium text-amber-800">Time attendance & Shift Master not showing?</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  Super Admin must enable them for your organization: go to <strong>Organization Management</strong> → click <strong>Sync shift module for all orgs</strong>, or open your org → <strong>Assign modules</strong> → check <strong>Time attendance</strong> / <strong>Shift Master</strong> → Save. Then refresh this page.
+                </p>
+              </div>
+            )}
             {orgEnabledResources.length === 0 ? (
               <p className="text-sm text-amber-700">No modules assigned yet. Ask Super Admin to assign modules to your organization in Organization Management.</p>
             ) : (
@@ -414,6 +442,21 @@ const PermissionsPage = () => {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Sync shift module for all orgs - Super Admin only, in Module Permission flow */}
+            {isSuperAdmin && (
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={handleSyncShiftModule}
+                  disabled={syncingShiftModule}
+                  className="px-4 py-2.5 rounded-lg text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  title="Add Time attendance & Shift Master to all orgs; fix orgs like ABC so HR sees menus"
+                >
+                  {syncingShiftModule ? 'Syncing...' : 'Sync shift module for all orgs'}
+                </button>
               </div>
             )}
           </div>
