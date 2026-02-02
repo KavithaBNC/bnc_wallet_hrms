@@ -14,6 +14,11 @@ export class ShiftService {
     description?: string;
     startTime: string; // HH:mm format
     endTime: string; // HH:mm format
+    firstHalfEnd?: string;
+    secondHalfStart?: string;
+    punchInTime?: string;
+    punchOutTime?: string;
+    flexiType?: string;
     breakDuration?: number; // minutes
     workHours?: number;
     isFlexible?: boolean;
@@ -26,6 +31,12 @@ export class ShiftService {
     geofenceLocation?: any; // {lat, lng, address}
     isActive?: boolean;
   }) {
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    const validateTime = (v: string | undefined, name: string) => {
+      if (!v) return;
+      if (!timeRegex.test(v)) throw new AppError(`Invalid ${name}. Use HH:mm format`, 400);
+    };
+
     // Validate organization exists
     const organization = await prisma.organization.findUnique({
       where: { id: data.organizationId },
@@ -46,11 +57,10 @@ export class ShiftService {
       }
     }
 
-    // Validate time format (HH:mm)
-    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-    if (!timeRegex.test(data.startTime) || !timeRegex.test(data.endTime)) {
-      throw new AppError('Invalid time format. Use HH:mm format', 400);
-    }
+    validateTime(data.startTime, 'From Time');
+    validateTime(data.endTime, 'To Time');
+
+    const isFlexible = data.flexiType === 'FULL_FLEXI' || data.isFlexible === true;
 
     // Calculate work hours if not provided
     let workHours = data.workHours;
@@ -66,6 +76,11 @@ export class ShiftService {
       workHours = (totalMinutes - breakMins) / 60;
     }
 
+    validateTime(data.firstHalfEnd, 'First Half End');
+    validateTime(data.secondHalfStart, 'Second Half Start');
+    validateTime(data.punchInTime, 'PunchIn Time');
+    validateTime(data.punchOutTime, 'PunchOut Time');
+
     const shift = await prisma.shift.create({
       data: {
         organizationId: data.organizationId,
@@ -74,9 +89,14 @@ export class ShiftService {
         description: data.description || null,
         startTime: data.startTime,
         endTime: data.endTime,
+        firstHalfEnd: data.firstHalfEnd || null,
+        secondHalfStart: data.secondHalfStart || null,
+        punchInTime: data.punchInTime || null,
+        punchOutTime: data.punchOutTime || null,
+        flexiType: data.flexiType || null,
         breakDuration: data.breakDuration || null,
         workHours: new Prisma.Decimal(workHours),
-        isFlexible: data.isFlexible || false,
+        isFlexible,
         gracePeriod: data.gracePeriod || null,
         earlyLeaveAllowed: data.earlyLeaveAllowed || false,
         overtimeEnabled: data.overtimeEnabled !== undefined ? data.overtimeEnabled : true,
@@ -102,6 +122,7 @@ export class ShiftService {
   async getAll(query: {
     organizationId?: string;
     isActive?: boolean;
+    search?: string;
     page?: string;
     limit?: string;
   }) {
@@ -117,6 +138,14 @@ export class ShiftService {
 
     if (query.isActive !== undefined) {
       where.isActive = query.isActive;
+    }
+
+    if (query.search && query.search.trim()) {
+      const term = query.search.trim();
+      where.OR = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { code: { contains: term, mode: 'insensitive' } },
+      ];
     }
 
     const [shifts, total] = await Promise.all([
@@ -177,16 +206,13 @@ export class ShiftService {
       throw new AppError('Shift not found', 404);
     }
 
-    // Validate time format if provided
-    if (data.startTime || data.endTime) {
-      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-      if (data.startTime && !timeRegex.test(data.startTime)) {
-        throw new AppError('Invalid start time format. Use HH:mm format', 400);
-      }
-      if (data.endTime && !timeRegex.test(data.endTime)) {
-        throw new AppError('Invalid end time format. Use HH:mm format', 400);
-      }
-    }
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    const validateTime = (v: string | undefined, name: string) => {
+      if (!v) return;
+      if (!timeRegex.test(v)) throw new AppError(`Invalid ${name}. Use HH:mm format`, 400);
+    };
+    validateTime(data.startTime, 'From Time');
+    validateTime(data.endTime, 'To Time');
 
     // Check code uniqueness if changing code
     if (data.code && data.code !== existing.code) {
@@ -199,7 +225,15 @@ export class ShiftService {
       }
     }
 
+    validateTime(data.firstHalfEnd, 'First Half End');
+    validateTime(data.secondHalfStart, 'Second Half Start');
+    validateTime(data.punchInTime, 'PunchIn Time');
+    validateTime(data.punchOutTime, 'PunchOut Time');
+
     const updateData: any = { ...data };
+    if (data.flexiType !== undefined) {
+      updateData.isFlexible = data.flexiType === 'FULL_FLEXI';
+    }
     
     // Convert Decimal fields
     if (data.workHours !== undefined) {

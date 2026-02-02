@@ -139,11 +139,14 @@ export class OrganizationService {
       }
     }
 
-    const { employeeIdStartingNumber, ...rest } = data;
+    const { employeeIdStartingNumber, employeeIdPrefix, ...rest } = data;
     const updateData: Record<string, unknown> = {
       ...rest,
       fiscalYearStart: data.fiscalYearStart ? new Date(data.fiscalYearStart) : undefined,
     };
+    if (employeeIdPrefix !== undefined) {
+      updateData.employeeIdPrefix = employeeIdPrefix;
+    }
     if (employeeIdStartingNumber !== undefined) {
       updateData.employeeIdNextNumber = employeeIdStartingNumber;
     }

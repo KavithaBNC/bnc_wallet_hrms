@@ -331,7 +331,7 @@ model Employee {
   payslips                  Payslip[]
   transferPromotionEntries  TransferPromotionEntry[]
   transferPromotions        TransferPromotion[]
-  isRejoin                  Boolean                  @default(false) @map("is_rejoin")
+  is_rejoin                  Boolean                  @default(false) @map("is_rejoin")
   previousEmployeeId        String?                  @map("previous_employee_id") @db.Uuid
   previousEmployeeCode     String?                  @map("previous_employee_code") @db.VarChar(50)
 
@@ -422,6 +422,11 @@ model Shift {
   description       String?
   startTime         String             @map("start_time") @db.VarChar(10)
   endTime           String             @map("end_time") @db.VarChar(10)
+  firstHalfEnd      String?            @map("first_half_end") @db.VarChar(10)
+  secondHalfStart   String?            @map("second_half_start") @db.VarChar(10)
+  punchInTime       String?            @map("punch_in_time") @db.VarChar(10)
+  punchOutTime      String?            @map("punch_out_time") @db.VarChar(10)
+  flexiType         String?            @map("flexi_type") @db.VarChar(20)
   breakDuration     Int?               @map("break_duration")
   workHours         Decimal?           @map("work_hours") @db.Decimal(5, 2)
   isFlexible        Boolean            @default(false) @map("is_flexible")

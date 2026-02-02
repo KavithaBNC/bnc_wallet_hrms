@@ -502,7 +502,7 @@ export class EmployeeService {
         employeeStatus: 'ACTIVE',
         dateOfLeaving: null,
         terminationReason: null,
-        isRejoin: true,
+        is_rejoin: true,
         previousEmployeeId: previous.id,
         previousEmployeeCode: previous.employeeCode,
       },

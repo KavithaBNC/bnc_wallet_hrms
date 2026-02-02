@@ -29,6 +29,9 @@ export const APP_MODULES: AppModule[] = [
   { path: '/positions', label: 'Position', resource: 'positions', visibility: 'all' },
   { path: '/attendance', label: 'Attendance', resource: 'attendance', visibility: 'all' },
   { path: '/leave', label: 'Leave Management', resource: 'leaves', visibility: 'all' },
+  { path: '/time-attendance', label: 'Time attendance', resource: 'time_attendance', visibility: 'all' },
+  { path: '/time-attendance/shift-master', label: 'Shift Master', resource: 'shifts', visibility: 'all', parentPath: '/time-attendance' },
+  { path: '/time-attendance/shift-assign', label: 'Shift Assign', resource: 'shifts', visibility: 'all', parentPath: '/time-attendance' },
   { path: '/payroll', label: 'Payroll', resource: 'payroll', visibility: 'all' },
   { path: '/payroll-master', label: 'Payroll Master', resource: 'payroll', visibility: 'all' },
   { path: '/payroll/employee-separation', label: 'Employee Separation', resource: 'employee_separations', visibility: 'all', parentPath: '/payroll-master' },
@@ -38,9 +41,10 @@ export const APP_MODULES: AppModule[] = [
   { path: '/hr-audit-settings', label: 'HR Audit Settings', resource: 'hr_audit_settings', visibility: 'all' },
   { path: '/employee-master-approval', label: 'Employee Master Approval', resource: 'employee_master_approval', visibility: 'all' },
   { path: '/transaction', label: 'Transaction', resource: 'transfer_promotions', visibility: 'all' },
-  { path: '/transaction/transfer-promotions', label: 'Increment', resource: 'transfer_promotions', visibility: 'all', parentPath: '/transaction' },
+  { path: '/transaction/transfer-promotions', label: 'Transfer and Promotions', resource: 'transfer_promotions', visibility: 'all', parentPath: '/transaction' },
   { path: '/transaction/transfer-promotion-entry', label: 'Transfer and Promotion Entry', resource: 'transfer_promotion_entry', visibility: 'all', parentPath: '/transaction' },
   { path: '/transaction/emp-code-transfer', label: 'Emp Code Transfer', resource: 'transfer_promotions', visibility: 'all', parentPath: '/transaction' },
+  { path: '/transaction/paygroup-transfer', label: 'Pay group Transfer', resource: 'transfer_promotions', visibility: 'all', parentPath: '/transaction' },
 ];
 
 /** Actions used for module permissions (backend uses read/create/update/delete). */

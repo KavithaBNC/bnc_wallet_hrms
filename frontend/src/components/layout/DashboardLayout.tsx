@@ -41,6 +41,21 @@ const ICONS_BY_PATH: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
   ),
+  '/time-attendance': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+  '/time-attendance/shift-master': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+  '/time-attendance/shift-assign': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
   '/payroll': (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -111,6 +126,11 @@ const ICONS_BY_PATH: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l4-4m0 6H4m0 0l4 4m-4-4l4-4" />
     </svg>
   ),
+  '/transaction/paygroup-transfer': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  ),
 };
 
 const bottomNavItems = [
@@ -156,11 +176,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     };
   }, [canSeeAllModules, userPermissionKeys]);
 
-  // Super Admin always sees all menus from APP_MODULES (hasView returns true for all resources)
+  // Super Admin always sees all menus; Dashboard is always visible for authenticated users (landing page).
   const visibleNavItems = useMemo(() => {
     const items: AppModule[] = [];
     for (const mod of APP_MODULES) {
-      if (mod.visibility === 'super_admin_only') {
+      const isDashboard = mod.path === '/dashboard';
+      if (isDashboard) {
+        items.push(mod); // Always show Dashboard for authenticated users
+      } else if (mod.visibility === 'super_admin_only') {
         if (isSuperAdmin) items.push(mod);
       } else if (mod.visibility === 'module_permission_only') {
         if (isSuperAdmin || hasView('permissions')) items.push(mod);
@@ -188,6 +211,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     if (location.pathname.startsWith('/transaction')) setTransactionExpanded(true);
   }, [location.pathname]);
 
+  // Time attendance dropdown: open when current path is under /time-attendance
+  const timeAttendanceDropdownOpen = location.pathname.startsWith('/time-attendance');
+  const [timeAttendanceExpanded, setTimeAttendanceExpanded] = useState(timeAttendanceDropdownOpen);
+  useEffect(() => {
+    if (timeAttendanceDropdownOpen) setTimeAttendanceExpanded(true);
+  }, [timeAttendanceDropdownOpen]);
+
   const topLevelNavItems = useMemo(() => visibleNavItems.filter((m) => !m.parentPath), [visibleNavItems]);
 
   const handleLogout = async () => {
@@ -195,21 +225,25 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     navigate('/login');
   };
 
-  // Page access: redirect to dashboard if user has no view permission for current module
+  // Page access: redirect to dashboard if user has no view permission for current module.
+  // Dashboard and profile are always allowed for authenticated users (landing and settings).
   const currentModule = APP_MODULES.find((m) => m.path === location.pathname);
-  const allowed = !currentModule
+  const isDashboardOrProfile = location.pathname === '/dashboard' || location.pathname === '/profile';
+  const allowed = isDashboardOrProfile
     ? true
-    : currentModule.visibility === 'super_admin_only'
-      ? isSuperAdmin
-      : currentModule.visibility === 'module_permission_only'
-        ? isSuperAdmin || hasView('permissions')
-        : hasView(currentModule.resource);
+    : !currentModule
+      ? true
+      : currentModule.visibility === 'super_admin_only'
+        ? isSuperAdmin
+        : currentModule.visibility === 'module_permission_only'
+          ? isSuperAdmin || hasView('permissions')
+          : hasView(currentModule.resource);
 
   useEffect(() => {
-    if (currentModule && !allowed) {
+    if (!isDashboardOrProfile && currentModule && !allowed) {
       navigate('/dashboard', { replace: true });
     }
-  }, [currentModule, allowed, navigate]);
+  }, [isDashboardOrProfile, currentModule, allowed, navigate]);
 
   const content = currentModule && !allowed ? null : children;
 
@@ -227,9 +261,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             const isParentWithChildren = childItems.length > 0;
             const isPayrollMaster = mod.path === '/payroll-master';
             const isTransaction = mod.path === '/transaction';
-            const expanded = isPayrollMaster ? payrollMasterExpanded : isTransaction ? transactionExpanded : false;
-            const setExpanded = isPayrollMaster ? setPayrollMasterExpanded : isTransaction ? setTransactionExpanded : () => {};
-            const dropdownOpen = isPayrollMaster ? payrollMasterDropdownOpen : isTransaction ? transactionDropdownOpen : false;
+            const isTimeAttendance = mod.path === '/time-attendance';
+            const expanded = isPayrollMaster ? payrollMasterExpanded : isTransaction ? transactionExpanded : isTimeAttendance ? timeAttendanceExpanded : false;
+            const setExpanded = isPayrollMaster ? setPayrollMasterExpanded : isTransaction ? setTransactionExpanded : isTimeAttendance ? setTimeAttendanceExpanded : () => {};
+            const dropdownOpen = isPayrollMaster ? payrollMasterDropdownOpen : isTransaction ? transactionDropdownOpen : isTimeAttendance ? timeAttendanceDropdownOpen : false;
 
             if (isParentWithChildren) {
               return (

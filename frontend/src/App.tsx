@@ -14,7 +14,12 @@ import EmployeesPage from './pages/EmployeesPage';
 import PositionsPage from './pages/PositionsPage';
 import AttendancePage from './pages/AttendancePage';
 import LeavePage from './pages/LeavePage';
+import TimeAttendancePage from './pages/TimeAttendancePage';
+import ShiftMasterPage from './pages/ShiftMasterPage';
+import ShiftMasterFormPage from './pages/ShiftMasterFormPage';
+import ShiftAssignPage from './pages/ShiftAssignPage';
 import PayrollPage from './pages/PayrollPage';
+import PayrollMasterPage from './pages/PayrollMasterPage';
 import EmployeeSeparationPage from './pages/EmployeeSeparationPage';
 import EmployeeRejoinPage from './pages/EmployeeRejoinPage';
 import EmployeeRejoinEditPage from './pages/EmployeeRejoinEditPage';
@@ -26,10 +31,13 @@ import TransferPromotionEntryPage from './pages/TransferPromotionEntryPage';
 import AddTransferPromotionEntryPage from './pages/AddTransferPromotionEntryPage';
 import AddTransferPromotionPage from './pages/AddTransferPromotionPage';
 import EmpCodeTransferPage from './pages/EmpCodeTransferPage';
+import PaygroupTransferPage from './pages/PaygroupTransferPage';
+import AddPaygroupTransferPage from './pages/AddPaygroupTransferPage';
 import OrganizationsPage from './pages/OrganizationsPage';
 import PermissionsPage from './pages/PermissionsPage';
 import HRAuditSettingsPage from './pages/HRAuditSettingsPage';
 import EmployeeMasterApprovalPage from './pages/EmployeeMasterApprovalPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 function App() {
   const { isAuthenticated, loadUser } = useAuthStore();
@@ -138,6 +146,56 @@ function App() {
             }
           />
           <Route
+            path="/time-attendance"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <TimeAttendancePage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/time-attendance/shift-master"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ShiftMasterPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/time-attendance/shift-assign"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ShiftAssignPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/time-attendance/shift-master/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ShiftMasterFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/time-attendance/shift-master/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ShiftMasterFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/payroll"
             element={
               <ProtectedRoute>
@@ -151,7 +209,9 @@ function App() {
             path="/payroll-master"
             element={
               <ProtectedRoute>
-                <Navigate to="/payroll/employee-separation" replace />
+                <DashboardLayout>
+                  <PayrollMasterPage />
+                </DashboardLayout>
               </ProtectedRoute>
             }
           />
@@ -246,6 +306,26 @@ function App() {
             }
           />
           <Route
+            path="/transaction/paygroup-transfer"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <PaygroupTransferPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transaction/paygroup-transfer/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AddPaygroupTransferPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/transaction/transfer-promotion-entry/add"
             element={
               <ProtectedRoute>
@@ -316,21 +396,8 @@ function App() {
             }
           />
 
-          {/* 404 Page */}
-          <Route
-            path="*"
-            element={
-              <div className="flex items-center justify-center min-h-screen">
-                <div className="text-center">
-                  <h1 className="text-6xl font-bold text-gray-900">404</h1>
-                  <p className="text-xl text-gray-600 mt-4">Page not found</p>
-                  <a href="/" className="mt-6 inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                    Go Home
-                  </a>
-                </div>
-              </div>
-            }
-          />
+          {/* 404: redirect authenticated users to dashboard, others see 404 */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </div>
     </Router>

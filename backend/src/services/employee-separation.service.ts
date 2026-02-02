@@ -55,7 +55,7 @@ export class EmployeeSeparationService {
         employee_id, organization_id, resignation_apply_date, notice_period,
         notice_period_reason, relieving_date, reason_of_leaving, separation_type, remarks
       )
-      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::"SeparationType", $9)
+      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::"separation_type", $9)
       RETURNING id, employee_id, organization_id, resignation_apply_date, notice_period,
         notice_period_reason, relieving_date, reason_of_leaving, separation_type, remarks,
         created_at, updated_at
@@ -250,7 +250,7 @@ export class EmployeeSeparationService {
       idx++;
     }
     if (data.separationType != null) {
-      updates.push(`separation_type = $${idx}::"SeparationType"`);
+      updates.push(`separation_type = $${idx}::"separation_type"`);
       values.push(data.separationType);
       idx++;
     }
