@@ -180,6 +180,7 @@ export const updateEmployeeSchema = z.object({
  */
 export const queryEmployeesSchema = z.object({
   organizationId: z.string().uuid().optional(),
+  paygroupId: z.string().uuid().optional(), // Filter by paygroup (e.g. for Increment Associate dropdown)
   departmentId: z.string().uuid().optional(),
   positionId: z.string().uuid().optional(),
   reportingManagerId: z.string().uuid().optional(),

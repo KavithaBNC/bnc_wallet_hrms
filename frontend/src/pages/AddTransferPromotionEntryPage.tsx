@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import paygroupService from '../services/paygroup.service';
 import employeeService from '../services/employee.service';
 import positionService from '../services/position.service';
+import departmentService from '../services/department.service';
+import locationService from '../services/location.service';
 import transferPromotionEntryService from '../services/transfer-promotion-entry.service';
 import type { Paygroup } from '../services/paygroup.service';
 import type { Employee } from '../services/employee.service';
 import type { Position } from '../services/position.service';
+import type { Department } from '../services/department.service';
+import type { Location } from '../services/location.service';
 
 const TRANSFER_COMPONENTS = [
   { value: 'Reporting Manager', label: 'Reporting Manager' },
@@ -36,9 +40,15 @@ export default function AddTransferPromotionEntryPage() {
   const [paygroups, setPaygroups] = useState<Paygroup[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [associateDetail, setAssociateDetail] = useState<Employee | null>(null);
   const [loadingPaygroups, setLoadingPaygroups] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [loadingPositions, setLoadingPositions] = useState(false);
+  const [loadingAssociateDetail, setLoadingAssociateDetail] = useState(false);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
+  const [loadingLocations, setLoadingLocations] = useState(false);
 
   const [paygroupId, setPaygroupId] = useState('');
   const [associateId, setAssociateId] = useState('');
@@ -56,6 +66,8 @@ export default function AddTransferPromotionEntryPage() {
   const [associateSearch, setAssociateSearch] = useState('');
   const [showAssociateDropdown, setShowAssociateDropdown] = useState(false);
 
+  const effectiveDateInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!organizationId) return;
     setLoadingPaygroups(true);
@@ -65,14 +77,36 @@ export default function AddTransferPromotionEntryPage() {
     }).finally(() => setLoadingPaygroups(false));
   }, [organizationId]);
 
+  // Load associates by selected paygroup only (clear associate when paygroup changes)
   useEffect(() => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      setEmployees([]);
+      setAssociateId('');
+      return;
+    }
+    if (!paygroupId) {
+      setEmployees([]);
+      setAssociateId('');
+      return;
+    }
     setLoadingEmployees(true);
-    employeeService.getAll({ organizationId, page: 1, limit: 500 }).then((res) => {
-      setEmployees(res.employees || []);
-      if (res.employees?.length && !associateId) setAssociateId(res.employees[0].id);
-    }).finally(() => setLoadingEmployees(false));
-  }, [organizationId]);
+    setAssociateId('');
+    setAssociateSearch('');
+    employeeService
+      .getAll({
+        organizationId,
+        paygroupId,
+        page: 1,
+        limit: 500,
+        employeeStatus: 'ACTIVE',
+      })
+      .then((res) => {
+        setEmployees(res.employees || []);
+        if (res.employees?.length) setAssociateId(res.employees[0].id);
+      })
+      .catch(() => setEmployees([]))
+      .finally(() => setLoadingEmployees(false));
+  }, [organizationId, paygroupId]);
 
   useEffect(() => {
     if (!organizationId) return;
@@ -81,11 +115,67 @@ export default function AddTransferPromotionEntryPage() {
       const list = res?.positions ?? [];
       setPositions(list);
       if (list.length > 0) {
-        if (!promotionFromId) setPromotionFromId(list[0].id);
         if (!promotionToId) setPromotionToId(list[0].id);
       }
     }).finally(() => setLoadingPositions(false));
   }, [organizationId]);
+
+  // Prefill Promotion From with the selected associate's current designation
+  useEffect(() => {
+    if (!associateId || !employees.length) return;
+    const emp = employees.find((e) => e.id === associateId);
+    const currentPositionId = (emp as { positionId?: string | null; position?: { id: string } })?.positionId
+      ?? (emp as { position?: { id: string } })?.position?.id;
+    if (currentPositionId) {
+      setPromotionFromId(currentPositionId);
+    }
+  }, [associateId, employees]);
+
+  // Fetch full associate detail (reportingManager, department, location) for transfer current values
+  useEffect(() => {
+    if (!associateId) {
+      setAssociateDetail(null);
+      return;
+    }
+    setLoadingAssociateDetail(true);
+    employeeService
+      .getById(associateId)
+      .then((emp) => setAssociateDetail(emp))
+      .catch(() => setAssociateDetail(null))
+      .finally(() => setLoadingAssociateDetail(false));
+  }, [associateId]);
+
+  // Load departments and locations for Transfer New Value dropdowns
+  useEffect(() => {
+    if (!organizationId) return;
+    setLoadingDepartments(true);
+    departmentService.getAll({ organizationId, isActive: true, limit: 500 }).then((res) => {
+      setDepartments(res.departments ?? []);
+    }).catch(() => setDepartments([])).finally(() => setLoadingDepartments(false));
+  }, [organizationId]);
+  useEffect(() => {
+    if (!organizationId) return;
+    setLoadingLocations(true);
+    locationService.getByOrganization(organizationId).then((list) => setLocations(list)).catch(() => setLocations([])).finally(() => setLoadingLocations(false));
+  }, [organizationId]);
+
+  // Prefill Current Value for each transfer row based on component and associate detail
+  useEffect(() => {
+    if (!associateDetail) return;
+    setTransferRows((prev) =>
+      prev.map((row) => {
+        let currentValue = '';
+        if (row.component === 'Reporting Manager' && associateDetail.reportingManager) {
+          currentValue = `${associateDetail.reportingManager.firstName} ${associateDetail.reportingManager.lastName}`.trim();
+        } else if (row.component === 'Department' && associateDetail.department) {
+          currentValue = associateDetail.department.name;
+        } else if (row.component === 'Location' && associateDetail.location) {
+          currentValue = associateDetail.location.name;
+        }
+        return { ...row, currentValue };
+      })
+    );
+  }, [associateDetail]);
 
   const handleLogout = async () => {
     await logout();
@@ -119,6 +209,23 @@ export default function AddTransferPromotionEntryPage() {
   const updateTransferRow = (id: string, field: keyof TransferRow, value: string) => {
     setTransferRows((prev) =>
       prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    );
+  };
+
+  const getCurrentValueForComponent = (component: string): string => {
+    if (!associateDetail) return '';
+    if (component === 'Reporting Manager' && associateDetail.reportingManager) {
+      return `${associateDetail.reportingManager.firstName} ${associateDetail.reportingManager.lastName}`.trim();
+    }
+    if (component === 'Department' && associateDetail.department) return associateDetail.department.name;
+    if (component === 'Location' && associateDetail.location) return associateDetail.location.name;
+    return '';
+  };
+
+  const handleTransferRowComponentChange = (rowId: string, newComponent: string) => {
+    const currentValue = getCurrentValueForComponent(newComponent);
+    setTransferRows((prev) =>
+      prev.map((r) => (r.id === rowId ? { ...r, component: newComponent, currentValue, newValue: '' } : r))
     );
   };
 
@@ -167,12 +274,12 @@ export default function AddTransferPromotionEntryPage() {
         onLogout={handleLogout}
       />
 
-      <main className="flex-1 min-h-0 overflow-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg mb-0">
-          <h1 className="text-lg font-semibold">Transfer And Promotion Entry</h1>
+      <main className="flex-1 min-h-0 overflow-auto w-full px-4 sm:px-6 lg:px-8 py-6 bg-gray-50">
+        <div className="px-4 py-3 mb-0">
+          <h1 className="text-lg font-semibold text-gray-900">Transfer And Promotion Entry</h1>
         </div>
 
-        <div className="bg-white rounded-b-lg shadow border border-t-0 border-gray-200 p-6 space-y-6">
+        <div className="bg-white rounded-lg shadow border border-gray-200 p-6 space-y-6">
           {/* Top row: Paygroup, Associate, Effective Date, Remarks */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
@@ -227,7 +334,11 @@ export default function AddTransferPromotionEntryPage() {
                     </li>
                   ))}
                   {filteredEmployees.length === 0 && (
-                    <li className="px-3 py-2 text-sm text-gray-500">No matches</li>
+                    <li className="px-3 py-2 text-sm text-gray-500">
+                      {!loadingEmployees && paygroupId && employees.length === 0
+                        ? 'No associates in this paygroup.'
+                        : 'No matches'}
+                    </li>
                   )}
                 </ul>
               )}
@@ -236,12 +347,26 @@ export default function AddTransferPromotionEntryPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Effective Date <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
-                value={effectiveDate}
-                onChange={(e) => setEffectiveDate(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-gray-900 bg-white"
-              />
+              <div
+                className="relative cursor-pointer"
+                role="button"
+                tabIndex={0}
+                onClick={() => effectiveDateInputRef.current?.showPicker?.()}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') effectiveDateInputRef.current?.showPicker?.(); }}
+              >
+                <input
+                  ref={effectiveDateInputRef}
+                  type="date"
+                  value={effectiveDate}
+                  onChange={(e) => setEffectiveDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-gray-900 bg-white cursor-pointer"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </span>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
@@ -279,7 +404,7 @@ export default function AddTransferPromotionEntryPage() {
           {/* Promotion section */}
           {promotionEnabled && (
             <div className="border-t border-gray-200 pt-4">
-              <h2 className="text-base font-semibold text-blue-600 border-b-2 border-blue-600 pb-1 inline-block mb-4">
+              <h2 className="text-base font-semibold text-gray-800 border-b-2 border-gray-300 pb-1 inline-block mb-4">
                 Promotion
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -318,7 +443,7 @@ export default function AddTransferPromotionEntryPage() {
           {/* Transfer section */}
           <div className="border-t border-gray-200 pt-4">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-blue-600 border-b-2 border-blue-600 pb-1 inline-block">
+              <h2 className="text-base font-semibold text-gray-800 border-b-2 border-gray-300 pb-1 inline-block">
                 Transfer
               </h2>
               <button
@@ -334,7 +459,7 @@ export default function AddTransferPromotionEntryPage() {
             </div>
             <div className="overflow-x-auto border border-gray-200 rounded-lg">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-blue-600 text-white">
+                <thead className="bg-gray-100 text-gray-700">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase">Component</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase">Current Value</th>
@@ -348,7 +473,7 @@ export default function AddTransferPromotionEntryPage() {
                       <td className="px-4 py-2">
                         <select
                           value={row.component}
-                          onChange={(e) => updateTransferRow(row.id, 'component', e.target.value)}
+                          onChange={(e) => handleTransferRowComponentChange(row.id, e.target.value)}
                           className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
                         >
                           {TRANSFER_COMPONENTS.map((c) => (
@@ -360,19 +485,54 @@ export default function AddTransferPromotionEntryPage() {
                         <input
                           type="text"
                           value={row.currentValue}
-                          onChange={(e) => updateTransferRow(row.id, 'currentValue', e.target.value)}
+                          readOnly
                           placeholder="Current value"
-                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
+                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-gray-50"
                         />
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="text"
-                          value={row.newValue}
-                          onChange={(e) => updateTransferRow(row.id, 'newValue', e.target.value)}
-                          placeholder="Associate Code or Associate Name"
-                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
-                        />
+                        {row.component === 'Reporting Manager' && (
+                          <select
+                            value={row.newValue}
+                            onChange={(e) => updateTransferRow(row.id, 'newValue', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
+                          >
+                            <option value="">Choose reporting manager</option>
+                            {employees
+                              .filter((e) => e.id !== associateId)
+                              .map((emp) => (
+                                <option key={emp.id} value={emp.id}>
+                                  {emp.employeeCode} – {emp.firstName} {emp.lastName}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        {row.component === 'Department' && (
+                          <select
+                            value={row.newValue}
+                            onChange={(e) => updateTransferRow(row.id, 'newValue', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
+                            disabled={loadingDepartments}
+                          >
+                            <option value="">Choose department</option>
+                            {departments.map((d) => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        )}
+                        {row.component === 'Location' && (
+                          <select
+                            value={row.newValue}
+                            onChange={(e) => updateTransferRow(row.id, 'newValue', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-900 bg-white"
+                            disabled={loadingLocations}
+                          >
+                            <option value="">Choose location</option>
+                            {locations.map((loc) => (
+                              <option key={loc.id} value={loc.id}>{loc.name}</option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-2 text-right">
                         <button

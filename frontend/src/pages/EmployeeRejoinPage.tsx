@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppHeader from '../components/layout/AppHeader';
 import Modal from '../components/common/Modal';
@@ -63,6 +63,10 @@ export default function EmployeeRejoinPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewSeparation, setViewSeparation] = useState<EmployeeSeparation | null>(null);
   const [loadingSeparation, setLoadingSeparation] = useState(false);
+  type SortKey = 'employeeCode' | 'employeeName' | 'resignationApplyDate' | 'relievingDate' | 'separationType';
+  type SortOrder = 'asc' | 'desc';
+  const [sortBy, setSortBy] = useState<SortKey>('relievingDate');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   const fetchList = async () => {
     if (!organizationId) return;
@@ -95,6 +99,35 @@ export default function EmployeeRejoinPage() {
     separationTypeFilter === 'ALL'
       ? separations
       : separations.filter((s) => s.separationType === separationTypeFilter);
+
+  const sortedSeparations = useMemo(() => {
+    const list = [...filteredSeparations];
+    const mult = sortOrder === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      let cmp = 0;
+      const codeA = a.employee?.employeeCode ?? '';
+      const codeB = b.employee?.employeeCode ?? '';
+      const nameA = a.employee ? `${a.employee.firstName} ${a.employee.lastName}`.trim() : '';
+      const nameB = b.employee ? `${b.employee.firstName} ${b.employee.lastName}`.trim() : '';
+      if (sortBy === 'employeeCode') cmp = codeA.localeCompare(codeB);
+      else if (sortBy === 'employeeName') cmp = nameA.localeCompare(nameB);
+      else if (sortBy === 'resignationApplyDate') cmp = (a.resignationApplyDate ?? '').localeCompare(b.resignationApplyDate ?? '');
+      else if (sortBy === 'relievingDate') cmp = (a.relievingDate ?? '').localeCompare(b.relievingDate ?? '');
+      else if (sortBy === 'separationType') cmp = (a.separationType ?? '').localeCompare(b.separationType ?? '');
+      return mult * cmp;
+    });
+    return list;
+  }, [filteredSeparations, sortBy, sortOrder]);
+
+  const handleSort = (key: SortKey) => {
+    setSortOrder((prev) => (sortBy === key && prev === 'asc' ? 'desc' : 'asc'));
+    setSortBy(key);
+  };
+
+  const SortIcon = ({ column }: { column: SortKey }) => {
+    if (sortBy !== column) return <span className="inline-block w-4 opacity-0 group-hover:opacity-40">↕</span>;
+    return sortOrder === 'asc' ? <span className="inline-block w-4 text-gray-700">↑</span> : <span className="inline-block w-4 text-gray-700">↓</span>;
+  };
 
   const resignationCount = separations.filter((s) => s.separationType === 'RESIGNATION').length;
   const terminationCount = separations.filter((s) => s.separationType === 'TERMINATION').length;
@@ -280,45 +313,65 @@ export default function EmployeeRejoinPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Code</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Resignation Apply Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Relieving Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Separation Type</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="w-[14%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <button type="button" onClick={() => handleSort('employeeCode')} className="inline-flex items-center gap-1 group font-medium">
+                        Employee Code <SortIcon column="employeeCode" />
+                      </button>
+                    </th>
+                    <th className="w-[20%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <button type="button" onClick={() => handleSort('employeeName')} className="inline-flex items-center gap-1 group font-medium">
+                        Employee Name <SortIcon column="employeeName" />
+                      </button>
+                    </th>
+                    <th className="w-[18%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <button type="button" onClick={() => handleSort('resignationApplyDate')} className="inline-flex items-center gap-1 group font-medium">
+                        Resignation Apply Date <SortIcon column="resignationApplyDate" />
+                      </button>
+                    </th>
+                    <th className="w-[18%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <button type="button" onClick={() => handleSort('relievingDate')} className="inline-flex items-center gap-1 group font-medium">
+                        Relieving Date <SortIcon column="relievingDate" />
+                      </button>
+                    </th>
+                    <th className="w-[16%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <button type="button" onClick={() => handleSort('separationType')} className="inline-flex items-center gap-1 group font-medium">
+                        Separation Type <SortIcon column="separationType" />
+                      </button>
+                    </th>
+                    <th className="w-[14%] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredSeparations.length === 0 ? (
+                  {sortedSeparations.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                         {searchTerm || separationTypeFilter !== 'ALL'
                           ? 'No separations found matching your filters'
                           : 'No separation records yet.'}
                       </td>
                     </tr>
                   ) : (
-                    filteredSeparations.map((row) => (
+                    sortedSeparations.map((row) => (
                       <tr key={row.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                        <td className="w-[14%] px-4 py-4 whitespace-nowrap text-sm font-mono text-gray-900 text-left truncate">
                           {row.employee?.employeeCode ?? '—'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="w-[20%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left truncate">
                           {row.employee
                             ? `${row.employee.firstName} ${row.employee.lastName}`.trim()
                             : '—'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(row.resignationApplyDate)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(row.relievingDate)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="w-[18%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left">{formatDate(row.resignationApplyDate)}</td>
+                        <td className="w-[18%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left">{formatDate(row.relievingDate)}</td>
+                        <td className="w-[16%] px-4 py-4 whitespace-nowrap text-left">
                           <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
                             {SEPARATION_TYPES.find((t) => t.value === row.separationType)?.label ?? row.separationType}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="w-[14%] px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button
                             type="button"
                             onClick={() => handleViewSeparation(row.id)}

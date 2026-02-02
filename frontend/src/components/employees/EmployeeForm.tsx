@@ -8,6 +8,7 @@ import api from '../../services/api';
 import { subDepartmentService } from '../../services/sub-department.service';
 import entityService from '../../services/entity.service';
 import locationService from '../../services/location.service';
+import { employeeSalaryService } from '../../services/payroll.service';
 import Modal from '../common/Modal';
 import DepartmentForm from '../departments/DepartmentForm';
 import PositionForm from '../positions/PositionForm';
@@ -100,6 +101,11 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [showKnownLanguageModal, setShowKnownLanguageModal] = useState(false);
 
   const [salaryTab, setSalaryTab] = useState<'earnings' | 'deductions' | 'reimbursement'>('earnings');
+  const [salaryFixedGross, setSalaryFixedGross] = useState(0);
+  const [salaryVehicleAllowances, setSalaryVehicleAllowances] = useState(0);
+  const [previousSalaryGross, setPreviousSalaryGross] = useState<number | null>(null);
+  const [salaryHistory, setSalaryHistory] = useState<Array<{ effectiveDate: string; grossSalary: number; isCurrent: boolean }>>([]);
+  const [salaryLoading, setSalaryLoading] = useState(false);
   const [othersTab, setOthersTab] = useState<'certifications' | 'knownLanguages'>('certifications');
   const [assets, setAssets] = useState<Array<{
     id: string;
@@ -437,6 +443,52 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       if (prev.some((o) => o.toLowerCase() === name.toLowerCase())) return prev;
       return [...prev, name].sort((a, b) => a.localeCompare(b));
     });
+  }, [employee?.id]);
+
+  // Load current salary, previous salary, and full salary history when editing an employee
+  useEffect(() => {
+    if (!employee?.id) {
+      setSalaryFixedGross(0);
+      setSalaryVehicleAllowances(0);
+      setPreviousSalaryGross(null);
+      setSalaryHistory([]);
+      return;
+    }
+    setSalaryLoading(true);
+    setPreviousSalaryGross(null);
+    setSalaryHistory([]);
+    Promise.all([
+      employeeSalaryService.getCurrentSalary(employee.id),
+      employeeSalaryService.getAllSalaries({ employeeId: employee.id, limit: '20' }),
+    ])
+      .then(([currentSalary, listResult]) => {
+        const current = currentSalary;
+        const list = (listResult?.data ?? []) as Array<{ id: string; effectiveDate: string; grossSalary: number; isActive?: boolean }>;
+        setSalaryFixedGross(Number(current?.grossSalary ?? 0));
+        const vehicle = current?.components && typeof current.components === 'object' && 'Vehicle Allowances' in current.components
+          ? Number((current.components as Record<string, unknown>)['Vehicle Allowances']) || 0
+          : 0;
+        setSalaryVehicleAllowances(vehicle);
+        const currentId = current?.id;
+        const previous = list.find((s) => s.id !== currentId);
+        setPreviousSalaryGross(previous != null ? Number(previous.grossSalary ?? 0) : null);
+        // Build salary log: date and salary, newest first; mark current
+        const history = list
+          .map((s) => ({
+            effectiveDate: typeof s.effectiveDate === 'string' ? s.effectiveDate.split('T')[0] : '',
+            grossSalary: Number(s.grossSalary ?? 0),
+            isCurrent: s.id === currentId,
+          }))
+          .sort((a, b) => (b.effectiveDate || '').localeCompare(a.effectiveDate || ''));
+        setSalaryHistory(history);
+      })
+      .catch(() => {
+        setSalaryFixedGross(0);
+        setSalaryVehicleAllowances(0);
+        setPreviousSalaryGross(null);
+        setSalaryHistory([]);
+      })
+      .finally(() => setSalaryLoading(false));
   }, [employee?.id]);
 
   // When employee is loaded (e.g. from getById after approval), sync academic/previous employment/family from API
@@ -791,7 +843,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       
       // Ensure dateOfJoining is set (we default to today above; this is a safety check)
       if (!submitData.dateOfJoining) {
-        setErrors({ joiningDate: 'Joining date is required' });
+        setErrors({ joiningDate: 'Joining date is required', submit: 'Please fix the errors below.' });
         setCurrentTab(initialPaygroupId ? 'company' : 'personal');
         return;
       }
@@ -832,6 +884,37 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
       if (employee) {
         await updateEmployee(employee.id, submitData);
+        // Persist Salary Details > Earnings (Fixed Gross) when user has entered values
+        const grossToSave = salaryFixedGross + salaryVehicleAllowances;
+        if (grossToSave >= 0) {
+          try {
+            const current = await employeeSalaryService.getCurrentSalary(employee.id);
+            await employeeSalaryService.updateSalary(current.id, {
+              grossSalary: grossToSave,
+              components: current.components && typeof current.components === 'object'
+                ? { ...current.components, 'Vehicle Allowances': salaryVehicleAllowances }
+                : { 'Fixed Gross': salaryFixedGross, 'Vehicle Allowances': salaryVehicleAllowances },
+            });
+          } catch (e: unknown) {
+            const status = (e as { response?: { status?: number } })?.response?.status;
+            if (status === 404 || (e as Error)?.message?.includes?.('No active salary')) {
+              // No existing salary: create one
+              const today = new Date().toISOString().split('T')[0];
+              await employeeSalaryService.createSalary({
+                employeeId: employee.id,
+                effectiveDate: today,
+                basicSalary: Math.round(grossToSave * 0.4),
+                grossSalary: grossToSave,
+                netSalary: Math.round(grossToSave * 0.75),
+                paymentFrequency: 'MONTHLY',
+                currency: 'INR',
+                components: { 'Fixed Gross': salaryFixedGross, 'Vehicle Allowances': salaryVehicleAllowances },
+              });
+            } else {
+              throw e;
+            }
+          }
+        }
         onSuccess?.();
       } else {
         const result = await createEmployee(submitData);
@@ -2257,35 +2340,113 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           </div>
 
           {salaryTab === 'earnings' && (
-            <div className="overflow-hidden border border-gray-200 rounded-md">
+            <div className="space-y-4">
+              {/* Previous salary & updated fixed gross (shown after increment) */}
+              {(previousSalaryGross != null || salaryFixedGross > 0) && !salaryLoading && (
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Salary summary</p>
+                  <div className="flex flex-wrap gap-6 text-sm">
+                    {previousSalaryGross != null && (
+                      <span className="text-gray-600">
+                        Previous salary: <span className="font-semibold text-gray-900">₹ {Number(previousSalaryGross).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </span>
+                    )}
+                    <span className="text-gray-600">
+                      Now updated fixed gross: <span className="font-semibold text-green-700">₹ {(salaryFixedGross + salaryVehicleAllowances).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Previous salary log: datewise revision — starting 15000, 01 Dec 2025 - 3000, … 02 Feb 2026 - 23000 currently */}
+              {salaryHistory.length > 0 && !salaryLoading && (() => {
+                const chronological = [...salaryHistory].sort((a, b) => (a.effectiveDate || '').localeCompare(b.effectiveDate || ''));
+                const formatRevDate = (d: string) =>
+                  d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+                return (
+                  <div className="rounded-md border border-gray-200 bg-white overflow-hidden">
+                    <p className="text-sm font-medium text-gray-700 px-4 py-2 border-b border-gray-200 bg-gray-50">Previous salary log (datewise revision)</p>
+                    <ul className="px-4 py-3 space-y-1.5 text-sm list-none">
+                      {chronological.map((row, idx) => {
+                        const prevSalary = idx > 0 ? chronological[idx - 1].grossSalary : 0;
+                        const increment = idx > 0 ? row.grossSalary - prevSalary : 0;
+                        const dateStr = formatRevDate(row.effectiveDate);
+                        const isLast = idx === chronological.length - 1;
+                        const isCurrent = row.isCurrent;
+                        if (idx === 0) {
+                          return (
+                            <li key={idx} className="text-gray-900">
+                              <span className="font-medium">starting </span>
+                              <span className="tabular-nums">{row.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            </li>
+                          );
+                        }
+                        if (isLast && isCurrent) {
+                          return (
+                            <li key={idx} className={isCurrent ? 'text-green-700 font-medium' : 'text-gray-900'}>
+                              <span className="tabular-nums">{dateStr}</span>
+                              <span className="mx-1">-</span>
+                              <span className="tabular-nums">{row.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span className="ml-1">currently</span>
+                            </li>
+                          );
+                        }
+                        return (
+                          <li key={idx} className="text-gray-900">
+                            <span className="tabular-nums">{dateStr}</span>
+                            <span className="mx-1">-</span>
+                            <span className="tabular-nums">{increment.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })()}
+
+              <div className="overflow-hidden border border-gray-200 rounded-md">
               <table className="min-w-full divide-y divide-gray-200">
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {[
-                    'Fixed Gross',
-                    'Vehicle Allowances',
-                  ].map((label) => (
-                    <tr key={label}>
-                      <td className="px-4 py-2 text-sm text-gray-700 text-left">{label}</td>
-                      <td className="px-4 py-2 text-left">:</td>
-                      <td className="px-4 py-2 text-left">
-                        <input
-                          type="number"
-                          min={0}
-                          className="block w-32 h-9 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left"
-                          defaultValue={0}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  <tr>
+                    <td className="px-4 py-2 text-sm text-gray-700 text-left">Fixed Gross</td>
+                    <td className="px-4 py-2 text-left">:</td>
+                    <td className="px-4 py-2 text-left">
+                      <input
+                        type="number"
+                        min={0}
+                        value={salaryLoading ? '' : salaryFixedGross}
+                        onChange={(e) => setSalaryFixedGross(Number(e.target.value) || 0)}
+                        className="block w-32 h-9 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left"
+                        disabled={salaryLoading}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2 text-sm text-gray-700 text-left">Vehicle Allowances</td>
+                    <td className="px-4 py-2 text-left">:</td>
+                    <td className="px-4 py-2 text-left">
+                      <input
+                        type="number"
+                        min={0}
+                        value={salaryLoading ? '' : salaryVehicleAllowances}
+                        onChange={(e) => setSalaryVehicleAllowances(Number(e.target.value) || 0)}
+                        className="block w-32 h-9 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-left"
+                        disabled={salaryLoading}
+                      />
+                    </td>
+                  </tr>
                   <tr className="bg-gray-50">
                     <td className="px-4 py-2 text-sm font-semibold text-gray-900 text-left">Total</td>
                     <td className="px-4 py-2 text-left">:</td>
                     <td className="px-4 py-2 text-left">
-                      <span className="block w-32 h-9 flex items-center text-sm font-semibold text-gray-900">0.00</span>
+                      <span className="block w-32 h-9 flex items-center text-sm font-semibold text-gray-900">
+                        {salaryLoading ? '—' : (salaryFixedGross + salaryVehicleAllowances).toFixed(2)}
+                      </span>
                     </td>
                   </tr>
                 </tbody>
               </table>
+            </div>
             </div>
           )}
 
@@ -3001,10 +3162,40 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         </div>
       )}
 
-      {/* Submit Error */}
+      {/* Submit Error + Error List */}
       {errors.submit && (
-        <div className="rounded-md bg-red-50 p-4">
-          <p className="text-sm text-red-800">{errors.submit}</p>
+        <div className="rounded-md bg-red-50 border border-red-200 p-4">
+          <p className="text-sm font-medium text-red-800">{errors.submit}</p>
+          {(() => {
+            const fieldLabels: Record<string, string> = {
+              joiningDate: 'Date of Joining',
+              dateOfJoining: 'Date of Joining',
+              departmentId: 'Department',
+              positionId: 'Designation',
+              firstName: 'First Name',
+              lastName: 'Last Name',
+              email: 'Email',
+              personalEmail: 'Personal Email',
+              phoneNumber: 'Phone Number',
+              dateOfBirth: 'Date of Birth',
+              entityId: 'Entity',
+              locationId: 'Location',
+              costCentreId: 'Cost Centre',
+              subDepartmentId: 'Sub Department',
+              newLoginEmail: 'New Login Email',
+            };
+            const fieldErrors = Object.entries(errors).filter(([k]) => k !== 'submit');
+            if (fieldErrors.length === 0) return null;
+            return (
+              <ul className="mt-3 list-disc list-inside space-y-1 text-sm text-red-700">
+                {fieldErrors.map(([key, msg]) => (
+                  <li key={key}>
+                    <span className="font-medium">{fieldLabels[key] ?? key}:</span> {msg}
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
         </div>
       )}
 

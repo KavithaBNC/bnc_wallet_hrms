@@ -24,12 +24,13 @@ export class TransferPromotionEntryService {
     const promotionFromId = data.promotionFromId && data.promotionFromId.trim() !== '' ? data.promotionFromId : null;
     const promotionToId = data.promotionToId && data.promotionToId.trim() !== '' ? data.promotionToId : null;
 
+    const effectiveDate = new Date(data.effectiveDate);
     const record = await prisma.transferPromotionEntry.create({
       data: {
         organizationId,
         employeeId,
         paygroupId,
-        effectiveDate: new Date(data.effectiveDate),
+        effectiveDate,
         remarks: data.remarks ?? undefined,
         promotionEnabled: data.promotionEnabled,
         promotionFromId,
@@ -51,6 +52,25 @@ export class TransferPromotionEntryService {
         promotionTo: { select: { id: true, title: true } },
       },
     });
+
+    // Apply changes to employee when effective date is reached (today or past)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const effectiveOnly = new Date(effectiveDate);
+    effectiveOnly.setHours(0, 0, 0, 0);
+    if (effectiveOnly <= today) {
+      const employeeUpdateData: { positionId?: string; reportingManagerId?: string | null; departmentId?: string | null; locationId?: string | null } = {};
+      if (data.promotionEnabled && promotionToId) {
+        employeeUpdateData.positionId = promotionToId;
+      }
+      await this.applyTransferComponentsToEmployee(organizationId, data.transferComponents, employeeUpdateData);
+      if (Object.keys(employeeUpdateData).length > 0) {
+        await prisma.employee.update({
+          where: { id: employeeId },
+          data: employeeUpdateData,
+        });
+      }
+    }
 
     return this.toResponse(record);
   }
@@ -182,7 +202,75 @@ export class TransferPromotionEntryService {
         promotionTo: { select: { id: true, title: true } },
       },
     });
+
+    // Apply changes to employee when effective date is reached (today or past)
+    const promotionToId = data.promotionToId ?? existing.promotionToId;
+    const effectiveDate = data.effectiveDate != null ? new Date(data.effectiveDate) : existing.effectiveDate;
+    const transferComponents = data.transferComponents !== undefined ? data.transferComponents : (existing.transferComponents as Array<{ component: string; currentValue: string; newValue: string }> | null);
+    if (effectiveDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const effectiveOnly = new Date(effectiveDate);
+      effectiveOnly.setHours(0, 0, 0, 0);
+      if (effectiveOnly <= today) {
+        const employeeUpdateData: { positionId?: string; reportingManagerId?: string | null; departmentId?: string | null; locationId?: string | null } = {};
+        if (record.promotionEnabled && promotionToId) {
+          employeeUpdateData.positionId = promotionToId;
+        }
+        await this.applyTransferComponentsToEmployee(existing.organizationId, transferComponents, employeeUpdateData);
+        if (Object.keys(employeeUpdateData).length > 0) {
+          await prisma.employee.update({
+            where: { id: existing.employeeId },
+            data: employeeUpdateData,
+          });
+        }
+      }
+    }
+
     return this.toResponse(record);
+  }
+
+  /**
+   * Apply transfer components (Reporting Manager, Department, Location) to employee update payload.
+   * Validates that newValue ids belong to the same organization.
+   */
+  private async applyTransferComponentsToEmployee(
+    organizationId: string,
+    transferComponents: Array<{ component: string; currentValue: string; newValue: string }> | null | undefined,
+    employeeUpdateData: { positionId?: string; reportingManagerId?: string | null; departmentId?: string | null; locationId?: string | null },
+  ): Promise<void> {
+    if (!transferComponents || transferComponents.length === 0) return;
+
+    for (const tc of transferComponents) {
+      const newValue = (tc.newValue || '').trim();
+      if (!newValue) continue;
+
+      if (tc.component === 'Reporting Manager') {
+        const manager = await prisma.employee.findFirst({
+          where: { id: newValue, organizationId, deletedAt: null },
+          select: { id: true },
+        });
+        if (manager) {
+          employeeUpdateData.reportingManagerId = manager.id;
+        }
+      } else if (tc.component === 'Department') {
+        const dept = await prisma.department.findFirst({
+          where: { id: newValue, organizationId },
+          select: { id: true },
+        });
+        if (dept) {
+          employeeUpdateData.departmentId = dept.id;
+        }
+      } else if (tc.component === 'Location') {
+        const loc = await prisma.location.findFirst({
+          where: { id: newValue, organizationId },
+          select: { id: true },
+        });
+        if (loc) {
+          employeeUpdateData.locationId = loc.id;
+        }
+      }
+    }
   }
 
   async delete(id: string) {

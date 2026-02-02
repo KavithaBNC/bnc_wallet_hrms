@@ -766,33 +766,33 @@ export default function EmployeesPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[14%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Employee
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[16%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Email
                     </th>
                     {isSuperAdmin && (
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Organization
                       </th>
                     )}
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Role
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Department
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[14%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Password
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[12%] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -800,7 +800,7 @@ export default function EmployeesPage() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredCredentials.length === 0 ? (
                     <tr>
-                      <td colSpan={isSuperAdmin ? 8 : 7} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={isSuperAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
                         {credentials.length === 0 ? 'No employees found' : 'No credentials match the selected filters'}
                       </td>
                     </tr>
@@ -809,25 +809,25 @@ export default function EmployeesPage() {
                       const hasNewPassword = showNewPassword && resetPasswordModal?.employeeId === cred.id;
                       return (
                         <tr key={cred.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">{cred.name}</div>
-                                <div className="text-sm text-gray-500">{cred.employeeCode}</div>
+                          <td className="w-[14%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 min-w-0">
+                            <div className="flex items-center min-w-0">
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-gray-900 truncate">{cred.name}</div>
+                                <div className="text-sm text-gray-500 truncate">{cred.employeeCode}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">{cred.email}</div>
+                          <td className="w-[16%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 min-w-0 truncate">
+                            {cred.email}
                           </td>
                           {isSuperAdmin && (
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                            <td className="w-[12%] px-4 py-4 whitespace-nowrap text-sm text-gray-700 min-w-0 truncate">
                               {(cred as { organizationName?: string }).organizationName ?? '—'}
                             </td>
                           )}
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="w-[10%] px-4 py-4 whitespace-nowrap min-w-0">
                             <div className="flex items-center space-x-2">
-                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 truncate max-w-full">
                                 {cred.role}
                               </span>
                               {(user?.role === 'ORG_ADMIN' || user?.role === 'HR_MANAGER') && (
@@ -840,7 +840,7 @@ export default function EmployeesPage() {
                                       currentRole: cred.role,
                                     });
                                   }}
-                                  className="text-blue-600 hover:text-blue-900 text-xs"
+                                  className="text-blue-600 hover:text-blue-900 text-xs flex-shrink-0"
                                   title="Change role"
                                 >
                                   ✏️
@@ -848,10 +848,10 @@ export default function EmployeesPage() {
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td className="w-[12%] px-4 py-4 whitespace-nowrap text-sm text-gray-500 min-w-0 truncate">
                             {cred.department}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="w-[10%] px-4 py-4 whitespace-nowrap min-w-0">
                             <span
                               className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                 cred.employeeStatus === 'ACTIVE'
@@ -864,18 +864,18 @@ export default function EmployeesPage() {
                               {cred.employeeStatus}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="w-[14%] px-4 py-4 whitespace-nowrap min-w-0">
                             {hasNewPassword ? (
-                              <div className="flex items-center space-x-2">
-                                <div className="flex-1 bg-green-50 border border-green-200 rounded px-2 py-1">
-                                  <p className="text-xs font-mono font-bold text-green-800">{showNewPassword}</p>
+                              <div className="flex items-center space-x-2 min-w-0">
+                                <div className="flex-1 min-w-0 bg-green-50 border border-green-200 rounded px-2 py-1">
+                                  <p className="text-xs font-mono font-bold text-green-800 truncate">{showNewPassword}</p>
                                 </div>
                                 <button
                                   onClick={() => {
                                     navigator.clipboard.writeText(showNewPassword || '');
                                     alert('Password copied!');
                                   }}
-                                  className="text-green-600 hover:text-green-700 text-xs"
+                                  className="text-green-600 hover:text-green-700 text-xs flex-shrink-0"
                                   title="Copy password"
                                 >
                                   📋
@@ -885,7 +885,7 @@ export default function EmployeesPage() {
                               <span className="text-sm text-gray-500">••••••••</span>
                             )}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <td className="w-[12%] px-4 py-4 whitespace-nowrap text-right text-sm font-medium min-w-0">
                             <button
                               onClick={() => {
                                 setResetPasswordModal({
@@ -1208,6 +1208,7 @@ export default function EmployeesPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EMP ID</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAME</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EMAIL</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Paygroup</th>
                 {user?.role === 'SUPER_ADMIN' && (
                   <>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
@@ -1224,6 +1225,7 @@ export default function EmployeesPage() {
                   <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16 animate-pulse" /></td>
                   <td className="px-6 py-4"><div className="flex items-center gap-3"><div className="h-10 w-10 bg-gray-200 rounded-full animate-pulse" /><div className="h-4 bg-gray-200 rounded w-28 animate-pulse" /></div></td>
                   <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-40 animate-pulse" /></td>
+                  <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20 animate-pulse" /></td>
                   {user?.role === 'SUPER_ADMIN' && (
                     <>
                       <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24 animate-pulse" /></td>
@@ -1344,10 +1346,10 @@ export default function EmployeesPage() {
             </div>
           </div>
           <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 table-fixed">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className={`${user?.role === 'SUPER_ADMIN' ? 'w-[10%]' : 'w-[10%]'} px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
                   <button
                     type="button"
                     onClick={() => handleSort('employeeCode')}
@@ -1357,7 +1359,7 @@ export default function EmployeesPage() {
                     <SortIcon column="employeeCode" />
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className={`${user?.role === 'SUPER_ADMIN' ? 'w-[14%]' : 'w-[24%]'} px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
                   <button
                     type="button"
                     onClick={() => handleSort('firstName')}
@@ -1367,17 +1369,20 @@ export default function EmployeesPage() {
                     <SortIcon column="firstName" />
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className={`${user?.role === 'SUPER_ADMIN' ? 'w-[14%]' : 'w-[24%]'} px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
                   EMAIL
+                </th>
+                <th className={`${user?.role === 'SUPER_ADMIN' ? 'w-[12%]' : 'w-[14%]'} px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
+                  Paygroup
                 </th>
                 {user?.role === 'SUPER_ADMIN' && (
                   <>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entity</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                    <th className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
+                    <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entity</th>
+                    <th className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                   </>
                 )}
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[12%] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -1385,7 +1390,7 @@ export default function EmployeesPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {employees.length === 0 ? (
                 <tr>
-                  <td colSpan={user?.role === 'SUPER_ADMIN' ? 7 : 4} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={user?.role === 'SUPER_ADMIN' ? 8 : 5} className="px-4 py-8 text-center text-gray-500">
                     {searchTerm || statusFilter !== 'ACTIVE' || departmentFilter !== 'ALL' || positionFilter !== 'ALL'
                       ? 'No employees found matching your filters'
                       : 'No employees yet. Create your first employee!'}
@@ -1394,35 +1399,38 @@ export default function EmployeesPage() {
               ) : (
                 employees.map((emp) => (
                   <tr key={emp.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-mono text-gray-900">{emp.employeeCode}</span>
+                    <td className="w-[10%] px-4 py-4 whitespace-nowrap text-sm font-mono text-gray-900 text-left truncate min-w-0">
+                      {emp.employeeCode}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
+                    <td className={`${user?.role === 'SUPER_ADMIN' ? 'w-[14%]' : 'w-[24%]'} px-4 py-4 whitespace-nowrap text-left min-w-0`}>
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-medium text-sm ${getAvatarColor(emp.firstName + ' ' + emp.lastName)}`}>
                           {emp.firstName?.[0] || ''}{emp.lastName?.[0] || ''}
                         </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-900 truncate">
                             {emp.firstName} {emp.lastName}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 truncate">
                             {emp.position?.title || '—'}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className={`${user?.role === 'SUPER_ADMIN' ? 'w-[14%]' : 'w-[24%]'} px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left truncate min-w-0`}>
                       {emp.email}
+                    </td>
+                    <td className={`${user?.role === 'SUPER_ADMIN' ? 'w-[12%]' : 'w-[14%]'} px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left truncate min-w-0`}>
+                      {emp.paygroup?.name ?? '—'}
                     </td>
                     {user?.role === 'SUPER_ADMIN' && (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.organization?.name ?? '—'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.entity?.name ?? '—'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.location?.name ?? '—'}</td>
+                        <td className="w-[12%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left truncate min-w-0">{emp.organization?.name ?? '—'}</td>
+                        <td className="w-[10%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left truncate min-w-0">{emp.entity?.name ?? '—'}</td>
+                        <td className="w-[10%] px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-left truncate min-w-0">{emp.location?.name ?? '—'}</td>
                       </>
                     )}
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td className="w-[12%] px-4 py-4 whitespace-nowrap text-right text-sm font-medium min-w-0">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"

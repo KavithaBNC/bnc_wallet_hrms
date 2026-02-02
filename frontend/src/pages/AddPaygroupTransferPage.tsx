@@ -148,8 +148,8 @@ export default function AddPaygroupTransferPage() {
           </ol>
         </nav>
 
-        <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg mb-0">
-          <h1 className="text-lg font-semibold">Pay Group Transfer</h1>
+        <div className="bg-white border border-gray-200 border-b-0 rounded-t-lg px-4 py-3 mb-0 shadow-sm">
+          <h1 className="text-lg font-semibold text-gray-900">Pay Group Transfer</h1>
         </div>
 
         <form onSubmit={handleSave} className="bg-white rounded-b-lg shadow border border-t-0 border-gray-200 p-6 space-y-6">
@@ -252,7 +252,7 @@ export default function AddPaygroupTransferPage() {
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition text-sm font-medium"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition text-sm font-medium"
             >
               {saving ? (
                 'Saving...'

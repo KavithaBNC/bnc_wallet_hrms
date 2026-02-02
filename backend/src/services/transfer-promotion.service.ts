@@ -2,8 +2,14 @@ import { prisma } from '../utils/prisma';
 import { CreateTransferPromotionInput, QueryTransferPromotionsInput, UpdateTransferPromotionInput } from '../utils/transfer-promotion.validation';
 import { AppError } from '../middlewares/errorHandler';
 import { Prisma } from '@prisma/client';
+import { employeeSalaryService } from './employee-salary.service';
 
 export class TransferPromotionService {
+  private totalIncrementFromComponents(components: Array<{ incrementValue?: number }> | null | undefined): number {
+    if (!Array.isArray(components) || components.length === 0) return 0;
+    return components.reduce((sum, c) => sum + (Number(c.incrementValue) || 0), 0);
+  }
+
   async create(data: CreateTransferPromotionInput) {
     const organizationId = data.organizationId;
     const employeeId = data.employeeId;
@@ -16,9 +22,7 @@ export class TransferPromotionService {
       throw new AppError('Employee not found in this organization', 404);
     }
 
-    const paygroupId = data.paygroupId && data.paygroupId !== 'staff'
-      ? data.paygroupId
-      : null;
+    const paygroupId = data.paygroupId || null;
 
     const effectiveDate = new Date(data.effectiveDate);
     const incrementFrom = data.incrementFrom ? new Date(data.incrementFrom) : null;
@@ -50,6 +54,22 @@ export class TransferPromotionService {
         paygroup: { select: { id: true, name: true } },
       },
     });
+
+    // Apply increment to employee salary: new fixed gross in salary details, previous preserved as history
+    if (data.isIncrement && data.incrementComponents?.length) {
+      const totalIncrement = this.totalIncrementFromComponents(data.incrementComponents);
+      if (totalIncrement > 0) {
+        try {
+          await employeeSalaryService.applyIncrementFromTransferPromotion(
+            employeeId,
+            data.effectiveDate,
+            totalIncrement
+          );
+        } catch (_) {
+          // Non-fatal: transfer promotion record is saved; salary update can be retried
+        }
+      }
+    }
 
     return this.toResponse(record);
   }
@@ -132,7 +152,7 @@ export class TransferPromotionService {
     }
     const updateData: Prisma.TransferPromotionUpdateInput = {};
     if (data.paygroupId !== undefined) {
-      if (data.paygroupId && data.paygroupId !== 'staff') {
+      if (data.paygroupId) {
         updateData.paygroup = {
           connect: { id: data.paygroupId },
         };
@@ -174,6 +194,24 @@ export class TransferPromotionService {
         paygroup: { select: { id: true, name: true } },
       },
     });
+
+    // Apply increment to employee salary on update (same as create)
+    if (data.isIncrement && data.incrementComponents?.length && existing.employeeId) {
+      const totalIncrement = this.totalIncrementFromComponents(data.incrementComponents);
+      if (totalIncrement > 0) {
+        const effectiveDateStr = data.effectiveDate ?? (existing.effectiveDate instanceof Date ? existing.effectiveDate.toISOString().slice(0, 10) : String(existing.effectiveDate).slice(0, 10));
+        try {
+          await employeeSalaryService.applyIncrementFromTransferPromotion(
+            existing.employeeId,
+            effectiveDateStr,
+            totalIncrement
+          );
+        } catch (_) {
+          // Non-fatal
+        }
+      }
+    }
+
     return this.toResponse(record);
   }
 

@@ -119,18 +119,31 @@ export class EmployeeService {
     let employeeCode: string;
     
     if (data.employeeCode) {
-      // User provided code - check if it's unique
-      employeeCode = data.employeeCode;
+      // User provided code - check if it's unique and not retired
+      employeeCode = data.employeeCode.trim();
       const existingCode = await prisma.employee.findUnique({
         where: { employeeCode },
       });
-
       if (existingCode) {
         throw new AppError('Employee code already exists', 400);
+      }
+      const isRetired = await prisma.retiredEmployeeCode.findUnique({
+        where: {
+          organizationId_code: { organizationId: data.organizationId, code: employeeCode },
+        },
+      });
+      if (isRetired) {
+        throw new AppError('This employee code was previously assigned and cannot be reused', 400);
       }
     } else {
       // Try org-level prefix + next number first; else fallback to legacy EMP00001 format
       let generatedCode: string | null | undefined = await this.reserveNextEmployeeCode(data.organizationId);
+      if (generatedCode) {
+        const isRetired = await prisma.retiredEmployeeCode.findUnique({
+          where: { organizationId_code: { organizationId: data.organizationId, code: generatedCode } },
+        });
+        if (isRetired) generatedCode = null; // fall through to loop to get a different code
+      }
       if (!generatedCode) {
         let attempts = 0;
         const maxAttempts = 10;
@@ -139,14 +152,20 @@ export class EmployeeService {
           const existingCode = await prisma.employee.findUnique({
             where: { employeeCode: generatedCode },
           });
-          if (!existingCode) break;
+          const retiredCode = await prisma.retiredEmployeeCode.findUnique({
+            where: { organizationId_code: { organizationId: data.organizationId, code: generatedCode } },
+          });
+          if (!existingCode && !retiredCode) break;
           attempts++;
           if (attempts >= maxAttempts) {
             generatedCode = `EMP${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
             const finalCheck = await prisma.employee.findUnique({
               where: { employeeCode: generatedCode },
             });
-            if (!finalCheck) break;
+            const finalRetired = await prisma.retiredEmployeeCode.findUnique({
+              where: { organizationId_code: { organizationId: data.organizationId, code: generatedCode } },
+            });
+            if (!finalCheck && !finalRetired) break;
             throw new AppError('Failed to generate unique employee code after multiple attempts', 500);
           }
           await new Promise((resolve) => setTimeout(resolve, 10));
@@ -587,6 +606,10 @@ export class EmployeeService {
       where.positionId = query.positionId;
     }
 
+    if (query.paygroupId) {
+      where.paygroupId = query.paygroupId;
+    }
+
     if (query.reportingManagerId) {
       where.reportingManagerId = query.reportingManagerId;
     }
@@ -631,7 +654,7 @@ export class EmployeeService {
 
     const listView = (query as QueryEmployeesInput & { listView?: string }).listView === 'true';
 
-    // List view: minimal relations (department, position, organization, entity, location for Super Admin)
+    // List view: minimal relations (department, position, organization, entity, location, paygroup for Super Admin)
     if (listView) {
       queryConfig.include = {
         department: { select: { id: true, name: true } },
@@ -639,6 +662,7 @@ export class EmployeeService {
         organization: { select: { id: true, name: true } },
         entity: { select: { id: true, name: true, code: true } },
         location: { select: { id: true, name: true, code: true } },
+        paygroup: { select: { id: true, name: true, code: true } },
       };
     } else if (selectFields) {
       // Use select if provided (RBAC optimization)
@@ -658,6 +682,7 @@ export class EmployeeService {
         organization: { select: { id: true, name: true } },
         department: { select: { id: true, name: true, code: true } },
         position: { select: { id: true, title: true, code: true, level: true } },
+        paygroup: { select: { id: true, name: true, code: true } },
         reportingManager: {
           select: { id: true, employeeCode: true, firstName: true, lastName: true, email: true },
         },
@@ -811,14 +836,35 @@ export class EmployeeService {
       throw new AppError('Employee not found', 404);
     }
 
-    // Check if employee code is unique (if changed)
+    // Check if employee code is unique and not retired (if changed)
     if (data.employeeCode && data.employeeCode !== existing.employeeCode) {
       const duplicate = await prisma.employee.findUnique({
         where: { employeeCode: data.employeeCode },
       });
-
       if (duplicate) {
         throw new AppError('Employee code already exists', 400);
+      }
+      const isRetired = await prisma.retiredEmployeeCode.findUnique({
+        where: {
+          organizationId_code: { organizationId: existing.organizationId, code: data.employeeCode.trim() },
+        },
+      });
+      if (isRetired) {
+        throw new AppError('This employee code was previously assigned and cannot be reused', 400);
+      }
+    }
+
+    // When changing code, retire the old code so it is never assigned to anyone else
+    if (data.employeeCode && data.employeeCode.trim() !== existing.employeeCode) {
+      const oldCode = existing.employeeCode.trim();
+      if (oldCode) {
+        await prisma.retiredEmployeeCode.upsert({
+          where: {
+            organizationId_code: { organizationId: existing.organizationId, code: oldCode },
+          },
+          create: { organizationId: existing.organizationId, code: oldCode },
+          update: {},
+        });
       }
     }
 

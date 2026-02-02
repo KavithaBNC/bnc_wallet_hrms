@@ -54,8 +54,22 @@ model Organization {
   employeeSeparations  EmployeeSeparation[]
   transferPromotionEntries TransferPromotionEntry[]
   transferPromotions      TransferPromotion[]
+  retiredEmployeeCodes   RetiredEmployeeCode[]
 
   @@map("organizations")
+}
+
+// Codes that were previously assigned and must not be reused (per organization)
+model RetiredEmployeeCode {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  code           String   @db.VarChar(50)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@map("retired_employee_codes")
 }
 
 // Per-organization enabled modules (SAP-style: Super Admin assigns which modules each org gets)

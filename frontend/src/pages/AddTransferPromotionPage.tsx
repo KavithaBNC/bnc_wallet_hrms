@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
@@ -10,6 +10,10 @@ import type { Paygroup } from '../services/paygroup.service';
 import type { Employee } from '../services/employee.service';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
 
 interface IncrementRow {
   component: string;
@@ -31,7 +35,7 @@ export default function AddTransferPromotionPage() {
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(isEdit);
 
-  const [paygroupId, setPaygroupId] = useState('staff');
+  const [paygroupId, setPaygroupId] = useState('');
   const [associateId, setAssociateId] = useState('');
   const [effectiveDate, setEffectiveDate] = useState('2026-01-01');
   const [incrementEnabled, setIncrementEnabled] = useState(true);
@@ -46,23 +50,44 @@ export default function AddTransferPromotionPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const effectiveDateInputRef = useRef<HTMLInputElement>(null);
+  const incrementFromInputRef = useRef<HTMLInputElement>(null);
+
+  // Paygroup dropdown from paygroup master only (no hardcoding)
   useEffect(() => {
     if (!organizationId) return;
     setLoadingPaygroups(true);
     paygroupService.getAll({ organizationId }).then((list) => {
       setPaygroups(list);
-      if (list.length > 0) setPaygroupId(list[0].id);
+      if (list.length > 0 && !isEdit) setPaygroupId(list[0].id);
     }).finally(() => setLoadingPaygroups(false));
-  }, [organizationId]);
+  }, [organizationId, isEdit]);
 
+  // Associate dropdown: load employees by selected paygroup only
   useEffect(() => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      setEmployees([]);
+      if (!isEdit) setAssociateId('');
+      return;
+    }
+    if (!paygroupId) {
+      setEmployees([]);
+      if (!isEdit) setAssociateId('');
+      return;
+    }
     setLoadingEmployees(true);
-    employeeService.getAll({ organizationId, page: 1, limit: 500 }).then((res) => {
+    if (!isEdit) setAssociateId('');
+    employeeService.getAll({
+      organizationId,
+      paygroupId,
+      page: 1,
+      limit: 500,
+      employeeStatus: 'ACTIVE',
+    }).then((res) => {
       setEmployees(res.employees || []);
-      if (res.employees?.length && !associateId && !isEdit) setAssociateId(res.employees[0].id);
-    }).finally(() => setLoadingEmployees(false));
-  }, [organizationId]);
+      if (res.employees?.length && !isEdit) setAssociateId(res.employees[0].id);
+    }).catch(() => setEmployees([])).finally(() => setLoadingEmployees(false));
+  }, [organizationId, paygroupId, isEdit]);
 
   // Load existing record when editing
   useEffect(() => {
@@ -74,7 +99,7 @@ export default function AddTransferPromotionPage() {
     transferPromotionService
       .getById(recordId)
       .then((record) => {
-        setPaygroupId(record.paygroupId && record.paygroupId !== 'staff' ? record.paygroupId : 'staff');
+        setPaygroupId(record.paygroupId || '');
         setAssociateId(record.employeeId);
         setEffectiveDate(record.effectiveDate || '2026-01-01');
         setIncrementEnabled(record.isIncrement);
@@ -151,8 +176,7 @@ export default function AddTransferPromotionPage() {
     setSaveError(null);
     setSaving(true);
     try {
-      const paygroupIdValue =
-        paygroupId && paygroupId !== 'staff' ? paygroupId : null;
+      const paygroupIdValue = paygroupId || null;
       if (isEdit && recordId) {
         await transferPromotionService.update(recordId, {
           paygroupId: paygroupIdValue,
@@ -209,8 +233,8 @@ export default function AddTransferPromotionPage() {
       />
 
       <main className="flex-1 min-h-0 overflow-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg mb-0">
-          <h1 className="text-lg font-semibold">{isEdit ? 'Edit' : 'Transfer and Promotion'}</h1>
+        <div className="px-4 py-3 mb-0">
+          <h1 className="text-lg font-semibold text-gray-900">{isEdit ? 'Edit Increment' : 'Increment'}</h1>
         </div>
 
         {/* Form card */}
@@ -230,7 +254,7 @@ export default function AddTransferPromotionPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 bg-white"
                   disabled={loadingPaygroups}
                 >
-                  <option value="staff">Staff</option>
+                  <option value="">Select paygroup</option>
                   {paygroups.map((pg) => (
                     <option key={pg.id} value={pg.id}>{pg.name}</option>
                   ))}
@@ -253,25 +277,32 @@ export default function AddTransferPromotionPage() {
                   <option value="">Select associate</option>
                   {employees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
-                      {emp.firstName} {emp.middleName || ''} {emp.lastName} {emp.employeeCode || ''}
+                      {[emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ')} {emp.employeeCode || ''}
                     </option>
                   ))}
-                  {!loadingEmployees && employees.length === 0 && (
-                    <option value="">Kavitha Selvaraj B259</option>
-                  )}
                 </select>
+                {!loadingEmployees && paygroupId && employees.length === 0 && (
+                  <p className="text-amber-600 text-xs mt-1">No associates in this paygroup.</p>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Effective Date <span className="text-red-500">*</span>
                 </label>
-                <div className="relative">
+                <div
+                  className="relative cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => effectiveDateInputRef.current?.showPicker?.()}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') effectiveDateInputRef.current?.showPicker?.(); }}
+                >
                   <input
+                    ref={effectiveDateInputRef}
                     type="date"
                     value={effectiveDate}
                     onChange={(e) => setEffectiveDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-gray-900 bg-white"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-gray-900 bg-white cursor-pointer"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -298,7 +329,7 @@ export default function AddTransferPromotionPage() {
                     type="button"
                     onClick={() => setIncrementEnabled(true)}
                     className={`px-4 py-2 rounded-lg font-medium text-sm ${
-                      incrementEnabled ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
+                      incrementEnabled ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-600'
                     }`}
                   >
                     YES
@@ -340,13 +371,20 @@ export default function AddTransferPromotionPage() {
                   <div className="p-4 space-y-4 border-t border-gray-200">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Increment From</label>
-                      <div className="relative">
+                      <div
+                        className="relative cursor-pointer"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => incrementFromInputRef.current?.showPicker?.()}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') incrementFromInputRef.current?.showPicker?.(); }}
+                      >
                         <input
+                          ref={incrementFromInputRef}
                           type="date"
                           value={incrementFrom}
                           onChange={(e) => setIncrementFrom(e.target.value)}
                           placeholder="Increment From"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-gray-900 bg-white placeholder-gray-400"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-gray-900 bg-white placeholder-gray-400 cursor-pointer"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -398,10 +436,14 @@ export default function AddTransferPromotionPage() {
                           {incrementRows.map((row, index) => (
                             <tr key={row.component}>
                               <td className="px-4 py-2 text-sm text-gray-900">{row.component}</td>
-                              <td className="px-4 py-2 text-sm text-gray-900 text-right">
+                              <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
                                 {salaryLoading && row.component === 'Fixed Gross'
                                   ? 'Loading…'
-                                  : row.currentValue.toFixed(2)}
+                                  : row.component === 'Fixed Gross'
+                                    ? row.currentValue > 0
+                                      ? `₹ ${formatCurrency(row.currentValue)}`
+                                      : '— No salary assigned'
+                                    : formatCurrency(row.currentValue)}
                               </td>
                               <td className="px-4 py-2 text-right">
                                 <input
@@ -415,7 +457,7 @@ export default function AddTransferPromotionPage() {
                           ))}
                           <tr className="bg-gray-50 font-medium">
                             <td className="px-4 py-2 text-sm text-gray-900">Total</td>
-                            <td className="px-4 py-2 text-sm text-gray-900 text-right">{totalCurrent.toFixed(0)}</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">₹ {formatCurrency(totalCurrent)}</td>
                             <td className="px-4 py-2 text-sm text-gray-900 text-right">{totalIncrement}</td>
                           </tr>
                         </tbody>
@@ -450,7 +492,7 @@ export default function AddTransferPromotionPage() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50"
             >
               {saving ? (
                 <>

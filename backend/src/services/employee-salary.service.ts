@@ -384,6 +384,51 @@ export class EmployeeSalaryService {
   }
 
   /**
+   * Apply increment from Transfer & Promotion: create new salary record with updated gross
+   * (fixed gross = current + increment). Previous salary is deactivated so history is preserved.
+   * Employee form salary details tab will show new salary as current; past salaries remain in list.
+   */
+  async applyIncrementFromTransferPromotion(
+    employeeId: string,
+    effectiveDate: string,
+    totalIncrement: number
+  ) {
+    if (totalIncrement <= 0) return null;
+    let current;
+    try {
+      current = await this.getCurrentSalary(employeeId);
+    } catch {
+      return null; // No active salary – skip applying increment
+    }
+    const currentGross = Number(current.grossSalary);
+    const currentBasic = Number(current.basicSalary);
+    const currentNet = Number(current.netSalary);
+    const newGross = currentGross + totalIncrement;
+    const newBasic = currentBasic + totalIncrement; // simplified: add full increment to basic
+    const newNet = currentNet + totalIncrement; // simplified: add full increment to net
+    await prisma.employeeSalary.updateMany({
+      where: { employeeId, isActive: true },
+      data: { isActive: false },
+    });
+    const salary = await prisma.employeeSalary.create({
+      data: {
+        employeeId,
+        salaryStructureId: current.salaryStructureId,
+        effectiveDate: new Date(effectiveDate),
+        basicSalary: new Prisma.Decimal(newBasic),
+        grossSalary: new Prisma.Decimal(newGross),
+        netSalary: new Prisma.Decimal(newNet),
+        components: (current.components as object) || {},
+        currency: current.currency,
+        paymentFrequency: current.paymentFrequency,
+        bankAccountId: current.bankAccountId,
+        isActive: true,
+      },
+    });
+    return salary;
+  }
+
+  /**
    * Update employee salary
    */
   async updateSalary(id: string, data: UpdateEmployeeSalaryInput) {

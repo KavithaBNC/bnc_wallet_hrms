@@ -105,6 +105,11 @@ export interface Employee {
     code?: string | null;
     entityId?: string;
   };
+  paygroup?: {
+    id: string;
+    name: string;
+    code?: string | null;
+  };
   subordinates?: Array<{
     id: string;
     employeeCode: string;
@@ -139,6 +144,7 @@ export interface EmployeeListResponse {
 
 export interface EmployeeQuery {
   organizationId?: string;
+  paygroupId?: string;
   departmentId?: string;
   positionId?: string;
   reportingManagerId?: string;
