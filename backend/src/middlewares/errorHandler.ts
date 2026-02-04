@@ -55,6 +55,13 @@ export const errorHandler = (
   // Production error response
   // Operational, trusted error: send message to client
   if (err.isOperational) {
+    // Reduce log noise for 4xx errors (client errors like 400, 401, 403, 404)
+    if (err.statusCode >= 400 && err.statusCode < 500) {
+      logger.warn(`${err.status.toUpperCase()} ${err.statusCode}: ${err.message}`);
+    } else {
+      logger.error('ERROR 💥', err);
+    }
+
     res.status(err.statusCode).json({
       status: err.status,
       message: err.message,

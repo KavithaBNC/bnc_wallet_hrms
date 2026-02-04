@@ -151,7 +151,7 @@ export default function ShiftMasterFormPage() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="e.g. GS"
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -163,7 +163,7 @@ export default function ShiftMasterFormPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. General Shift"
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -174,7 +174,7 @@ export default function ShiftMasterFormPage() {
             type="time"
             value={fromTime}
             onChange={(e) => setFromTime(e.target.value)}
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -185,7 +185,7 @@ export default function ShiftMasterFormPage() {
             type="time"
             value={toTime}
             onChange={(e) => setToTime(e.target.value)}
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -196,7 +196,7 @@ export default function ShiftMasterFormPage() {
             type="time"
             value={firstHalfEnd}
             onChange={(e) => setFirstHalfEnd(e.target.value)}
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -207,7 +207,7 @@ export default function ShiftMasterFormPage() {
             type="time"
             value={secondHalfStart}
             onChange={(e) => setSecondHalfStart(e.target.value)}
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -218,7 +218,7 @@ export default function ShiftMasterFormPage() {
             type="time"
             value={punchInTime}
             onChange={(e) => setPunchInTime(e.target.value)}
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -229,7 +229,7 @@ export default function ShiftMasterFormPage() {
             type="time"
             value={punchOutTime}
             onChange={(e) => setPunchOutTime(e.target.value)}
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
         <div className="flex items-baseline gap-2">
@@ -264,7 +264,7 @@ export default function ShiftMasterFormPage() {
           <select
             value={flexiType}
             onChange={(e) => setFlexiType(e.target.value)}
-            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           >
             {FLEXI_TYPE_OPTIONS.map((opt) => (
               <option key={opt.value || 'empty'} value={opt.value}>

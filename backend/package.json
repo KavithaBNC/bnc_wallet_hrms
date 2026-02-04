@@ -33,7 +33,9 @@
     "mark:december": "ts-node -r tsconfig-paths/register src/scripts/mark-december-present.ts",
     "assign:salary": "ts-node -r tsconfig-paths/register src/scripts/assign-salary-to-mani-saravanan.ts",
     "migrate:sub-department": "ts-node -r tsconfig-paths/register src/scripts/run-sub-department-migration.ts",
-    "seed:dept-subdept": "ts-node -r tsconfig-paths/register src/scripts/seed-department-subdepartment.ts"
+    "seed:dept-subdept": "ts-node -r tsconfig-paths/register src/scripts/seed-department-subdepartment.ts",
+    "test:iclock": "ts-node -r tsconfig-paths/register src/scripts/test-iclock-local.ts",
+    "check:attendance-log": "ts-node -r tsconfig-paths/register src/scripts/check-latest-attendance-log.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

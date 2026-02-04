@@ -179,10 +179,10 @@ export default function ShiftAssignFormPage() {
         </nav>
 
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="bg-gray-700 px-6 py-4">
-            <h1 className="text-lg font-semibold text-white">Assign</h1>
+          <div className="bg-white px-6 py-4 border-b border-gray-200">
+            <h1 className="text-lg font-semibold text-black">Assign</h1>
           </div>
-          <div className="p-6">
+          <div className="p-6 !bg-white">
             {loading ? (
               <div className="py-8 text-center text-gray-500">Loading...</div>
             ) : (
@@ -197,7 +197,7 @@ export default function ShiftAssignFormPage() {
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       placeholder="e.g. House Keeping"
-                      className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                      className="flex-1 rounded border border-gray-300 !bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80"
                     />
                   </div>
                   <div className="sm:col-span-2 flex items-start gap-2">
@@ -205,7 +205,7 @@ export default function ShiftAssignFormPage() {
                       Associate
                     </label>
                     <div className="flex-1 space-y-2">
-                      <div className="flex flex-wrap gap-2 min-h-[2.5rem] rounded border border-gray-300 px-3 py-2 bg-white">
+                      <div className="flex flex-wrap gap-2 min-h-[2.5rem] rounded border border-gray-300 px-3 py-2 !bg-white">
                         {selectedEmployees.map((emp) => (
                           <span
                             key={emp.id}
@@ -230,7 +230,7 @@ export default function ShiftAssignFormPage() {
                           }}
                           onFocus={() => setShowAssociateDropdown(true)}
                           placeholder="Search and add associates..."
-                          className="min-w-[140px] flex-1 border-0 p-0 text-sm focus:ring-0 focus:outline-none"
+                          className="min-w-[140px] flex-1 border-0 !bg-white p-0 text-sm text-black placeholder:text-black placeholder:opacity-80 focus:ring-0 focus:outline-none"
                         />
                       </div>
                       {showAssociateDropdown && (
@@ -259,7 +259,7 @@ export default function ShiftAssignFormPage() {
                     <select
                       value={paygroupId}
                       onChange={(e) => setPaygroupId(e.target.value)}
-                      className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                      className="flex-1 rounded border border-gray-300 !bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80"
                     >
                       <option value="">-- Select --</option>
                       {paygroups.map((pg) => (
@@ -274,7 +274,7 @@ export default function ShiftAssignFormPage() {
                     <select
                       value={departmentId}
                       onChange={(e) => setDepartmentId(e.target.value)}
-                      className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                      className="flex-1 rounded border border-gray-300 !bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80"
                     >
                       <option value="">-- Select --</option>
                       {departments.map((d) => (
@@ -291,7 +291,7 @@ export default function ShiftAssignFormPage() {
                       value={priority}
                       onChange={(e) => setPriority(e.target.value)}
                       placeholder="(Auto)"
-                      className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                      className="flex-1 rounded border border-gray-300 !bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80"
                     />
                   </div>
                   <div className="flex items-baseline gap-2">
@@ -302,7 +302,7 @@ export default function ShiftAssignFormPage() {
                       type="date"
                       value={effectiveDate}
                       onChange={(e) => setEffectiveDate(e.target.value)}
-                      className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                      className="flex-1 rounded border border-gray-300 !bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80"
                     />
                   </div>
                   <div className="flex items-baseline gap-2">
@@ -312,7 +312,7 @@ export default function ShiftAssignFormPage() {
                     <select
                       value={shiftId}
                       onChange={(e) => setShiftId(e.target.value)}
-                      className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                      className="flex-1 rounded border border-gray-300 !bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80"
                     >
                       <option value="">-- Select --</option>
                       {shifts.map((s) => (
@@ -329,7 +329,7 @@ export default function ShiftAssignFormPage() {
                       value={remarks}
                       onChange={(e) => setRemarks(e.target.value)}
                       placeholder="Remarks"
-                      className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                      className="flex-1 rounded border border-gray-300 !bg-white px-3 py-2 text-sm text-black placeholder:text-black placeholder:opacity-80"
                     />
                   </div>
                 </div>

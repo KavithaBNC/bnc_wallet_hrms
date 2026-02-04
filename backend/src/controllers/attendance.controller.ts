@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { attendanceService } from '../services/attendance.service';
+import { biometricSyncService } from '../services/biometric-sync.service';
 import { prisma } from '../utils/prisma';
 
 export class AttendanceController {
@@ -156,6 +157,34 @@ export class AttendanceController {
 
       return res.status(200).json({
         status: 'success',
+        data: result,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Sync biometric (eSSL) attendance
+   * POST /api/v1/attendance/sync/biometric
+   */
+  async syncBiometric(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, fromDate, toDate } = req.body as {
+        organizationId: string;
+        fromDate: string;
+        toDate: string;
+      };
+
+      const result = await biometricSyncService.syncBiometricFromEssl(
+        organizationId,
+        fromDate,
+        toDate
+      );
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Biometric sync completed',
         data: result,
       });
     } catch (error) {

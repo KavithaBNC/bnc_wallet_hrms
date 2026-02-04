@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { attendanceService } from '../services/attendance.service';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, getDay } from 'date-fns';
@@ -222,12 +223,18 @@ const AttendancePage = () => {
   const [viewMode, setViewMode] = useState<'team' | 'my'>('team'); // For managers to toggle view
   const [displayMode, setDisplayMode] = useState<'table' | 'calendar'>('calendar'); // Table or Calendar view
   const [currentMonth, setCurrentMonth] = useState(new Date()); // Current month for calendar
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncFromDate, setSyncFromDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [syncToDate, setSyncToDate] = useState(() => format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ synced: number; created: number; updated: number; skipped: number; errors: { employeeCode: string; date: string; message: string }[] } | null>(null);
   
   // Check if user is a manager
   const isManager = user?.role === 'MANAGER';
   const isHRManager = user?.role === 'HR_MANAGER';
   const isOrgAdmin = user?.role === 'ORG_ADMIN';
   const canViewTeamAttendance = isManager || isHRManager || isOrgAdmin;
+  const canSyncBiometric = isHRManager || isOrgAdmin || user?.role === 'SUPER_ADMIN';
 
   // Load user data if not available
   useEffect(() => {
@@ -435,6 +442,35 @@ const AttendancePage = () => {
     navigate('/login');
   };
 
+  const handleSyncBiometric = async () => {
+    const orgId = user?.employee?.organizationId || user?.employee?.organization?.id;
+    if (!orgId) {
+      setError('Organization not found.');
+      return;
+    }
+    try {
+      setSyncing(true);
+      setSyncResult(null);
+      const result = await attendanceService.syncBiometric(orgId, syncFromDate, syncToDate);
+      setSyncResult(result);
+      await fetchRecords();
+      if (viewMode === 'my') await fetchMyRecords();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Sync failed';
+      setError(msg);
+      setSyncResult(null);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const openSyncModal = () => {
+    setSyncFromDate(format(startOfMonth(currentMonth), 'yyyy-MM-dd'));
+    setSyncToDate(format(endOfMonth(currentMonth), 'yyyy-MM-dd'));
+    setSyncResult(null);
+    setShowSyncModal(true);
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-gray-100">
       <AppHeader
@@ -492,6 +528,14 @@ const AttendancePage = () => {
                   : 'My Attendance Records'}
               </h2>
               <div className="flex items-center space-x-4">
+                {canSyncBiometric && (
+                  <button
+                    onClick={openSyncModal}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 transition"
+                  >
+                    Sync eSSL
+                  </button>
+                )}
                 {/* View Toggle: Table or Calendar */}
                 <div className="flex bg-gray-100 rounded-lg p-1">
                   <button
@@ -638,6 +682,69 @@ const AttendancePage = () => {
             </div>
           )}
         </div>
+
+        {/* Sync eSSL Biometric Modal */}
+        {showSyncModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSyncModal(false)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Sync eSSL Biometric</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Pull attendance from eSSL Cloud for the selected date range. Employee codes in eSSL must match HRMS employee codes.
+              </p>
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">From date</label>
+                  <input
+                    type="date"
+                    value={syncFromDate}
+                    onChange={(e) => setSyncFromDate(e.target.value)}
+                    className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">To date</label>
+                  <input
+                    type="date"
+                    value={syncToDate}
+                    onChange={(e) => setSyncToDate(e.target.value)}
+                    className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                  />
+                </div>
+              </div>
+              {syncResult && (
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+                  <p className="font-medium text-gray-900">Synced: {syncResult.synced} (created: {syncResult.created}, updated: {syncResult.updated})</p>
+                  {syncResult.skipped > 0 && <p className="text-gray-600">Skipped: {syncResult.skipped}</p>}
+                  {syncResult.errors.length > 0 && (
+                    <ul className="mt-2 text-amber-700 text-xs list-disc list-inside">
+                      {syncResult.errors.slice(0, 5).map((e, i) => (
+                        <li key={i}>{e.employeeCode} ({e.date}): {e.message}</li>
+                      ))}
+                      {syncResult.errors.length > 5 && <li>… and {syncResult.errors.length - 5} more</li>}
+                    </ul>
+                  )}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSyncModal(false)}
+                  className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSyncBiometric}
+                  disabled={syncing}
+                  className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+                >
+                  {syncing ? 'Syncing...' : 'Sync'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

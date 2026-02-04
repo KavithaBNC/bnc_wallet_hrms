@@ -106,6 +106,8 @@ app.get('/api/v1', (_req: Request, res: Response) => {
 });
 
 // Import routes
+import iclockRoutes from './routes/iclock.routes';
+import * as iclockController from './controllers/iclock.controller';
 import authRoutes from './routes/auth.routes';
 import organizationRoutes from './routes/organization.routes';
 import departmentRoutes from './routes/department.routes';
@@ -129,7 +131,12 @@ import atsRoutes from './routes/ats.routes';
 import transferPromotionRoutes from './routes/transfer-promotion.routes';
 import transferPromotionEntryRoutes from './routes/transfer-promotion-entry.routes';
 
-// Mount routes
+// Mount routes (iclock at root so device can hit /iclock/cdata)
+app.use('/iclock', iclockRoutes);
+
+// iClock at root for devices with no path field (device sends to IP:port/ only)
+app.get('/', iclockController.getCdata);
+app.post('/', express.text({ type: 'text/plain', limit: '1mb' }), iclockController.postCdata);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/organizations', organizationRoutes);
 app.use('/api/v1/departments', departmentRoutes);

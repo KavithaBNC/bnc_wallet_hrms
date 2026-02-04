@@ -10,6 +10,7 @@ import {
   queryAttendanceRecordsSchema,
   queryAttendanceSummarySchema,
   queryAttendanceReportSchema,
+  syncBiometricSchema,
   createRegularizationSchema,
   approveRegularizationSchema,
   rejectRegularizationSchema,
@@ -77,6 +78,18 @@ router.get(
   authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
   validateQuery(queryAttendanceReportSchema),
   attendanceController.getReport.bind(attendanceController)
+);
+
+/**
+ * @route   POST /api/v1/attendance/sync/biometric
+ * @desc    Sync attendance from eSSL biometric / eSSL Cloud API
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.post(
+  '/sync/biometric',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validate(syncBiometricSchema),
+  attendanceController.syncBiometric.bind(attendanceController)
 );
 
 // ============================================================================

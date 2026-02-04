@@ -73,6 +73,15 @@ export const queryAttendanceReportSchema = z.object({
   employeeId: z.string().uuid().optional(),
 });
 
+// Biometric (eSSL) sync
+export const syncBiometricSchema = z
+  .object({
+    organizationId: z.string().uuid('Invalid organization ID'),
+    fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+    toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+  })
+  .refine((d) => d.toDate >= d.fromDate, { message: 'toDate must be on or after fromDate', path: ['toDate'] });
+
 // Types
 export type CheckInInput = z.infer<typeof checkInSchema>;
 export type CheckOutInput = z.infer<typeof checkOutSchema>;
@@ -82,3 +91,4 @@ export type ApproveRegularizationInput = z.infer<typeof approveRegularizationSch
 export type RejectRegularizationInput = z.infer<typeof rejectRegularizationSchema>;
 export type QueryAttendanceSummaryInput = z.infer<typeof queryAttendanceSummarySchema>;
 export type QueryAttendanceReportInput = z.infer<typeof queryAttendanceReportSchema>;
+export type SyncBiometricInput = z.infer<typeof syncBiometricSchema>;
