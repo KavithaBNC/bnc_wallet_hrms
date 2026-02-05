@@ -558,6 +558,116 @@ export class AttendanceService {
       records,
     };
   }
+
+  /**
+   * Bulk update shift assignments for employees
+   * Creates or updates attendance records with shiftId
+   */
+  async bulkUpdateShiftAssignments(
+    organizationId: string,
+    assignments: Array<{
+      employeeId: string;
+      date: string; // YYYY-MM-DD format
+      shiftName: string; // Shift name from Shift Master
+    }>
+  ) {
+    // Get all shifts to map shift names to IDs
+    const shifts = await prisma.shift.findMany({
+      where: { organizationId, isActive: true },
+      select: { id: true, name: true },
+    });
+
+    const shiftMap = new Map<string, string>();
+    shifts.forEach(shift => {
+      shiftMap.set(shift.name, shift.id);
+    });
+
+    const results = [];
+
+    for (const assignment of assignments) {
+      try {
+        const { employeeId, date, shiftName } = assignment;
+        
+        // Skip "W" (Week Off) - don't create attendance record for week offs
+        if (shiftName === 'W' || shiftName === 'Weekoff') {
+          // Remove shiftId from existing attendance record if it exists
+          await prisma.attendanceRecord.updateMany({
+            where: {
+              employeeId,
+              date: new Date(date),
+            },
+            data: {
+              shiftId: null,
+            },
+          });
+          results.push({ employeeId, date, shiftName, status: 'skipped' });
+          continue;
+        }
+
+        const shiftId = shiftMap.get(shiftName);
+        if (!shiftId) {
+          results.push({ 
+            employeeId, 
+            date, 
+            shiftName, 
+            status: 'error', 
+            message: `Shift "${shiftName}" not found in Shift Master` 
+          });
+          continue;
+        }
+
+        // Verify employee belongs to organization
+        const employee = await prisma.employee.findFirst({
+          where: {
+            id: employeeId,
+            organizationId,
+          },
+        });
+
+        if (!employee) {
+          results.push({ 
+            employeeId, 
+            date, 
+            shiftName, 
+            status: 'error', 
+            message: 'Employee not found in this organization' 
+          });
+          continue;
+        }
+
+        // Upsert attendance record with shiftId
+        await prisma.attendanceRecord.upsert({
+          where: {
+            employeeId_date: {
+              employeeId,
+              date: new Date(date),
+            },
+          },
+          create: {
+            employeeId,
+            date: new Date(date),
+            shiftId,
+          },
+          update: {
+            shiftId,
+          },
+        });
+
+        results.push({ employeeId, date, shiftName, status: 'success' });
+      } catch (error: any) {
+        // Catch any unexpected database errors
+        results.push({
+          employeeId: assignment.employeeId,
+          date: assignment.date,
+          shiftName: assignment.shiftName,
+          status: 'error',
+          message: error?.message || 'Database error occurred',
+        });
+      }
+    }
+
+    return results;
+  }
 }
 
 export const attendanceService = new AttendanceService();

@@ -41,6 +41,8 @@ export const APP_MODULES: AppModule[] = [
   { path: '/employee-salaries', label: 'Employee Salary', resource: 'employee_salaries', visibility: 'all' },
   { path: '/hr-audit-settings', label: 'HR Audit Settings', resource: 'hr_audit_settings', visibility: 'all' },
   { path: '/employee-master-approval', label: 'Employee Master Approval', resource: 'employee_master_approval', visibility: 'all' },
+  { path: '/esop', label: 'ESOP', resource: 'esop', visibility: 'all' },
+  { path: '/esop/add', label: 'Add ESOP', resource: 'esop', visibility: 'all', parentPath: '/esop' },
   { path: '/transaction', label: 'Transaction', resource: 'transfer_promotions', visibility: 'all' },
   { path: '/transaction/transfer-promotions', label: 'Increment', resource: 'transfer_promotions', visibility: 'all', parentPath: '/transaction' },
   { path: '/transaction/transfer-promotion-entry', label: 'Transfer and Promotion Entry', resource: 'transfer_promotion_entry', visibility: 'all', parentPath: '/transaction' },

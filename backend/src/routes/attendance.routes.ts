@@ -14,6 +14,7 @@ import {
   createRegularizationSchema,
   approveRegularizationSchema,
   rejectRegularizationSchema,
+  bulkShiftAssignmentsSchema,
 } from '../utils/attendance.validation';
 
 const router = Router();
@@ -90,6 +91,18 @@ router.post(
   authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
   validate(syncBiometricSchema),
   attendanceController.syncBiometric.bind(attendanceController)
+);
+
+/**
+ * @route   POST /api/v1/attendance/shift-assignments/bulk
+ * @desc    Bulk update shift assignments for employees
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.post(
+  '/shift-assignments/bulk',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validate(bulkShiftAssignmentsSchema),
+  attendanceController.bulkUpdateShiftAssignments.bind(attendanceController)
 );
 
 // ============================================================================

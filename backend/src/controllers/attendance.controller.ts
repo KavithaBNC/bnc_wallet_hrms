@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { attendanceService } from '../services/attendance.service';
 import { biometricSyncService } from '../services/biometric-sync.service';
 import { prisma } from '../utils/prisma';
+import { BulkShiftAssignmentsInput } from '../utils/attendance.validation';
 
 export class AttendanceController {
   /**
@@ -186,6 +187,41 @@ export class AttendanceController {
         status: 'success',
         message: 'Biometric sync completed',
         data: result,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Bulk update shift assignments
+   * POST /api/v1/attendance/shift-assignments/bulk
+   */
+  async bulkUpdateShiftAssignments(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, assignments } = req.body as BulkShiftAssignmentsInput;
+
+      const results = await attendanceService.bulkUpdateShiftAssignments(
+        organizationId,
+        assignments
+      );
+
+      const successCount = results.filter(r => r.status === 'success').length;
+      const errorCount = results.filter(r => r.status === 'error').length;
+      const skippedCount = results.filter(r => r.status === 'skipped').length;
+
+      return res.status(200).json({
+        status: 'success',
+        message: `Shift assignments updated: ${successCount} successful, ${skippedCount} skipped, ${errorCount} errors`,
+        data: {
+          results,
+          summary: {
+            total: results.length,
+            successful: successCount,
+            skipped: skippedCount,
+            errors: errorCount,
+          },
+        },
       });
     } catch (error) {
       return next(error);

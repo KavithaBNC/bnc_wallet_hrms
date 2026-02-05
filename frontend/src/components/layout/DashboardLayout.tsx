@@ -101,6 +101,16 @@ const ICONS_BY_PATH: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ),
+  '/esop': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+    </svg>
+  ),
+  '/esop/add': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+    </svg>
+  ),
   '/organizations': (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -245,6 +255,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     if (timeAttendanceDropdownOpen) setTimeAttendanceExpanded(true);
   }, [timeAttendanceDropdownOpen]);
 
+  // ESOP dropdown: open when current path is under /esop
+  const esopDropdownOpen = location.pathname.startsWith('/esop');
+  const [esopExpanded, setEsopExpanded] = useState(esopDropdownOpen);
+  useEffect(() => {
+    if (esopDropdownOpen) setEsopExpanded(true);
+  }, [esopDropdownOpen]);
+
   const topLevelNavItems = useMemo(() => visibleNavItems.filter((m) => !m.parentPath), [visibleNavItems]);
 
   const handleLogout = async () => {
@@ -295,9 +312,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             const isPayrollMaster = mod.path === '/payroll-master';
             const isTransaction = mod.path === '/transaction';
             const isTimeAttendance = mod.path === '/time-attendance';
-            const expanded = isPayrollMaster ? payrollMasterExpanded : isTransaction ? transactionExpanded : isTimeAttendance ? timeAttendanceExpanded : false;
-            const setExpanded = isPayrollMaster ? setPayrollMasterExpanded : isTransaction ? setTransactionExpanded : isTimeAttendance ? setTimeAttendanceExpanded : () => {};
-            const dropdownOpen = isPayrollMaster ? payrollMasterDropdownOpen : isTransaction ? transactionDropdownOpen : isTimeAttendance ? timeAttendanceDropdownOpen : false;
+            const isEsop = mod.path === '/esop';
+            const expanded = isPayrollMaster ? payrollMasterExpanded : isTransaction ? transactionExpanded : isTimeAttendance ? timeAttendanceExpanded : isEsop ? esopExpanded : false;
+            const setExpanded = isPayrollMaster ? setPayrollMasterExpanded : isTransaction ? setTransactionExpanded : isTimeAttendance ? setTimeAttendanceExpanded : isEsop ? setEsopExpanded : () => {};
+            const dropdownOpen = isPayrollMaster ? payrollMasterDropdownOpen : isTransaction ? transactionDropdownOpen : isTimeAttendance ? timeAttendanceDropdownOpen : isEsop ? esopDropdownOpen : false;
 
             if (isParentWithChildren) {
               return (

@@ -4,6 +4,7 @@ import api from '../services/api';
 import { attendanceService } from '../services/attendance.service';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
+import shiftService, { Shift } from '../services/shift.service';
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, getDay } from 'date-fns';
 
 interface AttendanceRecord {
@@ -20,6 +21,12 @@ interface AttendanceRecord {
     lastName: string;
     employeeCode: string;
   };
+  shift?: {
+    id: string;
+    name: string;
+    startTime: string;
+    endTime: string;
+  } | null;
 }
 
 // Calendar View Component
@@ -27,9 +34,11 @@ interface AttendanceCalendarViewProps {
   records: AttendanceRecord[];
   currentMonth: Date;
   onMonthChange: (date: Date) => void;
+  employeeId?: string; // Employee ID to fetch shift assignments for
+  organizationId?: string; // Organization ID
 }
 
-const AttendanceCalendarView = ({ records, currentMonth, onMonthChange }: AttendanceCalendarViewProps) => {
+const AttendanceCalendarView = ({ records, currentMonth, onMonthChange, employeeId, organizationId }: AttendanceCalendarViewProps) => {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -37,6 +46,86 @@ const AttendanceCalendarView = ({ records, currentMonth, onMonthChange }: Attend
   // Get first day of month to calculate offset
   const firstDayOfWeek = getDay(monthStart);
   const daysOffset = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; // Monday = 0
+  
+  // State for shift assignments
+  const [shiftAssignments, setShiftAssignments] = useState<Map<string, string>>(new Map()); // date -> shiftName
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [loadingShifts, setLoadingShifts] = useState(false);
+  
+  // Fetch shifts from Shift Master
+  useEffect(() => {
+    if (!organizationId) return;
+    
+    shiftService.getAll({
+      organizationId,
+      limit: 1000,
+    }).then((res) => {
+      setShifts(res?.shifts || []);
+    }).catch(() => {
+      setShifts([]);
+    });
+  }, [organizationId]);
+  
+  // Fetch or determine shift assignments for each day
+  useEffect(() => {
+    if (!employeeId || !organizationId) return;
+    
+    setLoadingShifts(true);
+    
+    // Create shift assignments map - default to "General Shift" for all dates
+    // Override with explicitly assigned shifts from attendance records
+    const assignments = new Map<string, string>();
+    const defaultShift = 'General Shift';
+    
+    console.log('📅 Calendar: Determining shift assignments for employee:', employeeId);
+    console.log('📅 Calendar: Total records received:', records.length);
+    console.log('📅 Calendar: Records with shifts:', records.filter(r => r.shift?.name).map(r => ({
+      date: format(new Date(r.date), 'yyyy-MM-dd'),
+      shift: r.shift?.name,
+      employeeId: r.employee.id
+    })));
+    
+    daysInMonth.forEach((date) => {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const dayOfWeek = date.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      
+      // Check if there's an attendance record with shift for this date (from saved shift assignments)
+      // IMPORTANT: Check all records, not just ones with check-in/check-out
+      const dayRecord = records.find(r => {
+        const recordDate = format(new Date(r.date), 'yyyy-MM-dd');
+        const matchesDate = recordDate === dateStr;
+        const matchesEmployee = r.employee.id === employeeId;
+        return matchesDate && matchesEmployee;
+      });
+      
+      if (dayRecord) {
+        console.log(`📅 Calendar: Found record for ${dateStr}:`, {
+          hasShift: !!dayRecord.shift,
+          shiftName: dayRecord.shift?.name,
+          employeeId: dayRecord.employee.id,
+          matchesTargetEmployee: dayRecord.employee.id === employeeId
+        });
+      }
+      
+      if (dayRecord?.shift?.name) {
+        // Use shift from attendance record (this reflects saved shift assignments from Associate Shift Grid)
+        // This overrides the default "General Shift" for this specific date
+        console.log(`✅ Calendar: Using saved shift "${dayRecord.shift.name}" for ${dateStr}`);
+        assignments.set(dateStr, dayRecord.shift.name);
+      } else if (isWeekend) {
+        // Weekend - show as Weekoff
+        assignments.set(dateStr, 'Weekoff');
+      } else {
+        // Default to "General Shift" for all weekdays without explicit assignment
+        assignments.set(dateStr, defaultShift);
+      }
+    });
+    
+    console.log('📅 Calendar: Final shift assignments:', Array.from(assignments.entries()));
+    setShiftAssignments(assignments);
+    setLoadingShifts(false);
+  }, [daysInMonth, records, employeeId, shifts, organizationId]);
   
   // Create a map of date strings to records for quick lookup
   const recordsByDate = new Map<string, AttendanceRecord[]>();
@@ -117,6 +206,7 @@ const AttendanceCalendarView = ({ records, currentMonth, onMonthChange }: Attend
           const isCurrentDay = isToday(day);
           const isWeekendDay = isWeekend(day);
           const dayNumber = format(day, 'd');
+          const shiftName = shiftAssignments.get(dateStr) || 'General Shift'; // Default to "General Shift"
 
           return (
             <div
@@ -141,15 +231,24 @@ const AttendanceCalendarView = ({ records, currentMonth, onMonthChange }: Attend
               </div>
               
               <div className="space-y-1.5">
+                {/* Display shift name badge - always shown (default is "General Shift") */}
+                {shiftName && (
+                  <div className={`inline-block px-2 py-1 rounded text-xs font-semibold mb-1 ${
+                    shiftName === 'Weekoff' || shiftName === 'W'
+                      ? 'bg-gray-700 text-white'
+                      : 'bg-blue-600 text-white'
+                  }`}>
+                    {shiftName === 'W' ? 'Weekoff' : shiftName}
+                  </div>
+                )}
+                
                 {dayRecords.length > 0 ? (
                   dayRecords.map((record) => (
                     <div
                       key={record.id}
                       className="text-xs space-y-0.5"
                     >
-                      <div className="font-medium text-gray-900 truncate">
-                        {record.employee.firstName} {record.employee.lastName}
-                      </div>
+                      {/* Removed employee name - only showing shift name badge above */}
                       {record.checkIn && (
                         <div className="text-blue-600">
                           In: {new Date(record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
@@ -262,17 +361,34 @@ const AttendancePage = () => {
         setComponentError(err.message || 'Failed to initialize attendance page');
       }
     }
-  }, [user]);
+  }, [user, currentMonth, viewMode]); // Refetch when month or view mode changes
 
   const fetchRecords = async () => {
     try {
       setLoading(true);
       setError(null);
+      
+      // Fetch records for the current month to include shift assignments
+      const monthStart = startOfMonth(currentMonth);
+      const monthEnd = endOfMonth(currentMonth);
+      
+      // For team view, fetch all team records; for my view or regular employees, fetch own records
+      const params: any = {
+        page: 1,
+        limit: 1000, // Increased limit to ensure we get all records for the month
+        startDate: format(monthStart, 'yyyy-MM-dd'),
+        endDate: format(monthEnd, 'yyyy-MM-dd'),
+      };
+      
+      // If viewing "my" records or user is not a manager, fetch only their own records
+      if (viewMode === 'my' || !canViewTeamAttendance) {
+        if (user?.employee?.id) {
+          params.employeeId = user.employee.id;
+        }
+      }
+      
       const response = await api.get('/attendance/records', {
-        params: {
-          page: 1,
-          limit: 50,
-        },
+        params,
       });
       if (response.data?.data?.records) {
         setRecords(response.data.data.records);
@@ -296,11 +412,16 @@ const AttendancePage = () => {
     
     try {
       setLoadingMyRecords(true);
+      const monthStart = startOfMonth(currentMonth);
+      const monthEnd = endOfMonth(currentMonth);
+      
       const response = await api.get('/attendance/records', {
         params: {
           page: 1,
-          limit: 50,
+          limit: 100,
           employeeId: user.employee.id, // Fetch own records specifically
+          startDate: format(monthStart, 'yyyy-MM-dd'),
+          endDate: format(monthEnd, 'yyyy-MM-dd'),
         },
       });
       if (response.data?.data?.records) {
@@ -603,9 +724,11 @@ const AttendancePage = () => {
             </div>
           ) : displayMode === 'calendar' ? (
             <AttendanceCalendarView 
-              records={viewMode === 'my' ? myRecords : records}
+              records={viewMode === 'my' && myRecords.length > 0 ? myRecords : records}
               currentMonth={currentMonth}
               onMonthChange={setCurrentMonth}
+              employeeId={viewMode === 'my' || !canViewTeamAttendance ? user?.employee?.id : undefined}
+              organizationId={user?.employee?.organizationId || user?.employee?.organization?.id}
             />
           ) : (
             <div className="overflow-x-auto">

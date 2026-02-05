@@ -20,6 +20,7 @@ import ShiftMasterFormPage from './pages/ShiftMasterFormPage';
 import ShiftAssignPage from './pages/ShiftAssignPage';
 import ShiftAssignFormPage from './pages/ShiftAssignFormPage';
 import AssociateShiftChangePage from './pages/AssociateShiftChangePage';
+import AssociateShiftGridPage from './pages/AssociateShiftGridPage';
 import PayrollPage from './pages/PayrollPage';
 import PayrollMasterPage from './pages/PayrollMasterPage';
 import EmployeeSeparationPage from './pages/EmployeeSeparationPage';
@@ -39,6 +40,8 @@ import OrganizationsPage from './pages/OrganizationsPage';
 import PermissionsPage from './pages/PermissionsPage';
 import HRAuditSettingsPage from './pages/HRAuditSettingsPage';
 import EmployeeMasterApprovalPage from './pages/EmployeeMasterApprovalPage';
+import EsopListPage from './pages/EsopListPage';
+import EsopPage from './pages/EsopPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 function App() {
@@ -188,6 +191,16 @@ function App() {
             }
           />
           <Route
+            path="/time-attendance/associate-shift-grid"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AssociateShiftGridPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/time-attendance/shift-assign/add"
             element={
               <ProtectedRoute>
@@ -293,6 +306,26 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <EmployeeSalariesPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/esop"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EsopListPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/esop/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EsopPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }
