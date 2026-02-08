@@ -107,7 +107,7 @@ async function seedAttendanceData() {
       const workHours = (totalMinutes - shift.breakDuration) / 60;
 
       const existing = await prisma.shift.findUnique({
-        where: { code: shift.code },
+        where: { organizationId_code: { organizationId: org.id, code: shift.code } },
       });
 
       if (!existing) {

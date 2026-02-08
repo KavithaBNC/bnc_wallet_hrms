@@ -26,10 +26,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (data: LoginData) => {
     try {
       set({ isLoading: true, error: null });
-      await authService.login(data);
+      const loginResult = await authService.login(data);
+      const { user: loginUser } = loginResult;
       // Refresh user data to ensure we have latest employee/organization info
-      const refreshedUser = await authService.getCurrentUser();
-      set({ user: refreshedUser, isAuthenticated: true, isLoading: false });
+      try {
+        const refreshedUser = await authService.getCurrentUser();
+        set({ user: refreshedUser, isAuthenticated: true, isLoading: false });
+      } catch (meError: any) {
+        // Fallback: use user from login response so user can still get in
+        set({ user: loginUser, isAuthenticated: true, isLoading: false });
+      }
     } catch (error: any) {
       let errorMessage = 'Login failed. Please try again.';
       
@@ -38,15 +44,15 @@ export const useAuthStore = create<AuthState>((set) => ({
         if (error.message && error.message.includes('timeout')) {
           errorMessage = 'Request timeout. Please check your connection and try again.';
         } else if (error.message && error.message.includes('Network Error')) {
-          errorMessage = 'Cannot connect to server. Please ensure the backend server is running on http://localhost:5000';
+          errorMessage = 'Cannot connect to server. Please ensure the backend is running (e.g. http://localhost:5000) and try again.';
         } else if (error.message) {
           errorMessage = error.message;
         }
       } else if (error.response?.data) {
-        // Check for validation errors
+        // Check for validation errors (Zod/backend)
         if (error.response.data.errors && Array.isArray(error.response.data.errors)) {
           errorMessage = error.response.data.errors
-            .map((err: any) => err.message)
+            .map((err: any) => err.message || err.msg)
             .join(', ');
         } else if (error.response.data.message) {
           errorMessage = error.response.data.message;

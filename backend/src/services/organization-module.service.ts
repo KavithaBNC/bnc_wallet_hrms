@@ -12,6 +12,7 @@ export const ASSIGNABLE_MODULE_RESOURCES = [
   'departments',
   'positions',
   'attendance',
+  'attendance_policy',
   'leaves',
   'time_attendance',
   'shifts',
@@ -22,6 +23,7 @@ export const ASSIGNABLE_MODULE_RESOURCES = [
   'employee_salaries',
   'hr_audit_settings',
   'employee_master_approval',
+  'esop',
   'transfer_promotions',
   'transfer_promotion_entry',
 ] as const;

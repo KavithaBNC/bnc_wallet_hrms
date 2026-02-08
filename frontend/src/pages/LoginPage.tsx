@@ -54,6 +54,11 @@ const LoginPage = () => {
           {authError && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-red-800 text-sm">{authError}</p>
+              {(authError.includes('Cannot connect') || authError.includes('timeout')) && (
+                <p className="text-red-700 text-xs mt-2">
+                  From project folder run: <code className="bg-red-100 px-1 rounded">cd backend && npm run dev</code>
+                </p>
+              )}
             </div>
           )}
 

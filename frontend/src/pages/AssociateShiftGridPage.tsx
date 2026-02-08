@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import employeeService, { Employee } from '../services/employee.service';
 import shiftService, { Shift } from '../services/shift.service';
+import departmentService, { Department } from '../services/department.service';
 import { attendanceService } from '../services/attendance.service';
 import { format, eachDayOfInterval, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -40,6 +41,8 @@ export default function AssociateShiftGridPage() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
   const [shiftAssignments, setShiftAssignments] = useState<Map<string, ShiftAssignment>>(new Map());
   const [initialAssignments, setInitialAssignments] = useState<Map<string, ShiftAssignment>>(new Map()); // Track initial state
   const [loading, setLoading] = useState(true);
@@ -53,6 +56,8 @@ export default function AssociateShiftGridPage() {
     }
     return new Date();
   });
+  const [fillFromDate, setFillFromDate] = useState('');
+  const [fillShiftName, setFillShiftName] = useState('');
 
   // Generate date range for current month
   const monthStart = startOfMonth(currentMonth);
@@ -109,86 +114,103 @@ export default function AssociateShiftGridPage() {
       });
   }, [organizationId]);
 
-  // Fetch employees and initialize shift assignments - preserves existing assignments
+  // Fetch departments for filter (e.g. Software department)
+  useEffect(() => {
+    if (!organizationId) return;
+    departmentService.getAll({ organizationId, limit: 500 })
+      .then((res) => setDepartments(res?.departments || []))
+      .catch(() => setDepartments([]));
+  }, [organizationId]);
+
+  // Fetch employees and pre-fill grid from attendance records API (same as calendar: overrides + rules)
   useEffect(() => {
     if (!organizationId) {
       console.warn('Organization ID is missing');
       setLoading(false);
       return;
     }
-    
-    // Generate date range for current month (inside useEffect to ensure it's current)
+
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
+    const monthStartStr = format(monthStart, 'yyyy-MM-dd');
+    const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
     let currentDateRange: Date[] = [];
     try {
-      currentDateRange = eachDayOfInterval({
-        start: monthStart,
-        end: monthEnd,
-      });
-    } catch (error) {
-      console.error('Error generating date range in useEffect:', error);
+      currentDateRange = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    } catch {
       const today = new Date();
-      currentDateRange = eachDayOfInterval({
-        start: startOfMonth(today),
-        end: endOfMonth(today),
-      });
+      currentDateRange = eachDayOfInterval({ start: startOfMonth(today), end: endOfMonth(today) });
     }
-    
+
     setLoading(true);
-    
+
     employeeService
       .getAll({
         organizationId,
+        ...(selectedDepartmentId ? { departmentId: selectedDepartmentId } : {}),
         page: 1,
         limit: 1000,
         employeeStatus: 'ACTIVE',
       })
-      .then((res) => {
+      .then(async (res) => {
         let filtered = res.employees || [];
-        
-        // Filter by associate IDs if provided - only show selected associates
         if (selectedAssociateIds.length > 0) {
           filtered = filtered.filter((emp) => selectedAssociateIds.includes(emp.id));
         }
-        
-        console.log('Selected associate IDs:', selectedAssociateIds);
-        console.log('Filtered employees count:', filtered.length);
-        console.log('Filtered employees:', filtered.map(e => `${fullName(e)} (${e.employeeCode})`));
-        
+
         setEmployees(filtered);
-        
-        // Preserve existing shift assignments, only initialize new ones
-        setShiftAssignments((prevAssignments) => {
-          const newAssignments = new Map(prevAssignments);
-          const defaultShift = shifts && shifts.length > 0 ? shifts[0].name : 'General Shift';
-          
-          filtered.forEach((emp) => {
-            currentDateRange.forEach((date) => {
-              const dateStr = format(date, 'yyyy-MM-dd');
+
+        const defaultShift = shifts?.length ? shifts[0].name : 'General Shift';
+        const newAssignments = new Map<string, ShiftAssignment>();
+
+        // Pre-fill from attendance records API (merged: DB overrides + rule-based, same as calendar)
+        if (filtered.length > 0) {
+          const recordPromises = filtered.map((emp) =>
+            attendanceService.getRecords({
+              employeeId: emp.id,
+              startDate: monthStartStr,
+              endDate: monthEndStr,
+              organizationId,
+            })
+          );
+          const recordArrays = await Promise.all(recordPromises);
+
+          recordArrays.forEach((records, idx) => {
+            const emp = filtered[idx];
+            records.forEach((r) => {
+              const dateStr = typeof r.date === 'string' ? r.date.slice(0, 10) : format(new Date(r.date), 'yyyy-MM-dd');
               const key = `${emp.id}-${dateStr}`;
-              
-              // Only initialize if assignment doesn't exist (preserve existing assignments)
-              if (!newAssignments.has(key)) {
-                const dayOfWeek = date.getDay();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                newAssignments.set(key, {
-                  employeeId: emp.id,
-                  date: dateStr,
-                  shiftName: isWeekend ? 'W' : defaultShift,
-                  isWeekOff: isWeekend,
-                });
-              }
+              const shiftName = r.shift?.name ?? defaultShift;
+              newAssignments.set(key, {
+                employeeId: emp.id,
+                date: dateStr,
+                shiftName: shiftName === 'Week Off' || shiftName === 'Weekoff' ? 'W' : shiftName,
+                isWeekOff: shiftName === 'W' || shiftName === 'Week Off' || shiftName === 'Weekoff',
+              });
             });
           });
-          
-          // Save initial state for comparison (only on first load)
-          setInitialAssignments(new Map(newAssignments));
-          
-          return newAssignments;
+        }
+
+        // Fill any missing days with default (weekdays = first shift, weekends = W)
+        filtered.forEach((emp) => {
+          currentDateRange.forEach((date) => {
+            const dateStr = format(date, 'yyyy-MM-dd');
+            const key = `${emp.id}-${dateStr}`;
+            if (!newAssignments.has(key)) {
+              const dayOfWeek = date.getDay();
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+              newAssignments.set(key, {
+                employeeId: emp.id,
+                date: dateStr,
+                shiftName: isWeekend ? 'W' : defaultShift,
+                isWeekOff: isWeekend,
+              });
+            }
+          });
         });
-        
-        // Reset page to 1 when data changes
+
+        setShiftAssignments(new Map(newAssignments));
+        setInitialAssignments(new Map(newAssignments));
         setPage(1);
       })
       .catch((error) => {
@@ -196,7 +218,7 @@ export default function AssociateShiftGridPage() {
         setEmployees([]);
       })
       .finally(() => setLoading(false));
-  }, [organizationId, currentMonth, selectedAssociateIds.join(','), shifts.length]);
+  }, [organizationId, currentMonth, selectedAssociateIds.join(','), shifts.length, selectedDepartmentId]);
 
   const handleLogout = async () => {
     await logout();
@@ -265,6 +287,8 @@ export default function AssociateShiftGridPage() {
         
         // Update initial assignments to reflect saved state
         setInitialAssignments(new Map(shiftAssignments));
+        // Navigate to Attendance calendar so assignments show in calendar view for each employee
+        navigate('/attendance', { state: { refreshFromShiftGrid: true } });
       }
     } catch (error: any) {
       console.error('Error saving shift assignments:', error);
@@ -291,6 +315,25 @@ export default function AssociateShiftGridPage() {
       });
       return newMap;
     });
+  };
+
+  /** Set one shift for all visible employees from a date to end of month (e.g. "General Shift from 20th onwards"). */
+  const handleFillFromDate = () => {
+    if (!fillFromDate || !fillShiftName) {
+      alert('Please select a start date and a shift.');
+      return;
+    }
+    const fromStr = fillFromDate.slice(0, 10);
+    employees.forEach((emp) => {
+      dateRange.forEach((date) => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        if (dateStr >= fromStr) {
+          updateShiftAssignment(emp.id, dateStr, fillShiftName);
+        }
+      });
+    });
+    setFillFromDate('');
+    setFillShiftName('');
   };
 
   const filteredEmployees = employees.filter((emp) => {
@@ -462,6 +505,22 @@ export default function AssociateShiftGridPage() {
                     <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">W</span>
                   </div>
                   <div className="flex flex-col">
+                    <label className="text-sm font-medium text-gray-500 mb-1.5">Department</label>
+                    <select
+                      value={selectedDepartmentId}
+                      onChange={(e) => {
+                        setSelectedDepartmentId(e.target.value);
+                        setPage(1);
+                      }}
+                      className="h-10 min-w-[180px] px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">All departments</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col">
                     <label className="text-sm font-medium text-gray-500 mb-1.5">Search</label>
                     <input
                       type="text"
@@ -475,7 +534,32 @@ export default function AssociateShiftGridPage() {
                     />
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-gray-600">Fill from date:</span>
+                  <input
+                    type="date"
+                    value={fillFromDate}
+                    onChange={(e) => setFillFromDate(e.target.value)}
+                    className="h-9 px-3 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <select
+                    value={fillShiftName}
+                    onChange={(e) => setFillShiftName(e.target.value)}
+                    className="h-9 px-3 border border-gray-300 rounded-lg text-sm min-w-[160px]"
+                  >
+                    <option value="">Select shift</option>
+                    {shifts.map((s) => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
+                    <option value="W">W (Week Off)</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleFillFromDate}
+                    className="h-9 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                  >
+                    Apply from date to EOM
+                  </button>
                   <button
                     onClick={handlePrint}
                     className="h-9 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition"

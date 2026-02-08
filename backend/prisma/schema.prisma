@@ -519,7 +519,7 @@ model Shift {
   id                String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   organizationId    String             @map("organization_id") @db.Uuid
   name              String             @db.VarChar(100)
-  code              String?            @unique @db.VarChar(50)
+  code              String?            @db.VarChar(50)
   description       String?
   startTime         String             @map("start_time") @db.VarChar(10)
   endTime           String             @map("end_time") @db.VarChar(10)
@@ -546,6 +546,7 @@ model Shift {
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignmentRules   ShiftAssignmentRule[]
 
+  @@unique([organizationId, code])
   @@map("shifts")
 }
 

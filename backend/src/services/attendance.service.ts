@@ -786,11 +786,16 @@ export class AttendanceService {
       where.employee.organizationId = query.organizationId;
     }
 
+    const isCalendarSingleEmployee =
+      query.employeeId && query.startDate && query.endDate && query.organizationId;
+    const take = isCalendarSingleEmployee ? 500 : limit;
+    const calendarSkip = isCalendarSingleEmployee ? 0 : skip;
+
     const [records, total] = await Promise.all([
       prisma.attendanceRecord.findMany({
         where,
-        skip,
-        take: limit,
+        skip: calendarSkip,
+        take,
         orderBy: {
           [query.sortBy || 'date']: query.sortOrder || 'desc',
         },
@@ -817,15 +822,115 @@ export class AttendanceService {
       prisma.attendanceRecord.count({ where }),
     ]);
 
+    let resultRecords = records;
+    let resultTotal = total;
+    let resultPage = page;
+    let resultLimit = limit;
+
+    if (isCalendarSingleEmployee && query.employeeId && query.organizationId) {
+      const merged = await this.mergeShiftRulesIntoRecords(
+        records as any[],
+        query.employeeId,
+        query.startDate!,
+        query.endDate!,
+        query.organizationId
+      );
+      resultRecords = merged;
+      resultTotal = merged.length;
+      resultPage = 1;
+      resultLimit = merged.length;
+    }
+
     return {
-      records,
+      records: resultRecords,
       pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        page: resultPage,
+        limit: resultLimit,
+        total: resultTotal,
+        totalPages: Math.ceil(resultTotal / resultLimit) || 1,
       },
     };
+  }
+
+  /** Normalize to YYYY-MM-DD (UTC) so key matching works across timezones and Date vs string. */
+  private toDateKey(date: Date | string): string {
+    const d = date instanceof Date ? date : new Date(date);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  /**
+   * Merge shift-from-rules into records so calendar shows shift assigned at department/paygroup/associate level.
+   * Per-day overrides from Associate Shift Grid (AttendanceRecord with shiftId) always win over rules.
+   */
+  private async mergeShiftRulesIntoRecords(
+    records: Array<{
+      id: string;
+      employeeId: string;
+      date: Date | string;
+      shiftId: string | null;
+      employee: { id: string; firstName: string; lastName: string; email: string; employeeCode: string };
+      shift: { id: string; name: string; startTime: string; endTime: string } | null;
+    }>,
+    employeeId: string,
+    startDate: string,
+    endDate: string,
+    organizationId: string
+  ): Promise<any[]> {
+    const start = new Date(startDate + 'T00:00:00.000Z');
+    const end = new Date(endDate + 'T00:00:00.000Z');
+    const datesInRange: string[] = [];
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      datesInRange.push(this.toDateKey(d));
+    }
+    const recordsByDate = new Map<string, typeof records[0]>();
+    records.forEach((r) => {
+      const key = `${r.employeeId}-${this.toDateKey(r.date)}`;
+      recordsByDate.set(key, r);
+    });
+    const employeeInfo = records[0]?.employee
+      ? records[0].employee
+      : await prisma.employee.findUnique({
+          where: { id: employeeId },
+          select: { id: true, firstName: true, lastName: true, email: true, employeeCode: true },
+        });
+    if (!employeeInfo) return records;
+
+    const merged: any[] = [];
+    for (const dateStr of datesInRange) {
+      const key = `${employeeId}-${dateStr}`;
+      const existing = recordsByDate.get(key);
+      const dateForRule = new Date(dateStr + 'T12:00:00.000Z');
+      if (existing) {
+        if (existing.shift) {
+          merged.push(existing);
+        } else {
+          const shiftFromRule = await shiftAssignmentRuleService.getApplicableShiftForEmployee(
+            employeeId,
+            dateForRule,
+            organizationId
+          );
+          merged.push({ ...existing, shift: shiftFromRule });
+        }
+      } else {
+        const shiftFromRule = await shiftAssignmentRuleService.getApplicableShiftForEmployee(
+          employeeId,
+          dateForRule,
+          organizationId
+        );
+        if (shiftFromRule) {
+          merged.push({
+            id: `synthetic-${employeeId}-${dateStr}`,
+            employeeId,
+            date: dateForRule,
+            shiftId: shiftFromRule.id,
+            employee: employeeInfo,
+            shift: shiftFromRule,
+          });
+        }
+      }
+    }
+    merged.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return merged;
   }
 
   /**

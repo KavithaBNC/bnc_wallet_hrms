@@ -46,14 +46,14 @@ export class ShiftService {
       throw new AppError('Organization not found', 404);
     }
 
-    // Check code uniqueness if provided
+    // Check code uniqueness within this organization only
     if (data.code) {
-      const existing = await prisma.shift.findUnique({
-        where: { code: data.code },
+      const existing = await prisma.shift.findFirst({
+        where: { organizationId: data.organizationId, code: data.code },
       });
 
       if (existing) {
-        throw new AppError('Shift code already exists', 400);
+        throw new AppError('Shift code already exists in this organization', 400);
       }
     }
 
@@ -214,14 +214,14 @@ export class ShiftService {
     validateTime(data.startTime, 'From Time');
     validateTime(data.endTime, 'To Time');
 
-    // Check code uniqueness if changing code
+    // Check code uniqueness within this organization if changing code
     if (data.code && data.code !== existing.code) {
-      const codeExists = await prisma.shift.findUnique({
-        where: { code: data.code },
+      const codeExists = await prisma.shift.findFirst({
+        where: { organizationId: existing.organizationId, code: data.code },
       });
 
       if (codeExists) {
-        throw new AppError('Shift code already exists', 400);
+        throw new AppError('Shift code already exists in this organization', 400);
       }
     }
 

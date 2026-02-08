@@ -143,6 +143,7 @@ async function seedPermissions() {
       'departments',
       'positions',
       'attendance',
+      'attendance_policy',
       'leaves',
       'time_attendance',
       'shifts',
@@ -153,8 +154,11 @@ async function seedPermissions() {
       'employee_salaries',
       'hr_audit_settings',
       'employee_master_approval',
+      'esop',
       'organizations',
       'permissions',
+      'transfer_promotions',
+      'transfer_promotion_entry',
     ];
     const actions = ['read', 'create', 'update', 'delete'] as const;
     const actionDescriptions: Record<string, string> = {

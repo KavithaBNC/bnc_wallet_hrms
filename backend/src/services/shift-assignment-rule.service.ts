@@ -309,6 +309,68 @@ export class ShiftAssignmentRuleService {
       return null;
     }
   }
+
+  /**
+   * Get applicable shift for an employee on a date from Shift Assign rules (department / paygroup / associate).
+   * Used by calendar so shift assigned at any level is reflected.
+   * Excludes rules that are attendance-policy-only (Holiday, Week Off, OT, etc.).
+   */
+  async getApplicableShiftForEmployee(
+    employeeId: string,
+    date: Date,
+    organizationId: string
+  ): Promise<{ id: string; name: string; startTime: string; endTime: string } | null> {
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { paygroupId: true, departmentId: true },
+    });
+    if (!employee) return null;
+
+    const dateStart = new Date(date);
+    dateStart.setHours(0, 0, 0, 0);
+
+    const markers = ShiftAssignmentRuleService.ATTENDANCE_POLICY_MARKERS;
+    const rules = await prisma.shiftAssignmentRule.findMany({
+      where: {
+        organizationId,
+        effectiveDate: { lte: dateStart },
+        OR: [
+          { remarks: null },
+          ...markers.map((m) => ({ remarks: { not: { contains: m } } })),
+        ],
+      },
+      orderBy: [
+        { priority: 'desc' },
+        { effectiveDate: 'desc' },
+      ],
+      include: {
+        shift: { select: { id: true, name: true, startTime: true, endTime: true } },
+      },
+    });
+
+    for (const rule of rules) {
+      const employeeIds = Array.isArray(rule.employeeIds) ? (rule.employeeIds as string[]) : [];
+      if (employeeIds.length > 0 && employeeIds.includes(employeeId)) {
+        return rule.shift;
+      }
+      if (rule.paygroupId && rule.departmentId) {
+        if (rule.paygroupId === employee.paygroupId && rule.departmentId === employee.departmentId) {
+          return rule.shift;
+        }
+      } else if (rule.paygroupId && !rule.departmentId) {
+        if (rule.paygroupId === employee.paygroupId) {
+          return rule.shift;
+        }
+      } else if (!rule.paygroupId && rule.departmentId) {
+        if (rule.departmentId === employee.departmentId) {
+          return rule.shift;
+        }
+      } else if (!rule.paygroupId && !rule.departmentId) {
+        return rule.shift;
+      }
+    }
+    return null;
+  }
 }
 
 export const shiftAssignmentRuleService = new ShiftAssignmentRuleService();

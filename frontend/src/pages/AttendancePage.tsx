@@ -334,9 +334,11 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                             <span className="text-red-700">Last Out: {formatTime(typeof lastOut === 'string' ? lastOut : (lastOut as Date).toISOString())}</span>
                           ) : isCurrentlyIn && lastInTime ? (
                             <span className="text-amber-700">Currently In (since {formatTime(lastInTime)})</span>
-                          ) : firstIn && (
+                          ) : firstIn ? (
                             <span className="text-amber-700">Still Working</span>
-                          )}
+                          ) : (record.shift?.name) ? (
+                            <span className="text-gray-600">Shift assigned – no punch yet</span>
+                          ) : null}
                         </div>
                         {/* Every In/Out pair (sessions) so user sees where time was spent */}
                         {sessions.length > 0 && (
@@ -532,11 +534,11 @@ const AttendancePage = () => {
     return () => window.removeEventListener('focus', onFocus);
   }, [user]);
 
-  // Refetch when returning from Face Attendance punch so calendar shows the new punch
+  // Refetch when returning from Face Attendance punch or Associate Shift Grid so calendar shows new data
   useEffect(() => {
-    const state = location.state as { refreshFromFacePunch?: boolean } | null;
-    if (state?.refreshFromFacePunch && user) {
-      // Await refetch so calendar shows the new punch before we clear state
+    const state = location.state as { refreshFromFacePunch?: boolean; refreshFromShiftGrid?: boolean } | null;
+    const shouldRefetch = (state?.refreshFromFacePunch || state?.refreshFromShiftGrid) && user;
+    if (shouldRefetch) {
       const refetch = async () => {
         await Promise.all([fetchRecords(), fetchMyRecords(), fetchPunches(), checkTodayStatus()]);
         navigate('/attendance', { replace: true, state: {} });
