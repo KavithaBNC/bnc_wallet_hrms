@@ -205,15 +205,6 @@ export default function OTUsageRuleFormPage() {
       return;
     }
 
-    if (selectedPaygroups.length === 0) {
-      setError('Paygroup is required');
-      return;
-    }
-
-    if (selectedDepartments.length === 0) {
-      setError('Department is required');
-      return;
-    }
 
     setSaving(true);
     setError(null);
@@ -476,7 +467,7 @@ export default function OTUsageRuleFormPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Paygroup <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Paygroup</label>
                   <MultiSelectChips
                     selected={selectedPaygroups}
                     onRemove={(pg) => {
@@ -508,7 +499,7 @@ export default function OTUsageRuleFormPage() {
                   <p className="mt-1.5 text-xs text-gray-500">Select &quot;All&quot; to apply this rule to all paygroups in the organization.</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
                   <MultiSelectChips
                     selected={selectedDepartments}
                     onRemove={(dept) => {

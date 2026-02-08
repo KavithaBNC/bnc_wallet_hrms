@@ -52,12 +52,19 @@ model Organization {
   jobOpenings          JobOpening[]
   organizationModules  OrganizationModule[]
   employeeSeparations  EmployeeSeparation[]
+  attendanceComponents AttendanceComponent[]
   transferPromotionEntries TransferPromotionEntry[]
   transferPromotions      TransferPromotion[]
   retiredEmployeeCodes   RetiredEmployeeCode[]
   shiftAssignmentRules   ShiftAssignmentRule[]
   companies              Company[]
   esopRecords            Esop[]
+  encashmentCarryForwards EncashmentCarryForward[]
+  rightsAllocations        RightsAllocation[]
+  approvalWorkflows        ApprovalWorkflow[]
+  workflowMappings         WorkflowMapping[]
+  ruleSettings             RuleSetting[]
+  autoCreditSettings       AutoCreditSetting[]
 
   @@map("organizations")
 }
@@ -229,6 +236,9 @@ model Department {
   jobOpenings        JobOpening[]
   jobPositions       JobPosition[]
   shiftAssignmentRules ShiftAssignmentRule[]
+  workflowMappings     WorkflowMapping[]
+  ruleSettings        RuleSetting[]
+  autoCreditSettings  AutoCreditSetting[]
 
   @@map("departments")
 }
@@ -284,6 +294,9 @@ model Paygroup {
   transferPromotionEntries TransferPromotionEntry[]
   transferPromotions TransferPromotion[]
   shiftAssignmentRules ShiftAssignmentRule[]
+  workflowMappings     WorkflowMapping[]
+  ruleSettings        RuleSetting[]
+  autoCreditSettings  AutoCreditSetting[]
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, name])
@@ -421,6 +434,7 @@ model Employee {
   rejoinedEmployee         Employee[]               @relation("EmployeeRejoin")
   attendanceLogs           AttendanceLog[]
   attendancePunches        AttendancePunch[]
+  encashmentCarryForwards  EncashmentCarryForward[]
 
   @@map("employees")
 }
@@ -545,6 +559,7 @@ model Shift {
   employees         Employee[]
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignmentRules   ShiftAssignmentRule[]
+  rightsAllocations RightsAllocation[]
 
   @@unique([organizationId, code])
   @@map("shifts")
@@ -569,6 +584,167 @@ model ShiftAssignmentRule {
   department     Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   @@map("shift_assignment_rules")
+}
+
+model AttendanceComponent {
+  id                          String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId              String       @map("organization_id") @db.Uuid
+  shortName                   String       @map("short_name") @db.VarChar(50)
+  eventName                   String       @map("event_name") @db.VarChar(255)
+  description                 String?
+  eventCategory               String       @map("event_category") @db.VarChar(50)
+  authorized                  Boolean      @default(false)
+  considerAsWorkHours         Boolean      @default(false) @map("consider_as_work_hours")
+  hasBalance                  Boolean      @default(false) @map("has_balance")
+  creditFromOverTime          Boolean      @default(false) @map("credit_from_over_time")
+  allowBalanceEntry           Boolean      @default(false) @map("allow_balance_entry")
+  allowEventOpeningRule       Boolean      @default(false) @map("allow_event_opening_rule")
+  allowAutoCreditRule         Boolean      @default(false) @map("allow_auto_credit_rule")
+  allowHourly                 Boolean      @default(false) @map("allow_hourly")
+  allowDatewise               Boolean      @default(false) @map("allow_datewise")
+  allowWeekOffSelection       Boolean      @default(false) @map("allow_week_off_selection")
+  allowHolidaySelection       Boolean      @default(false) @map("allow_holiday_selection")
+  applicableForRegularization Boolean      @default(false) @map("applicable_for_regularization")
+  allowDifferentLeavePeriod   Boolean      @default(false) @map("allow_different_leave_period")
+  allowEventChange            Boolean      @default(false) @map("allow_event_change")
+  validationRemarksMandatory Boolean      @default(false) @map("validation_remarks_mandatory")
+  leaveDeductionWhileInFandF  Boolean      @default(false) @map("leave_deduction_while_in_fandf")
+  cannotOverlapWith           String?      @map("cannot_overlap_with") @db.Text
+  priority                    Int?
+  eventEntryForm              String?      @map("event_entry_form") @db.VarChar(100)
+  autoCreditEngine            String?      @map("auto_credit_engine") @db.VarChar(100)
+  encashment                  String?      @db.VarChar(50)
+  sendMailToOnEntry           Boolean      @default(false) @map("send_mail_to_on_entry")
+  sendSMSToOnEntry            Boolean      @default(false) @map("send_sms_to_on_entry")
+  createdAt                   DateTime     @default(now()) @map("created_at")
+  updatedAt                   DateTime     @updatedAt @map("updated_at")
+  organization                Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("attendance_components")
+}
+
+model EncashmentCarryForward {
+  id                      String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId          String       @map("organization_id") @db.Uuid
+  displayName             String       @map("display_name") @db.VarChar(255)
+  associateId             String?      @map("associate_id") @db.Uuid
+  paygroupIds             Json?        @map("paygroup_ids") // array of UUID strings
+  departmentIds            Json?        @map("department_ids") // array of UUID strings
+  remarks                 String?      @db.Text
+  maxEncashmentDays       Int          @default(0) @map("max_encashment_days")
+  isEncashmentApplicable  Boolean      @default(false) @map("is_encashment_applicable")
+  maxCarryForwardDays     Int          @default(0) @map("max_carry_forward_days")
+  isCarryForwardApplicable Boolean     @default(false) @map("is_carry_forward_applicable")
+  eventType               String       @map("event_type") @db.VarChar(100)
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  associate               Employee?    @relation(fields: [associateId], references: [id], onDelete: SetNull)
+
+  @@map("encashment_carry_forwards")
+}
+
+model RightsAllocation {
+  id                          String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId              String       @map("organization_id") @db.Uuid
+  shortName                   String       @map("short_name") @db.VarChar(255)
+  longName                    String       @map("long_name") @db.VarChar(255)
+  remarks                     String?      @db.Text
+  shiftId                     String?      @map("shift_id") @db.Uuid
+  maxExcessTimeRequestDays    Int          @default(0) @map("max_excess_time_request_days")
+  monthlyRegularizationCount  Int?         @map("monthly_regularization_count")
+  attendanceEvents            Json?        @map("attendance_events") // array of attendance event configs
+  excessTimeEvents            Json?        @map("excess_time_events") // array of excess time event configs
+  requestTypeEvents            Json?        @map("request_type_events") // array of request type event configs
+  regularizationElements      Json?        @map("regularization_elements") // array of regularization element configs
+  createdAt                   DateTime     @default(now()) @map("created_at")
+  updatedAt                   DateTime     @updatedAt @map("updated_at")
+  organization                Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  shift                       Shift?       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  @@map("rights_allocations")
+}
+
+model ApprovalWorkflow {
+  id                   String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  workflowType         String    @map("workflow_type") @db.VarChar(50) // Employee, Manager, HR
+  shortName            String    @map("short_name") @db.VarChar(255)
+  longName             String    @map("long_name") @db.VarChar(255)
+  remarks              String?   @db.Text
+  attendanceEvents     Json?     @map("attendance_events")
+  excessTimeEvents     Json?     @map("excess_time_events")
+  requestTypeEvents    Json?     @map("request_type_events")
+  validationGroupEvents Json?    @map("validation_group_events")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("approval_workflows")
+}
+
+model WorkflowMapping {
+  id                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId      String    @map("organization_id") @db.Uuid
+  displayName        String    @map("display_name") @db.VarChar(255)
+  associate          String?   @db.VarChar(255)
+  paygroupId         String?   @map("paygroup_id") @db.Uuid
+  departmentId       String?   @map("department_id") @db.Uuid
+  priority           Int?      @db.Integer
+  remarks            String?   @db.Text
+  entryRightsTemplate String?  @map("entry_rights_template") @db.VarChar(255)
+  approvalLevels     Json?     @map("approval_levels") // array of approval level configs
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paygroup           Paygroup? @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  department         Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@map("workflow_mappings")
+}
+
+model RuleSetting {
+  id                    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  eventType             String    @map("event_type") @db.VarChar(100)
+  displayName           String    @map("display_name") @db.VarChar(255)
+  associate             String?   @db.VarChar(255)
+  paygroupId            String?   @map("paygroup_id") @db.Uuid
+  departmentId          String?   @map("department_id") @db.Uuid
+  priority              Int       @default(0) @db.Integer
+  remarks               String?   @db.Text
+  eventRuleDefinition   Json?     @map("event_rule_definition")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paygroup              Paygroup? @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  department            Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@map("rule_settings")
+}
+
+model AutoCreditSetting {
+  id                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId      String    @map("organization_id") @db.Uuid
+  eventType           String    @map("event_type") @db.VarChar(100)
+  displayName         String    @map("display_name") @db.VarChar(255)
+  associate           String?   @db.VarChar(255)
+  paygroupId          String?   @map("paygroup_id") @db.Uuid
+  departmentId        String?   @map("department_id") @db.Uuid
+  condition           String?   @db.Text
+  effectiveDate       DateTime  @map("effective_date") @db.Date
+  effectiveTo         DateTime? @map("effective_to") @db.Date
+  priority            Int       @default(0) @db.Integer
+  remarks             String?   @db.Text
+  autoCreditRule      Json?     @map("auto_credit_rule")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paygroup            Paygroup? @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  department          Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@map("auto_credit_settings")
 }
 
 model AttendanceRegularization {

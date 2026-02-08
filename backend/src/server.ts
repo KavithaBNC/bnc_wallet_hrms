@@ -132,6 +132,13 @@ import atsRoutes from './routes/ats.routes';
 import transferPromotionRoutes from './routes/transfer-promotion.routes';
 import transferPromotionEntryRoutes from './routes/transfer-promotion-entry.routes';
 import esopRoutes from './routes/esop.routes';
+import attendanceComponentRoutes from './routes/attendance-component.routes';
+import encashmentCarryForwardRoutes from './routes/encashment-carry-forward.routes';
+import rightsAllocationRoutes from './routes/rights-allocation.routes';
+import approvalWorkflowRoutes from './routes/approval-workflow.routes';
+import workflowMappingRoutes from './routes/workflow-mapping.routes';
+import ruleSettingRoutes from './routes/rule-setting.routes';
+import autoCreditSettingRoutes from './routes/auto-credit-setting.routes';
 
 // Mount routes (iclock at root so device can hit /iclock/cdata)
 app.use('/iclock', iclockRoutes);
@@ -151,6 +158,13 @@ app.use('/api/v1/face', faceRoutes);
 app.use('/api/v1/holidays', holidayRoutes);
 app.use('/api/v1/shifts', shiftRoutes);
 app.use('/api/v1/shift-assignment-rules', shiftAssignmentRuleRoutes);
+app.use('/api/v1/attendance-components', attendanceComponentRoutes);
+app.use('/api/v1/encashment-carry-forwards', encashmentCarryForwardRoutes);
+app.use('/api/v1/rights-allocations', rightsAllocationRoutes);
+app.use('/api/v1/approval-workflows', approvalWorkflowRoutes);
+app.use('/api/v1/workflow-mappings', workflowMappingRoutes);
+app.use('/api/v1/rule-settings', ruleSettingRoutes);
+app.use('/api/v1/auto-credit-settings', autoCreditSettingRoutes);
 app.use('/api/v1/permissions', permissionRoutes);
 app.use('/api/v1/payroll', payrollRoutes);
 app.use('/api/v1/employee-separations', employeeSeparationRoutes);

@@ -275,7 +275,7 @@ export default function ShiftAssignFormPage() {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <label className="w-36 shrink-0 text-sm font-medium text-gray-700 after:content-[':']">
-                      Paygroup <span className="text-red-600">*</span>
+                      Paygroup
                     </label>
                     <select
                       value={paygroupId}
@@ -290,7 +290,7 @@ export default function ShiftAssignFormPage() {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <label className="w-36 shrink-0 text-sm font-medium text-gray-700 after:content-[':']">
-                      Department <span className="text-red-600">*</span>
+                      Department
                     </label>
                     <select
                       value={departmentId}

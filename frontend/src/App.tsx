@@ -12,6 +12,21 @@ import ProfilePage from './pages/ProfilePage';
 import DepartmentsPage from './pages/DepartmentsPage';
 import EmployeesPage from './pages/EmployeesPage';
 import PositionsPage from './pages/PositionsPage';
+import EventConfigurationPage from './pages/EventConfigurationPage';
+import AttendanceComponentsPage from './pages/AttendanceComponentsPage';
+import AttendanceComponentFormPage from './pages/AttendanceComponentFormPage';
+import EncashmentCarryForwardPage from './pages/EncashmentCarryForwardPage';
+import EncashmentCarryForwardFormPage from './pages/EncashmentCarryForwardFormPage';
+import RightsAllocationPage from './pages/RightsAllocationPage';
+import RightsAllocationFormPage from './pages/RightsAllocationFormPage';
+import WorkflowMappingPage from './pages/WorkflowMappingPage';
+import WorkflowMappingFormPage from './pages/WorkflowMappingFormPage';
+import RuleSettingPage from './pages/RuleSettingPage';
+import RuleSettingFormPage from './pages/RuleSettingFormPage';
+import AutoCreditSettingPage from './pages/AutoCreditSettingPage';
+import AutoCreditSettingFormPage from './pages/AutoCreditSettingFormPage';
+import ApprovalWorkflowPage from './pages/ApprovalWorkflowPage';
+import ApprovalWorkflowFormPage from './pages/ApprovalWorkflowFormPage';
 import AttendancePage from './pages/AttendancePage';
 import FaceAttendancePage from './pages/FaceAttendancePage';
 import AttendancePolicyPage from './pages/AttendancePolicyPage';
@@ -138,6 +153,226 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <PositionsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EventConfigurationPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/attendance-components"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AttendanceComponentsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/attendance-components/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AttendanceComponentFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/attendance-components/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AttendanceComponentFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/encashment-carry-forward"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EncashmentCarryForwardPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/encashment-carry-forward/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EncashmentCarryForwardFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/encashment-carry-forward/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EncashmentCarryForwardFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/rights-allocation"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <RightsAllocationPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/rights-allocation/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <RightsAllocationFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/rights-allocation/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <RightsAllocationFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/workflow-mapping"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <WorkflowMappingPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/workflow-mapping/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <WorkflowMappingFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/workflow-mapping/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <WorkflowMappingFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/rule-setting"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <RuleSettingPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/rule-setting/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <RuleSettingFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/rule-setting/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <RuleSettingFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/auto-credit-setting"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AutoCreditSettingPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/approval-workflow"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ApprovalWorkflowPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/approval-workflow/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ApprovalWorkflowFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/approval-workflow/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ApprovalWorkflowFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/auto-credit-setting/add"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AutoCreditSettingFormPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event-configuration/auto-credit-setting/edit/:id"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AutoCreditSettingFormPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }
