@@ -6,7 +6,7 @@ export class ShiftAssignmentRuleService {
   async create(data: {
     organizationId: string;
     displayName: string;
-    shiftId: string;
+    shiftId?: string;
     paygroupId?: string;
     departmentId?: string;
     effectiveDate: string; // YYYY-MM-DD
@@ -19,11 +19,13 @@ export class ShiftAssignmentRuleService {
     });
     if (!organization) throw new AppError('Organization not found', 404);
 
-    const shift = await prisma.shift.findUnique({
-      where: { id: data.shiftId },
-    });
-    if (!shift || shift.organizationId !== data.organizationId) {
-      throw new AppError('Shift not found', 404);
+    if (data.shiftId) {
+      const shift = await prisma.shift.findUnique({
+        where: { id: data.shiftId },
+      });
+      if (!shift || shift.organizationId !== data.organizationId) {
+        throw new AppError('Shift not found', 404);
+      }
     }
 
     if (data.paygroupId) {
@@ -47,7 +49,7 @@ export class ShiftAssignmentRuleService {
       data: {
         organizationId: data.organizationId,
         displayName: data.displayName,
-        shiftId: data.shiftId,
+        shiftId: data.shiftId ?? null,
         paygroupId: data.paygroupId || null,
         departmentId: data.departmentId || null,
         effectiveDate: new Date(data.effectiveDate),
@@ -142,9 +144,9 @@ export class ShiftAssignmentRuleService {
     id: string,
     data: Partial<{
       displayName: string;
-      shiftId: string;
-      paygroupId: string;
-      departmentId: string;
+      shiftId: string | null;
+      paygroupId: string | null;
+      departmentId: string | null;
       effectiveDate: string;
       priority: number;
       remarks: string;
@@ -169,7 +171,7 @@ export class ShiftAssignmentRuleService {
       where: { id },
       data: {
         ...(data.displayName !== undefined && { displayName: data.displayName }),
-        ...(data.shiftId !== undefined && { shiftId: data.shiftId }),
+        ...(data.shiftId !== undefined && { shiftId: data.shiftId ?? null }),
         ...(data.paygroupId !== undefined && { paygroupId: data.paygroupId || null }),
         ...(data.departmentId !== undefined && { departmentId: data.departmentId || null }),
         ...(data.effectiveDate !== undefined && { effectiveDate: new Date(data.effectiveDate) }),
@@ -196,47 +198,37 @@ export class ShiftAssignmentRuleService {
   }
 
   /**
-   * Get applicable attendance policy rules for a shift, employee, and date
-   * This finds the most specific rule matching:
-   * - shiftId
-   * - effectiveDate (on or before the attendance date)
-   * - employeeId (if specified in rule), paygroup, department, or organization-wide
-   * Returns parsed policy rules JSON or null if no rule found
+   * Get applicable attendance policy rules for a shift, employee, and date.
+   * Fetches rules by: employee-specific, department, paygroup, or global (All).
+   * If multiple rules apply, returns the one with the highest priority.
    */
   async getApplicablePolicyRules(
-    shiftId: string,
+    shiftId: string | null,
     employeeId: string,
     attendanceDate: Date,
     organizationId: string
   ): Promise<Record<string, any> | null> {
-    // Get employee info to match paygroup/department
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
-      select: {
-        paygroupId: true,
-        departmentId: true,
-      },
+      select: { paygroupId: true, departmentId: true },
     });
-
-    if (!employee) {
-      return null;
-    }
+    if (!employee) return null;
 
     const dateStart = new Date(attendanceDate);
     dateStart.setHours(0, 0, 0, 0);
 
-    // Find all rules for this shift that are effective on or before the attendance date
     const rules = await prisma.shiftAssignmentRule.findMany({
       where: {
         organizationId,
-        shiftId,
-        effectiveDate: {
-          lte: dateStart,
-        },
+        ...(shiftId
+          ? { OR: [{ shiftId }, { shiftId: null }] }
+          : { shiftId: null }),
+        effectiveDate: { lte: dateStart },
+        remarks: { contains: '__POLICY_RULES__' },
       },
       orderBy: [
-        { priority: 'desc' }, // Higher priority first
-        { effectiveDate: 'desc' }, // More recent first
+        { priority: 'desc' },
+        { effectiveDate: 'desc' },
       ],
       include: {
         shift: { select: { id: true, name: true } },
@@ -245,69 +237,186 @@ export class ShiftAssignmentRuleService {
       },
     });
 
-    if (rules.length === 0) {
-      return null;
-    }
+    if (rules.length === 0) return null;
 
-    // Find the most specific matching rule
-    // Priority order: employee-specific > paygroup+department > paygroup only > department only > organization-wide
-    let matchedRule = null;
-
-    for (const rule of rules) {
+    // Collect all rules that match this employee (any scope: employee / dept / paygroup / global)
+    const matchingRules = rules.filter((rule) => {
       const employeeIds = Array.isArray(rule.employeeIds) ? (rule.employeeIds as string[]) : [];
-      
-      // Check employee-specific match
-      if (employeeIds.length > 0 && employeeIds.includes(employeeId)) {
-        matchedRule = rule;
-        break;
-      }
-
-      // Check paygroup + department match
+      if (employeeIds.length > 0 && employeeIds.includes(employeeId)) return true;
       if (rule.paygroupId && rule.departmentId) {
-        if (rule.paygroupId === employee.paygroupId && rule.departmentId === employee.departmentId) {
-          matchedRule = rule;
-          break;
-        }
+        return rule.paygroupId === employee.paygroupId && rule.departmentId === employee.departmentId;
       }
-      // Check paygroup only match
-      else if (rule.paygroupId && !rule.departmentId) {
-        if (rule.paygroupId === employee.paygroupId) {
-          matchedRule = rule;
-          break;
-        }
-      }
-      // Check department only match
-      else if (!rule.paygroupId && rule.departmentId) {
-        if (rule.departmentId === employee.departmentId) {
-          matchedRule = rule;
-          break;
-        }
-      }
-      // Organization-wide (no paygroup, no department)
-      else if (!rule.paygroupId && !rule.departmentId) {
-        matchedRule = rule;
-        break;
-      }
-    }
+      if (rule.paygroupId && !rule.departmentId) return rule.paygroupId === employee.paygroupId;
+      if (!rule.paygroupId && rule.departmentId) return rule.departmentId === employee.departmentId;
+      return true; // org-wide
+    });
 
-    if (!matchedRule || !matchedRule.remarks) {
-      return null;
-    }
+    const matchedRule = matchingRules[0] ?? null;
+    if (!matchedRule?.remarks) return null;
 
-    // Parse policy rules from remarks
     const POLICY_MARKER = '__POLICY_RULES__';
     const markerIdx = matchedRule.remarks.indexOf(POLICY_MARKER);
-    
-    if (markerIdx === -1) {
-      return null;
-    }
+    if (markerIdx === -1) return null;
 
-    const jsonStr = matchedRule.remarks.slice(markerIdx + POLICY_MARKER.length);
     try {
-      return JSON.parse(jsonStr) as Record<string, any>;
+      return JSON.parse(matchedRule.remarks.slice(markerIdx + POLICY_MARKER.length)) as Record<string, any>;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Get applicable holiday for an employee on a date from Holiday Assign rules (ShiftAssignmentRule with __HOLIDAY_DATA__).
+   * Returns the holiday name if the date is in a holiday rule that applies to this employee (by employee / paygroup / department).
+   * Used by calendar so holidays show on employee calendar.
+   * @param dateStr - Calendar date as YYYY-MM-DD (use this for comparison to avoid timezone shifting; e.g. 16th stays 16th)
+   */
+  async getApplicableHolidayForEmployee(
+    employeeId: string,
+    dateStr: string,
+    organizationId: string
+  ): Promise<{ name: string } | null> {
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { paygroupId: true, departmentId: true },
+    });
+    if (!employee) return null;
+
+    const normDateStr = dateStr.slice(0, 10); // YYYY-MM-DD
+    const dateForQuery = new Date(normDateStr + 'T12:00:00.000Z');
+
+    const rules = await prisma.shiftAssignmentRule.findMany({
+      where: {
+        organizationId,
+        effectiveDate: { lte: dateForQuery },
+        remarks: { contains: '__HOLIDAY_DATA__' },
+      },
+      orderBy: [
+        { priority: 'desc' },
+        { effectiveDate: 'desc' },
+      ],
+    });
+
+    for (const rule of rules) {
+      const employeeIds = Array.isArray(rule.employeeIds) ? (rule.employeeIds as string[]) : [];
+      let matches = false;
+      if (employeeIds.length > 0) {
+        matches = employeeIds.includes(employeeId);
+      } else if (rule.paygroupId && rule.departmentId) {
+        matches = rule.paygroupId === employee.paygroupId && rule.departmentId === employee.departmentId;
+      } else if (rule.paygroupId && !rule.departmentId) {
+        matches = rule.paygroupId === employee.paygroupId;
+      } else if (!rule.paygroupId && rule.departmentId) {
+        matches = rule.departmentId === employee.departmentId;
+      } else {
+        matches = true; // org-wide
+      }
+      if (!matches || !rule.remarks) continue;
+
+      const markerIdx = rule.remarks.indexOf('__HOLIDAY_DATA__');
+      if (markerIdx === -1) continue;
+      try {
+        const jsonStr = rule.remarks.slice(markerIdx + '__HOLIDAY_DATA__'.length);
+        const parsed = JSON.parse(jsonStr) as { holidayDetails?: Array<{ date?: string; name?: string; type?: string }> };
+        const details = parsed?.holidayDetails;
+        if (!details || !Array.isArray(details)) continue;
+        const found = details.find((h) => {
+          const d = h.date;
+          if (!d) return false;
+          const norm = d.slice(0, 10); // YYYY-MM-DD
+          return norm === normDateStr;
+        });
+        if (found?.name) {
+          return { name: found.name };
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get applicable week off for an employee on a date from Week Off Assign rules.
+   * Returns a synthetic "Week Off" shift when the date is a week-off day per rule (employee / paygroup / department).
+   * Used by calendar so week off days are displayed.
+   */
+  async getApplicableWeekOffForEmployee(
+    employeeId: string,
+    date: Date,
+    organizationId: string
+  ): Promise<{ id: string; name: string; startTime: string; endTime: string } | null> {
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { paygroupId: true, departmentId: true },
+    });
+    if (!employee) return null;
+
+    const dateStart = new Date(date);
+    dateStart.setHours(0, 0, 0, 0);
+
+    const rules = await prisma.shiftAssignmentRule.findMany({
+      where: {
+        organizationId,
+        effectiveDate: { lte: dateStart },
+        remarks: { contains: '__WEEK_OFF_DATA__' },
+      },
+      orderBy: [
+        { priority: 'desc' },
+        { effectiveDate: 'desc' },
+      ],
+    });
+
+    for (const rule of rules) {
+      const employeeIds = Array.isArray(rule.employeeIds) ? (rule.employeeIds as string[]) : [];
+      let matches = false;
+      if (employeeIds.length > 0) {
+        matches = employeeIds.includes(employeeId);
+      } else if (rule.paygroupId && rule.departmentId) {
+        matches = rule.paygroupId === employee.paygroupId && rule.departmentId === employee.departmentId;
+      } else if (rule.paygroupId && !rule.departmentId) {
+        matches = rule.paygroupId === employee.paygroupId;
+      } else if (!rule.paygroupId && rule.departmentId) {
+        matches = rule.departmentId === employee.departmentId;
+      } else {
+        matches = true; // org-wide
+      }
+      if (!matches || !rule.remarks) continue;
+
+      const markerIdx = rule.remarks.indexOf('__WEEK_OFF_DATA__');
+      if (markerIdx === -1) continue;
+      try {
+        const jsonStr = rule.remarks.slice(markerIdx + '__WEEK_OFF_DATA__'.length);
+        const parsed = JSON.parse(jsonStr) as { weekOffDetails?: boolean[][]; alternateSaturdayOff?: string };
+        let weekOffDetails = parsed?.weekOffDetails;
+        if (!weekOffDetails || !Array.isArray(weekOffDetails)) continue;
+        // If rule is "1st & 3rd" or "2nd & 4th" Saturday off, treat Sunday (day 0) as not week off
+        // so only the selected Saturdays show as Week Off (fixes old data where Sunday was default true)
+        const altSat = (parsed?.alternateSaturdayOff || '').toUpperCase();
+        if ((altSat.includes('1ST') && altSat.includes('3RD')) || (altSat.includes('2ND') && altSat.includes('4TH'))) {
+          weekOffDetails = weekOffDetails.map((week) => {
+            const row = [...week];
+            if (row[0] !== undefined) row[0] = false; // Sunday = not week off
+            return row;
+          });
+        }
+        // Week of month: 1-7 -> 0, 8-14 -> 1, ... (0-5)
+        const dayOfMonth = dateStart.getDate();
+        const weekIndex = Math.min(5, Math.max(0, Math.ceil(dayOfMonth / 7) - 1));
+        const dayIndex = dateStart.getDay(); // 0=Sun, 6=Sat
+        if (weekOffDetails[weekIndex]?.[dayIndex]) {
+          return {
+            id: 'week-off',
+            name: 'Week Off',
+            startTime: '00:00',
+            endTime: '00:00',
+          };
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+    return null;
   }
 
   /**
@@ -349,6 +458,7 @@ export class ShiftAssignmentRuleService {
     });
 
     for (const rule of rules) {
+      if (!rule.shift) continue; // skip policy-only rules with no shift
       const employeeIds = Array.isArray(rule.employeeIds) ? (rule.employeeIds as string[]) : [];
       if (employeeIds.length > 0 && employeeIds.includes(employeeId)) {
         return rule.shift;

@@ -27,10 +27,12 @@ function toTimeInputFormat(val: string | undefined): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-/** Attendance policy rule definitions - Rule Name and Field Type (time or toggle) */
+/** Attendance policy rule definitions - Rule Name and Field Type (time, toggle, or number for minutes) */
 const ATTENDANCE_POLICY_RULES = [
-  { key: 'shiftStartGraceTime', label: 'Shift Start Grace Time', type: 'time' as const, default: '04:00' },
-  { key: 'shiftEndGraceTime', label: 'Shift End Grace Time', type: 'time' as const, default: '04:00' },
+  { key: 'shiftStartGraceTime', label: 'Shift Start Grace Time (HH:MM)', type: 'time' as const, default: '00:00' },
+  { key: 'shiftStartGraceMinutes', label: 'Shift Start Grace (minutes) — overrides above if set', type: 'number' as const, default: '' },
+  { key: 'shiftEndGraceTime', label: 'Shift End Grace Time (HH:MM)', type: 'time' as const, default: '00:00' },
+  { key: 'shiftEndGraceMinutes', label: 'Shift End Grace (minutes) — overrides above if set', type: 'number' as const, default: '' },
   { key: 'considerLateFromGraceTime', label: 'Consider Late from Grace Time', type: 'toggle' as const, default: true },
   { key: 'considerEarlyGoingFromGraceTime', label: 'Consider Early Going from Grace Time', type: 'toggle' as const, default: true },
   { key: 'minBreakHoursAsDeviation', label: 'Minimum Break Hours consider as Deviation', type: 'time' as const, default: '01:00' },
@@ -80,7 +82,7 @@ export default function LateAndOthersFormPage() {
   const [ruleValues, setRuleValues] = useState<Record<string, string | boolean>>(() => {
     const init: Record<string, string | boolean> = {};
     ATTENDANCE_POLICY_RULES.forEach((r) => {
-      init[r.key] = r.type === 'time' ? r.default : r.default;
+      init[r.key] = (r.type === 'time' || r.type === 'number' ? r.default : r.default) as string | boolean;
     });
     return init;
   });
@@ -124,7 +126,7 @@ export default function LateAndOthersFormPage() {
             const parsed = JSON.parse(jsonStr) as Record<string, string | boolean>;
             const defaults: Record<string, string | boolean> = {};
             ATTENDANCE_POLICY_RULES.forEach((r) => {
-              defaults[r.key] = r.type === 'time' ? r.default : r.default;
+              defaults[r.key] = (r.type === 'time' || r.type === 'number' ? r.default : r.default) as string | boolean;
             });
             setRuleValues({ ...defaults, ...parsed });
           } catch {
@@ -233,18 +235,6 @@ export default function LateAndOthersFormPage() {
       setError('Display Name is required.');
       return;
     }
-    if (selectedShifts.length === 0) {
-      setError('Shift is required.');
-      return;
-    }
-    if (selectedPaygroups.length === 0) {
-      setError('Paygroup is required.');
-      return;
-    }
-    if (selectedDepartments.length === 0) {
-      setError('Department is required.');
-      return;
-    }
     if (!effectiveDate) {
       setError('Effective Date is required.');
       return;
@@ -261,7 +251,7 @@ export default function LateAndOthersFormPage() {
       const payload = {
         organizationId,
         displayName: displayName.trim(),
-        shiftId: selectedShifts[0].id,
+        shiftId: selectedShifts[0]?.id ?? undefined,
         paygroupId: paygroupId || undefined,
         departmentId: departmentId || undefined,
         effectiveDate,
@@ -520,6 +510,15 @@ export default function LateAndOthersFormPage() {
                                   value={toTimeInputFormat((ruleValues[rule.key] as string) ?? rule.default)}
                                   onChange={(e) => setRuleValues((prev) => ({ ...prev, [rule.key]: e.target.value }))}
                                   className="w-28 h-9 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                                />
+                              ) : rule.type === 'number' ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="e.g. 4"
+                                  value={(ruleValues[rule.key] as string) ?? ''}
+                                  onChange={(e) => setRuleValues((prev) => ({ ...prev, [rule.key]: e.target.value }))}
+                                  className="w-28 h-9 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 />
                               ) : (
                                 <select

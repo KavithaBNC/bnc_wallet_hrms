@@ -269,6 +269,14 @@ export class RolePermissionService {
         SELECT resource FROM organization_modules WHERE organization_id = ${organizationId}::uuid
       `;
       const allowedResources = new Set(orgModules.map((m) => m.resource));
+      // Merge ORG_ADMIN's org-specific permissions so allowed list matches getModules (e.g. Event Configuration)
+      const orgAdminPerms = await prisma.rolePermission.findMany({
+        where: { role: UserRole.ORG_ADMIN, organizationId },
+        include: { permission: { select: { resource: true } } },
+      });
+      for (const rp of orgAdminPerms) {
+        allowedResources.add(rp.permission.resource);
+      }
       // Payroll Master implies Employee Separation and Employee Rejoin when payroll is assigned
       if (allowedResources.has('payroll')) {
         allowedResources.add('employee_separations');

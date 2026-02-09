@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { attendanceService } from '../services/attendance.service';
 import employeeService, { type Employee } from '../services/employee.service';
@@ -28,6 +28,13 @@ interface AttendanceRecord {
     startTime: string;
     endTime: string;
   } | null;
+  isLate?: boolean | null;
+  lateMinutes?: number | null;
+  isEarly?: boolean | null;
+  earlyMinutes?: number | null;
+  isDeviation?: boolean | null;
+  deviationReason?: string | null;
+  otMinutes?: number | null;
 }
 
 interface AttendancePunch {
@@ -44,6 +51,20 @@ function formatWorkHoursAsHHMM(decimalHours: number): string {
   const h = Math.floor(Math.abs(totalMinutes) / 60);
   const m = Math.abs(totalMinutes) % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Early minutes from backend, or computed from checkOut vs shift end (fallback only when policy not applied). When policy says NO (isEarly === false), never show early going. */
+function getEarlyMinutes(record: AttendanceRecord): number | null {
+  if (record.isEarly === false) return null; // Policy says "Consider Early Going" = NO
+  if (record.isEarly && record.earlyMinutes != null) return record.earlyMinutes;
+  if (!record.checkOut || !record.shift?.endTime) return null;
+  const out = new Date(record.checkOut);
+  const parts = String(record.shift.endTime).trim().split(':');
+  const endH = parseInt(parts[0] || '0', 10);
+  const endM = parseInt(parts[1] || '0', 10);
+  const shiftEnd = new Date(out.getFullYear(), out.getMonth(), out.getDate(), endH, endM, 0, 0);
+  if (out >= shiftEnd) return null;
+  return Math.round((shiftEnd.getTime() - out.getTime()) / (1000 * 60));
 }
 
 /** Build In/Out session pairs from sorted punches; each pair is [inTime, outTime | null]. */
@@ -297,11 +318,11 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                 {/* Display shift name badge - always shown (default is "General Shift") */}
                 {shiftName && (
                   <div className={`inline-block px-2 py-1 rounded text-xs font-semibold mb-1 ${
-                    shiftName === 'Weekoff' || shiftName === 'W'
+                    shiftName === 'Weekoff' || shiftName === 'W' || shiftName === 'Week Off'
                       ? 'bg-gray-700 text-white'
                       : 'bg-blue-600 text-white'
                   }`}>
-                    {shiftName === 'W' ? 'Weekoff' : shiftName}
+                    {shiftName === 'W' ? 'Week Off' : shiftName === 'Weekoff' ? 'Week Off' : shiftName}
                   </div>
                 )}
                 
@@ -358,9 +379,35 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                               ? 'text-red-700'
                               : record.status === 'LEAVE'
                               ? 'text-purple-700'
+                              : record.status === 'HOLIDAY'
+                              ? 'text-orange-700'
                               : 'text-yellow-700'
                           }`}>
                             {record.status}
+                          </div>
+                        )}
+                        {/* Policy indicators: L (Late), EG (Early Going), D (Deviation), OT (Overtime) — only for working days */}
+                        {record.status === 'PRESENT' && (record.isLate || record.isEarly || (getEarlyMinutes(record) ?? 0) > 0 || record.isDeviation || (record.otMinutes != null && record.otMinutes > 0)) && (
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {record.isLate && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
+                                Late {record.lateMinutes != null ? `:${record.lateMinutes} min` : ''}
+                              </span>
+                            )}
+                            {(() => {
+                              const earlyMin = getEarlyMinutes(record);
+                              return earlyMin != null && earlyMin > 0 ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">
+                                  Early going :{earlyMin} min
+                                </span>
+                              ) : null;
+                            })()}
+                            {record.isDeviation && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800" title={record.deviationReason ?? 'Deviation'}>D</span>
+                            )}
+                            {record.otMinutes != null && record.otMinutes > 0 && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title={`OT: ${formatWorkHoursAsHHMM(record.otMinutes / 60)}`}>OT {formatWorkHoursAsHHMM(record.otMinutes / 60)}</span>
+                            )}
                           </div>
                         )}
                         {/* Total Net Work Time in HH:mm right below PRESENT */}
@@ -407,6 +454,7 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
 const AttendancePage = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, loadUser, logout } = useAuthStore();
   const organizationName = user?.employee?.organization?.name;
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -420,9 +468,37 @@ const AttendancePage = () => {
   const [checkingOut, setCheckingOut] = useState(false);
   const [loadingUser, setLoadingUser] = useState(false);
   const [componentError, setComponentError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'team' | 'my'>('team'); // For managers to toggle view
-  const [displayMode, setDisplayMode] = useState<'table' | 'calendar'>('calendar'); // Table or Calendar view
-  const [currentMonth, setCurrentMonth] = useState(new Date()); // Current month for calendar
+  // Restore view and month from URL so refresh keeps selection
+  const viewFromUrl = searchParams.get('view') === 'my' ? 'my' : 'team';
+  const monthFromUrl = searchParams.get('month'); // YYYY-MM
+  const initialMonth = monthFromUrl
+    ? (() => {
+        const [y, m] = monthFromUrl.split('-').map(Number);
+        if (y && m >= 1 && m <= 12) return new Date(y, m - 1, 1);
+        return new Date();
+      })()
+    : new Date();
+
+  const [viewMode, setViewModeState] = useState<'team' | 'my'>(viewFromUrl);
+  const [displayMode, setDisplayMode] = useState<'table' | 'calendar'>('calendar');
+  const [currentMonth, setCurrentMonthState] = useState(initialMonth);
+
+  const setViewMode = (mode: 'team' | 'my') => {
+    setViewModeState(mode);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('view', mode);
+      return next;
+    });
+  };
+  const setCurrentMonth = (date: Date) => {
+    setCurrentMonthState(date);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('month', format(date, 'yyyy-MM'));
+      return next;
+    });
+  };
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncFromDate, setSyncFromDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [syncToDate, setSyncToDate] = useState(() => format(endOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -447,8 +523,58 @@ const AttendancePage = () => {
   // HR-only: calendar view requires selecting one employee (no "all employees" by default)
   const isHRForCalendar = isHRManager || isOrgAdmin;
 
-  // HR-only: single-employee selection for calendar/table (searchable dropdown)
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  // HR-only: single-employee selection for calendar/table (searchable dropdown); restore from URL on refresh
+  const employeeIdFromUrl = searchParams.get('employeeId') || null;
+  const [selectedEmployeeId, setSelectedEmployeeIdState] = useState<string | null>(employeeIdFromUrl);
+  const setSelectedEmployeeId = (id: string | null) => {
+    setSelectedEmployeeIdState(id);
+    if (id) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('employeeId', id);
+        return next;
+      });
+    } else {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('employeeId');
+        return next;
+      });
+    }
+  };
+  // Sync state from URL when URL has employeeId (e.g. after refresh or back)
+  useEffect(() => {
+    if (employeeIdFromUrl) setSelectedEmployeeIdState(employeeIdFromUrl);
+  }, [employeeIdFromUrl]);
+
+  // Persist default view and month to URL on mount if missing, so refresh restores selection
+  useEffect(() => {
+    const view = searchParams.get('view');
+    const month = searchParams.get('month');
+    const needView = view !== 'my' && view !== 'team';
+    const needMonth = !month || !/^\d{4}-\d{2}$/.test(month);
+    if (needView || needMonth) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (needView) next.set('view', 'team');
+        if (needMonth) next.set('month', format(new Date(), 'yyyy-MM'));
+        return next;
+      });
+    }
+  }, []);
+
+  // Sync view and month state from URL when URL changes (e.g. refresh or back button)
+  useEffect(() => {
+    setViewModeState(viewFromUrl);
+  }, [viewFromUrl]);
+  useEffect(() => {
+    if (!monthFromUrl || !/^\d{4}-\d{2}$/.test(monthFromUrl)) return;
+    const [y, m] = monthFromUrl.split('-').map(Number);
+    if (y && m >= 1 && m <= 12) {
+      setCurrentMonthState(new Date(y, m - 1, 1));
+    }
+  }, [monthFromUrl]);
+
   const [employeeList, setEmployeeList] = useState<Employee[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
@@ -547,12 +673,13 @@ const AttendancePage = () => {
     }
   }, [location.state, user]);
 
-  // HR-only: fetch employees for searchable dropdown when in team view
+  // HR-only: fetch employees for searchable dropdown when in team view (scoped to current org so refresh shows correct list)
+  const orgId = user?.employee?.organizationId || user?.employee?.organization?.id;
   useEffect(() => {
-    if (!isHRForCalendar || viewMode !== 'team') return;
+    if (!isHRForCalendar || viewMode !== 'team' || !orgId) return;
     let cancelled = false;
     setLoadingEmployees(true);
-    employeeService.getAll({ limit: 500, employeeStatus: 'ACTIVE' })
+    employeeService.getAll({ organizationId: orgId, limit: 500, employeeStatus: 'ACTIVE' })
       .then((data) => {
         if (!cancelled) setEmployeeList(data.employees || []);
       })
@@ -563,7 +690,7 @@ const AttendancePage = () => {
         if (!cancelled) setLoadingEmployees(false);
       });
     return () => { cancelled = true; };
-  }, [isHRForCalendar, viewMode]);
+  }, [isHRForCalendar, viewMode, orgId]);
 
   // Close HR employee dropdown when clicking outside
   useEffect(() => {
@@ -1237,6 +1364,9 @@ const AttendancePage = () => {
                       Work Hours
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      L / EG / D / OT
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Overtime
                     </th>
                   </tr>
@@ -1271,11 +1401,23 @@ const AttendancePage = () => {
                               ? 'bg-red-100 text-red-800'
                               : record.status === 'LEAVE'
                               ? 'bg-purple-100 text-purple-800'
+                              : record.status === 'HOLIDAY'
+                              ? 'bg-orange-100 text-orange-800'
                               : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
                           {record.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {record.status === 'PRESENT' && (record.isLate || record.isEarly || (getEarlyMinutes(record) ?? 0) > 0 || record.isDeviation || (record.otMinutes != null && record.otMinutes > 0)) ? (
+                          <div className="flex flex-wrap gap-1">
+                            {record.isLate && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">Late {record.lateMinutes != null ? `:${record.lateMinutes} min` : ''}</span>}
+                            {(() => { const em = getEarlyMinutes(record); return em != null && em > 0 ? <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">Early going :{em} min</span> : null; })()}
+                            {record.isDeviation && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800" title={record.deviationReason ?? 'Deviation'}>D</span>}
+                            {record.otMinutes != null && record.otMinutes > 0 && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title="Overtime">OT {formatWorkHoursAsHHMM(record.otMinutes / 60)}</span>}
+                          </div>
+                        ) : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {record.workHours ? `${Number(record.workHours).toFixed(2)} hrs` : '-'}

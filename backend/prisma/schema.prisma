@@ -503,27 +503,34 @@ model Esop {
 }
 
 model AttendanceRecord {
-  id              String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId      String                     @map("employee_id") @db.Uuid
-  shiftId         String?                    @map("shift_id") @db.Uuid
-  date            DateTime                   @db.Date
-  checkIn         DateTime?                  @map("check_in")
-  checkOut        DateTime?                  @map("check_out")
-  totalHours      Decimal?                   @map("total_hours") @db.Decimal(5, 2)
-  breakHours      Decimal?                   @map("break_hours") @db.Decimal(5, 2)
-  workHours       Decimal?                   @map("work_hours") @db.Decimal(5, 2)
-  overtimeHours   Decimal?                   @map("overtime_hours") @db.Decimal(5, 2)
-  status          AttendanceStatus?
-  location        Json?
-  checkInMethod   CheckInMethod?             @map("check_in_method")
-  notes           String?
-  approvedBy      String?                    @map("approved_by") @db.Uuid
-  approvedAt      DateTime?                  @map("approved_at")
-  createdAt       DateTime                   @default(now()) @map("created_at")
-  updatedAt       DateTime                   @updatedAt @map("updated_at")
-  employee        Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  shift           Shift?                     @relation(fields: [shiftId], references: [id])
-  regularizations AttendanceRegularization[]
+  id               String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId       String                     @map("employee_id") @db.Uuid
+  shiftId          String?                    @map("shift_id") @db.Uuid
+  date             DateTime                   @db.Date
+  checkIn          DateTime?                  @map("check_in")
+  checkOut         DateTime?                  @map("check_out")
+  totalHours       Decimal?                   @map("total_hours") @db.Decimal(5, 2)
+  breakHours       Decimal?                   @map("break_hours") @db.Decimal(5, 2)
+  workHours        Decimal?                   @map("work_hours") @db.Decimal(5, 2)
+  overtimeHours    Decimal?                   @map("overtime_hours") @db.Decimal(5, 2)
+  status           AttendanceStatus?
+  location         Json?
+  checkInMethod    CheckInMethod?             @map("check_in_method")
+  notes            String?
+  approvedBy       String?                    @map("approved_by") @db.Uuid
+  approvedAt       DateTime?                  @map("approved_at")
+  isLate           Boolean?                   @map("is_late")
+  lateMinutes      Int?                       @map("late_minutes")
+  isEarly          Boolean?                   @map("is_early")
+  earlyMinutes     Int?                       @map("early_minutes")
+  isDeviation      Boolean?                   @map("is_deviation")
+  deviationReason  String?                    @map("deviation_reason") @db.VarChar(500)
+  otMinutes        Int?                       @map("ot_minutes")
+  createdAt        DateTime                   @default(now()) @map("created_at")
+  updatedAt        DateTime                   @updatedAt @map("updated_at")
+  employee         Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift            Shift?                     @relation(fields: [shiftId], references: [id])
+  regularizations  AttendanceRegularization[]
 
   @@unique([employeeId, date])
   @@map("attendance_records")
@@ -569,7 +576,7 @@ model ShiftAssignmentRule {
   id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   organizationId String       @map("organization_id") @db.Uuid
   displayName    String       @map("display_name") @db.VarChar(255)
-  shiftId        String       @map("shift_id") @db.Uuid
+  shiftId        String?      @map("shift_id") @db.Uuid
   paygroupId     String?      @map("paygroup_id") @db.Uuid
   departmentId   String?      @map("department_id") @db.Uuid
   effectiveDate  DateTime     @map("effective_date") @db.Date
@@ -579,7 +586,7 @@ model ShiftAssignmentRule {
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  shift          Shift        @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  shift          Shift?       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   paygroup       Paygroup?    @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
   department     Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 

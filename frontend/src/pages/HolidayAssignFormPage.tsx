@@ -138,13 +138,13 @@ export default function HolidayAssignFormPage() {
         if (rule.paygroup) {
           setSelectedPaygroups([{ id: rule.paygroup.id, name: rule.paygroup.name }]);
         } else {
-          setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
+          setSelectedPaygroups([]);
         }
         
         if (rule.department) {
           setSelectedDepartments([{ id: rule.department.id, name: rule.department.name }]);
         } else {
-          setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
+          setSelectedDepartments([]);
         }
         
         if (rule.employeeIds && Array.isArray(rule.employeeIds)) {
@@ -208,13 +208,11 @@ export default function HolidayAssignFormPage() {
       return;
     }
 
-    if (selectedPaygroups.length === 0) {
-      setError('Paygroup is required');
-      return;
-    }
-
-    if (selectedDepartments.length === 0) {
-      setError('Department is required');
+    const hasEmployee = selectedEmployees.length > 0;
+    const hasPaygroup = selectedPaygroups.length > 0;
+    const hasDepartment = selectedDepartments.length > 0;
+    if (!hasEmployee && !hasPaygroup && !hasDepartment) {
+      setError('Select at least one: Associate, Pay Group, or Department.');
       return;
     }
 
@@ -239,8 +237,8 @@ export default function HolidayAssignFormPage() {
     setError(null);
 
     try {
-      const paygroupId = selectedPaygroups[0]?.id === '__ALL__' ? undefined : selectedPaygroups[0]?.id;
-      const departmentId = selectedDepartments[0]?.id === '__ALL__' ? undefined : selectedDepartments[0]?.id;
+      const paygroupId = selectedPaygroups.length > 0 && selectedPaygroups[0]?.id !== '__ALL__' ? selectedPaygroups[0]?.id : undefined;
+      const departmentId = selectedDepartments.length > 0 && selectedDepartments[0]?.id !== '__ALL__' ? selectedDepartments[0]?.id : undefined;
       
       // Store holiday details in remarks as JSON
       const holidayData = {
@@ -497,7 +495,7 @@ export default function HolidayAssignFormPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Paygroup <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Paygroup</label>
                   <MultiSelectChips
                     selected={selectedPaygroups}
                     onRemove={(pg) => {
@@ -512,17 +510,17 @@ export default function HolidayAssignFormPage() {
                       }
                     }}
                     options={[{ id: '__ALL__', name: 'All' }, ...paygroups]}
-                    placeholder="Paygroup"
+                    placeholder="Paygroup (optional)"
                     showDropdown={showPaygroupDropdown}
                     onToggleDropdown={() => setShowPaygroupDropdown(!showPaygroupDropdown)}
                     searchValue=""
                     onSearchChange={() => {}}
                     dropdownRef={paygroupDropdownRef}
                   />
-                  <p className="mt-1.5 text-xs text-gray-500">Select &quot;All&quot; to apply this rule to all paygroups in the organization.</p>
+                  <p className="mt-1.5 text-xs text-gray-500">Optional. Select &quot;All&quot; or specific paygroups to apply this holiday to those employees.</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
                   <MultiSelectChips
                     selected={selectedDepartments}
                     onRemove={(dept) => {
@@ -537,14 +535,14 @@ export default function HolidayAssignFormPage() {
                       }
                     }}
                     options={[{ id: '__ALL__', name: 'All' }, ...departments]}
-                    placeholder="Department"
+                    placeholder="Department (optional)"
                     showDropdown={showDepartmentDropdown}
                     onToggleDropdown={() => setShowDepartmentDropdown(!showDepartmentDropdown)}
                     searchValue=""
                     onSearchChange={() => {}}
                     dropdownRef={departmentDropdownRef}
                   />
-                  <p className="mt-1.5 text-xs text-gray-500">Select &quot;All&quot; to apply this rule to all departments in the organization.</p>
+                  <p className="mt-1.5 text-xs text-gray-500">Optional. Select &quot;All&quot; or specific departments to apply this holiday to those employees.</p>
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Associate</label>

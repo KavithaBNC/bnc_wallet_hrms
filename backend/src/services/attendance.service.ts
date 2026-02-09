@@ -229,6 +229,7 @@ export class AttendanceService {
   /**
    * Sync attendance record for a day from punch data: first IN → checkIn,
    * last OUT → checkOut, total work hours from IN/OUT pairs.
+   * Applies Attendance Policy (Late & Others) and persists is_late, late_minutes, is_early, early_minutes, is_deviation, deviation_reason, ot_minutes.
    */
   async syncAttendanceRecordFromPunches(employeeId: string, date: Date) {
     const punches = await this.getPunchesForDay(employeeId, date);
@@ -252,7 +253,11 @@ export class AttendanceService {
     if (this.isWeekend(dayStart)) status = AttendanceStatus.WEEKEND;
     else if (await this.isHoliday(dayStart, employee.organizationId)) status = AttendanceStatus.HOLIDAY;
 
-    return prisma.attendanceRecord.upsert({
+    const checkIn = firstIn?.punchTime ?? null;
+    const checkOut = lastOut ?? null;
+    const workHoursRounded = Math.round(totalWorkHours * 100) / 100;
+
+    const record = await prisma.attendanceRecord.upsert({
       where: {
         employeeId_date: { employeeId, date: dayStart },
       },
@@ -260,17 +265,99 @@ export class AttendanceService {
         employeeId,
         shiftId: employee.shiftId || null,
         date: dayStart,
-        checkIn: firstIn?.punchTime ?? null,
-        checkOut: lastOut ?? null,
-        workHours: new Prisma.Decimal(Math.round(totalWorkHours * 100) / 100),
+        checkIn,
+        checkOut,
+        workHours: new Prisma.Decimal(workHoursRounded),
         status,
       },
       update: {
-        checkIn: firstIn?.punchTime ?? null,
-        checkOut: lastOut ?? null,
-        workHours: new Prisma.Decimal(Math.round(totalWorkHours * 100) / 100),
+        checkIn,
+        checkOut,
+        workHours: new Prisma.Decimal(workHoursRounded),
         status,
       },
+    });
+
+    // Apply policy: full (late/early/deviation/OT) when we have both check-in and check-out; late-only when only check-in (e.g. "Currently In")
+    const shiftId = record.shiftId ?? employee.shiftId;
+    if (status === AttendanceStatus.PRESENT && checkIn && shiftId) {
+      let policyRules: Record<string, any> | null = null;
+      try {
+        policyRules = await shiftAssignmentRuleService.getApplicablePolicyRules(
+          shiftId,
+          employeeId,
+          dayStart,
+          employee.organizationId
+        );
+      } catch (e) {
+        // ignore
+      }
+
+      if (checkOut) {
+        // Full policy when we have both check-in and check-out
+        const breakHours =
+          record.breakHours != null
+            ? parseFloat(record.breakHours.toString())
+            : employee.shift?.breakDuration
+              ? employee.shift.breakDuration / 60
+              : 0;
+        const shiftForCompute = employee.shift
+          ? {
+              startTime: employee.shift.startTime,
+              endTime: employee.shift.endTime,
+              breakDuration: employee.shift.breakDuration,
+            }
+          : null;
+        const computed = await this.computePolicyFieldsForDay(
+          checkIn,
+          checkOut,
+          breakHours,
+          shiftForCompute,
+          policyRules,
+          dayStart
+        );
+        await prisma.attendanceRecord.update({
+          where: { id: record.id },
+          data: {
+            workHours: new Prisma.Decimal(computed.workHours),
+            overtimeHours: new Prisma.Decimal(computed.overtimeHours),
+            otMinutes: computed.otMinutes > 0 ? computed.otMinutes : null,
+            isLate: computed.isLate,
+            lateMinutes: computed.lateMinutes ?? null,
+            isEarly: computed.isEarly,
+            earlyMinutes: computed.earlyMinutes ?? null,
+            isDeviation: computed.isDeviation,
+            deviationReason: computed.deviationReason ?? null,
+          },
+        });
+      } else {
+        // Only check-in so far ("Currently In"): compute and persist late only when policy says YES; otherwise clear late
+        if (employee.shift?.startTime) {
+          let isLate = false;
+          let lateMinutes: number | null = null;
+          if (policyRules?.considerLateFromGraceTime) {
+            const shiftStart = new Date(dayStart);
+            const [startHours, startMinutes] = (employee.shift.startTime as any).split(':').map(Number);
+            shiftStart.setHours(startHours, startMinutes, 0, 0);
+            const graceEndTime = this.getShiftTimeWithGrace(shiftStart, undefined, true, policyRules);
+            isLate = checkIn > graceEndTime;
+            lateMinutes = isLate
+              ? Math.round((checkIn.getTime() - graceEndTime.getTime()) / (1000 * 60))
+              : null;
+          }
+          await prisma.attendanceRecord.update({
+            where: { id: record.id },
+            data: {
+              isLate,
+              lateMinutes: lateMinutes ?? null,
+            },
+          });
+        }
+      }
+    }
+
+    return prisma.attendanceRecord.findUnique({
+      where: { id: record.id },
     });
   }
 
@@ -285,16 +372,45 @@ export class AttendanceService {
   }
 
   /**
-   * Get shift start/end time with grace period
+   * Get grace duration in milliseconds from policy.
+   * Supports shiftStartGraceMinutes / shiftEndGraceMinutes (number in minutes); else uses HH:MM time string.
+   * Use minutes when set (e.g. 4 = 4 minutes); use time string for legacy (e.g. 04:00 = 4 hours, 00:04 = 4 minutes).
+   */
+  private getGraceDurationMs(policyRules: Record<string, any> | null, forStart: boolean): number {
+    if (!policyRules) return 0;
+    const minutesRaw = forStart
+      ? policyRules.shiftStartGraceMinutes
+      : policyRules.shiftEndGraceMinutes;
+    if (minutesRaw !== undefined && minutesRaw !== null && minutesRaw !== '') {
+      const minutes = typeof minutesRaw === 'number' ? minutesRaw : parseInt(String(minutesRaw), 10);
+      if (!isNaN(minutes) && minutes >= 0) {
+        return minutes * 60 * 1000;
+      }
+    }
+    const timeStr = forStart
+      ? (policyRules.shiftStartGraceTime || '00:00')
+      : (policyRules.shiftEndGraceTime || '00:00');
+    const graceHours = this.parseTimeToHours(timeStr);
+    return graceHours * 60 * 60 * 1000;
+  }
+
+  /**
+   * Get shift start/end time with grace period.
+   * When policyRules is provided, uses getGraceDurationMs (supports grace in minutes); else uses graceTimeStr (HH:MM).
    */
   private getShiftTimeWithGrace(
     shiftTime: Date,
     graceTimeStr: string | undefined,
-    isStart: boolean
+    isStart: boolean,
+    policyRules?: Record<string, any> | null
   ): Date {
-    if (!graceTimeStr) return shiftTime;
-    const graceHours = this.parseTimeToHours(graceTimeStr);
-    const graceMs = graceHours * 60 * 60 * 1000;
+    let graceMs: number;
+    if (policyRules != null) {
+      graceMs = this.getGraceDurationMs(policyRules, isStart);
+    } else {
+      if (!graceTimeStr) return shiftTime;
+      graceMs = this.parseTimeToHours(graceTimeStr) * 60 * 60 * 1000;
+    }
     return new Date(shiftTime.getTime() + (isStart ? graceMs : -graceMs));
   }
 
@@ -309,8 +425,7 @@ export class AttendanceService {
     if (!shiftStartTime || !policyRules) return false;
     if (!policyRules.considerLateFromGraceTime) return false;
 
-    const graceTime = policyRules.shiftStartGraceTime || '00:00';
-    const graceEndTime = this.getShiftTimeWithGrace(shiftStartTime, graceTime, true);
+    const graceEndTime = this.getShiftTimeWithGrace(shiftStartTime, undefined, true, policyRules);
     return checkInTime > graceEndTime;
   }
 
@@ -325,9 +440,137 @@ export class AttendanceService {
     if (!shiftEndTime || !policyRules) return false;
     if (!policyRules.considerEarlyGoingFromGraceTime) return false;
 
-    const graceTime = policyRules.shiftEndGraceTime || '00:00';
-    const graceStartTime = this.getShiftTimeWithGrace(shiftEndTime, graceTime, false);
+    const graceStartTime = this.getShiftTimeWithGrace(shiftEndTime, undefined, false, policyRules);
     return checkOutTime < graceStartTime;
+  }
+
+  /**
+   * Compute policy-derived fields for a day (late, early, deviation, OT, workHours).
+   * Used by checkOut and syncAttendanceRecordFromPunches.
+   */
+  private async computePolicyFieldsForDay(
+    checkIn: Date,
+    checkOut: Date,
+    breakHours: number,
+    shift: { startTime: string | null; endTime: string | null; breakDuration?: number | null } | null,
+    policyRules: Record<string, any> | null,
+    _attendanceDate: Date
+  ): Promise<{
+    workHours: number;
+    overtimeHours: number;
+    otMinutes: number;
+    isLate: boolean;
+    lateMinutes: number | null;
+    isEarly: boolean;
+    earlyMinutes: number | null;
+    isDeviation: boolean;
+    deviationReason: string | null;
+  }> {
+    // Use check-in date (local) so shift times and punch times are on the same day and comparable
+    const checkInLocal = new Date(checkIn);
+    const dayStart = new Date(checkInLocal.getFullYear(), checkInLocal.getMonth(), checkInLocal.getDate(), 0, 0, 0, 0);
+
+    let workHours = this.calculateWorkHours(checkIn, checkOut, breakHours);
+    let overtimeHours = 0;
+
+    // Late coming (supports shiftStartGraceMinutes or shiftStartGraceTime HH:MM)
+    let isLate = false;
+    let lateMinutes: number | null = null;
+    if (policyRules && shift?.startTime && policyRules.considerLateFromGraceTime) {
+      const shiftStart = new Date(dayStart.getTime());
+      const [startHours, startMinutes] = (shift.startTime as any).split(':').map(Number);
+      shiftStart.setHours(startHours, startMinutes, 0, 0);
+      const graceEndTime = this.getShiftTimeWithGrace(shiftStart, undefined, true, policyRules);
+      if (checkIn > graceEndTime) {
+        isLate = true;
+        lateMinutes = Math.round((checkIn.getTime() - graceEndTime.getTime()) / (1000 * 60));
+      }
+    }
+
+    // Early going (supports shiftEndGraceMinutes or shiftEndGraceTime HH:MM)
+    let isEarlyGoing = false;
+    let earlyMinutes: number | null = null;
+    if (policyRules && shift?.endTime) {
+      const shiftEnd = new Date(dayStart.getTime());
+      const [endHours, endMinutes] = (shift.endTime as any).split(':').map(Number);
+      shiftEnd.setHours(endHours, endMinutes, 0, 0);
+      isEarlyGoing = this.isEarlyCheckOut(checkOut, shiftEnd, policyRules);
+      if (isEarlyGoing) {
+        const graceStartTime = this.getShiftTimeWithGrace(shiftEnd, undefined, false, policyRules);
+        earlyMinutes = Math.round((graceStartTime.getTime() - checkOut.getTime()) / (1000 * 60));
+      }
+    }
+
+    // Break deviation
+    const allowedBreakHours = policyRules?.includingShiftBreak
+      ? (shift?.breakDuration ? shift.breakDuration / 60 : 0)
+      : (policyRules?.minBreakHoursAsDeviation ? this.parseTimeToHours(policyRules.minBreakHoursAsDeviation) : 24);
+    const excessBreakHours = Math.max(0, breakHours - allowedBreakHours);
+    const breakDeviation = excessBreakHours > 0.001;
+
+    // Shortfall
+    let shortfallHours = 0;
+    if (policyRules?.considerLateAsShortfall && lateMinutes != null) shortfallHours += lateMinutes / 60;
+    if (policyRules?.considerEarlyGoingAsShortfall && earlyMinutes != null) shortfallHours += earlyMinutes / 60;
+    if (policyRules?.considerExcessBreakAsShortfall && excessBreakHours > 0) shortfallHours += excessBreakHours;
+    const minShortfallHours = policyRules?.minShortfallHoursAsDeviation
+      ? this.parseTimeToHours(policyRules.minShortfallHoursAsDeviation) : 0;
+    const shortfallDeviation = shortfallHours >= minShortfallHours && minShortfallHours >= 0;
+
+    const isDeviation = breakDeviation || shortfallDeviation;
+    const deviationReasons: string[] = [];
+    if (isLate && lateMinutes != null) deviationReasons.push(`Late ${lateMinutes} min`);
+    if (isEarlyGoing && earlyMinutes != null) deviationReasons.push(`Early going ${earlyMinutes} min`);
+    if (breakDeviation) deviationReasons.push('Excess break');
+    if (shortfallDeviation && !breakDeviation) deviationReasons.push('Shortfall');
+    const deviationReason = isDeviation ? deviationReasons.join('; ') : null;
+
+    // OT
+    if (policyRules) {
+      if (policyRules.excessStayConsideredAsOT && shift?.endTime) {
+        const shiftEndTime = new Date(dayStart.getTime());
+        const [endHours, endMinutes] = (shift.endTime as any).split(':').map(Number);
+        shiftEndTime.setHours(endHours, endMinutes, 0, 0);
+        const otStartGrace = policyRules.otStartsAfterShiftEnd || '00:00';
+        const otStartTime = this.getShiftTimeWithGrace(shiftEndTime, otStartGrace, true);
+        if (checkOut > otStartTime) {
+          const otHours = this.calculateWorkHours(otStartTime, checkOut);
+          const minOTHours = policyRules.minOTHoursPerDay ? this.parseTimeToHours(policyRules.minOTHoursPerDay) : 0;
+          const maxOTHours = policyRules.maxOTHoursPerDay ? this.parseTimeToHours(policyRules.maxOTHoursPerDay) : Infinity;
+          overtimeHours = Math.max(0, Math.min(otHours, maxOTHours));
+          if (overtimeHours < minOTHours) overtimeHours = 0;
+        }
+      }
+      if (policyRules.earlyComingConsideredAsOT && shift?.startTime) {
+        const shiftStart = new Date(dayStart);
+        const [startHours, startMinutes] = (shift.startTime as any).split(':').map(Number);
+        shiftStart.setHours(startHours, startMinutes, 0, 0);
+        if (checkIn < shiftStart) {
+          const earlyHours = this.calculateWorkHours(checkIn, shiftStart);
+          overtimeHours += earlyHours;
+        }
+      }
+    } else if (shift) {
+      const standardHours = 8;
+      overtimeHours = Math.max(0, workHours - standardHours);
+    }
+
+    if (policyRules?.roundOffOption && overtimeHours > 0) {
+      overtimeHours = Math.round(overtimeHours);
+    }
+    const otMinutes = Math.round(overtimeHours * 60);
+
+    return {
+      workHours,
+      overtimeHours,
+      otMinutes: otMinutes > 0 ? otMinutes : 0,
+      isLate,
+      lateMinutes,
+      isEarly: isEarlyGoing,
+      earlyMinutes,
+      isDeviation,
+      deviationReason,
+    };
   }
 
   /**
@@ -537,15 +780,11 @@ export class AttendanceService {
     const now = new Date();
     const checkIn = attendance.checkIn;
     const totalHours = this.calculateWorkHours(checkIn, now);
-    
-    // Use shift break duration if available, otherwise use attendance record's break hours
-    const breakHours = attendance.breakHours 
-      ? parseFloat(attendance.breakHours.toString()) 
-      : (employee.shift?.breakDuration ? employee.shift.breakDuration / 60 : 0);
-    
-    const workHours = this.calculateWorkHours(checkIn, now, breakHours);
 
-    // Get policy rules for this shift if available
+    const breakHours = attendance.breakHours
+      ? parseFloat(attendance.breakHours.toString())
+      : (employee.shift?.breakDuration ? employee.shift.breakDuration / 60 : 0);
+
     let policyRules: Record<string, any> | null = null;
     if (attendance.shiftId) {
       try {
@@ -556,116 +795,45 @@ export class AttendanceService {
           employee.organizationId
         );
       } catch (error) {
-        // If policy rules fetch fails, continue without them
         console.warn('Failed to fetch policy rules:', error);
       }
     }
 
-    // Calculate overtime based on policy rules or shift configuration
-    let overtimeHours = 0;
-    if (policyRules) {
-      // Policy-based overtime calculation
-      const shiftEndTime = employee.shift?.endTime 
-        ? (() => {
-            const end = new Date(today);
-            const [endHours, endMinutes] = (employee.shift!.endTime as any).split(':').map(Number);
-            end.setHours(endHours, endMinutes, 0, 0);
-            return end;
-          })()
-        : null;
-
-      if (policyRules.excessStayConsideredAsOT && shiftEndTime) {
-        // OT starts after shift end + grace period
-        const otStartGrace = policyRules.otStartsAfterShiftEnd || '00:00';
-        const otStartTime = this.getShiftTimeWithGrace(shiftEndTime, otStartGrace, true);
-        
-        if (now > otStartTime) {
-          const otHours = this.calculateWorkHours(otStartTime, now);
-          const minOTHours = policyRules.minOTHoursPerDay 
-            ? this.parseTimeToHours(policyRules.minOTHoursPerDay) 
-            : 0;
-          const maxOTHours = policyRules.maxOTHoursPerDay 
-            ? this.parseTimeToHours(policyRules.maxOTHoursPerDay) 
-            : Infinity;
-          
-          overtimeHours = Math.max(0, Math.min(otHours, maxOTHours));
-          // Apply minimum OT threshold
-          if (overtimeHours < minOTHours) {
-            overtimeHours = 0;
-          }
+    // Fallback OT when no policy (shift-based or default)
+    const shiftForCompute = employee.shift
+      ? {
+          startTime: employee.shift.startTime,
+          endTime: employee.shift.endTime,
+          breakDuration: employee.shift.breakDuration,
         }
-      }
+      : null;
+    const computed = await this.computePolicyFieldsForDay(
+      checkIn,
+      now,
+      breakHours,
+      shiftForCompute,
+      policyRules,
+      today
+    );
 
-      // Check early coming as OT
-      if (policyRules.earlyComingConsideredAsOT && employee.shift?.startTime) {
-        const shiftStart = new Date(today);
-        const [startHours, startMinutes] = (employee.shift.startTime as any).split(':').map(Number);
-        shiftStart.setHours(startHours, startMinutes, 0, 0);
-        
-        if (checkIn < shiftStart) {
-          const earlyHours = this.calculateWorkHours(checkIn, shiftStart);
-          overtimeHours += earlyHours;
-        }
-      }
-    } else if (employee.shift?.overtimeEnabled) {
-      // Fallback to shift-based overtime calculation
-      const standardHours = employee.shift.workHours 
-        ? parseFloat(employee.shift.workHours.toString()) 
-        : 8;
-      const threshold = employee.shift.overtimeThreshold 
-        ? parseFloat(employee.shift.overtimeThreshold.toString()) 
+    // If no policy, apply shift-based OT fallback
+    let overtimeHours = computed.overtimeHours;
+    if (!policyRules && employee.shift?.overtimeEnabled) {
+      const standardHours = employee.shift.workHours ? parseFloat(employee.shift.workHours.toString()) : 8;
+      const threshold = employee.shift.overtimeThreshold
+        ? parseFloat(employee.shift.overtimeThreshold.toString())
         : standardHours;
-      
-      if (workHours > threshold) {
-        overtimeHours = workHours - threshold;
+      if (computed.workHours > threshold) {
+        overtimeHours = computed.workHours - threshold;
       }
-    } else {
-      // Default calculation if no shift
-      const standardWorkHours = 8;
-      overtimeHours = Math.max(0, workHours - standardWorkHours);
     }
 
-    // Round off overtime if policy specifies
-    if (policyRules?.roundOffOption && overtimeHours > 0) {
-      overtimeHours = Math.round(overtimeHours);
-    }
-
-    // Detect early going based on policy rules
-    let isEarlyGoing = false;
     let updatedNotes = data.notes || attendance.notes || '';
-    
-    if (policyRules && employee.shift?.endTime) {
-      const shiftEnd = new Date(today);
-      const [endHours, endMinutes] = (employee.shift.endTime as any).split(':').map(Number);
-      shiftEnd.setHours(endHours, endMinutes, 0, 0);
-      
-      isEarlyGoing = this.isEarlyCheckOut(now, shiftEnd, policyRules);
-      
-      if (isEarlyGoing && policyRules.considerEarlyGoingAsShortfall) {
-        // Could mark as HALF_DAY or add note - for now, add note
-        const earlyMinutes = Math.round((shiftEnd.getTime() - now.getTime()) / (1000 * 60));
-        if (updatedNotes) {
-          updatedNotes += ` | Early going by ${earlyMinutes} minutes`;
-        } else {
-          updatedNotes = `Early going by ${earlyMinutes} minutes`;
-        }
-      }
+    if (computed.isLate && computed.lateMinutes != null && !updatedNotes.includes('Late')) {
+      updatedNotes = updatedNotes ? `${updatedNotes} | Late by ${computed.lateMinutes} min` : `Late by ${computed.lateMinutes} min`;
     }
-
-    // Detect late check-in if not already noted
-    if (policyRules && employee.shift?.startTime && checkIn) {
-      const shiftStart = new Date(today);
-      const [startHours, startMinutes] = (employee.shift.startTime as any).split(':').map(Number);
-      shiftStart.setHours(startHours, startMinutes, 0, 0);
-      
-      if (this.isLateCheckIn(checkIn, shiftStart, policyRules)) {
-        const lateMinutes = Math.round((checkIn.getTime() - shiftStart.getTime()) / (1000 * 60));
-        if (updatedNotes) {
-          updatedNotes += ` | Late check-in by ${lateMinutes} minutes`;
-        } else {
-          updatedNotes = `Late check-in by ${lateMinutes} minutes`;
-        }
-      }
+    if (computed.isEarly && computed.earlyMinutes != null && !updatedNotes.includes('Early')) {
+      updatedNotes = updatedNotes ? `${updatedNotes} | Early going by ${computed.earlyMinutes} min` : `Early going by ${computed.earlyMinutes} min`;
     }
 
     // Determine check-in method based on location
@@ -674,7 +842,7 @@ export class AttendanceService {
       checkInMethod = employee.shift?.geofenceEnabled ? CheckInMethod.GEOFENCE : CheckInMethod.MOBILE;
     }
 
-    // Update attendance record
+    // Update attendance record (store policy-derived fields for calendar L / EG / D / OT)
     const updated = await prisma.attendanceRecord.update({
       where: {
         employeeId_date: {
@@ -685,8 +853,15 @@ export class AttendanceService {
       data: {
         checkOut: now,
         totalHours: new Prisma.Decimal(totalHours),
-        workHours: new Prisma.Decimal(workHours),
+        workHours: new Prisma.Decimal(computed.workHours),
         overtimeHours: new Prisma.Decimal(overtimeHours),
+        otMinutes: computed.otMinutes > 0 ? computed.otMinutes : null,
+        isLate: computed.isLate,
+        lateMinutes: computed.lateMinutes ?? null,
+        isEarly: computed.isEarly,
+        earlyMinutes: computed.earlyMinutes ?? null,
+        isDeviation: computed.isDeviation,
+        deviationReason: computed.deviationReason ?? null,
         location: data.location || (attendance.location ? attendance.location : undefined),
         checkInMethod: checkInMethod,
         notes: updatedNotes || null,
@@ -807,6 +982,7 @@ export class AttendanceService {
               lastName: true,
               email: true,
               employeeCode: true,
+              organizationId: true,
             },
           },
           shift: {
@@ -840,6 +1016,9 @@ export class AttendanceService {
       resultPage = 1;
       resultLimit = merged.length;
     }
+
+    // Late backfill removed from getRecords to avoid slow load (N policy fetches + N updates per request).
+    // L is set when sync runs (punch in/out) or via a separate recalc endpoint if needed.
 
     return {
       records: resultRecords,
@@ -900,6 +1079,42 @@ export class AttendanceService {
       const key = `${employeeId}-${dateStr}`;
       const existing = recordsByDate.get(key);
       const dateForRule = new Date(dateStr + 'T12:00:00.000Z');
+      // Week off takes precedence: if a Week Off rule applies to this employee on this date, show Week Off on calendar
+      const weekOffShift = await shiftAssignmentRuleService.getApplicableWeekOffForEmployee(
+        employeeId,
+        dateForRule,
+        organizationId
+      );
+      if (weekOffShift) {
+        merged.push({
+          id: existing?.id ?? `synthetic-${employeeId}-${dateStr}`,
+          employeeId,
+          date: dateForRule,
+          shiftId: weekOffShift.id,
+          employee: existing?.employee ?? employeeInfo,
+          shift: weekOffShift,
+        });
+        continue;
+      }
+      // Holiday from Holiday Assign (ShiftAssignmentRule with __HOLIDAY_DATA__) — show on employee calendar
+      // Pass dateStr (YYYY-MM-DD) so comparison is timezone-neutral; avoids holidays showing on 17th/20th instead of 16th/19th
+      const holiday = await shiftAssignmentRuleService.getApplicableHolidayForEmployee(
+        employeeId,
+        dateStr,
+        organizationId
+      );
+      if (holiday) {
+        merged.push({
+          id: existing?.id ?? `synthetic-holiday-${employeeId}-${dateStr}`,
+          employeeId,
+          date: dateForRule,
+          shiftId: null,
+          employee: existing?.employee ?? employeeInfo,
+          shift: { id: 'holiday', name: holiday.name, startTime: '00:00', endTime: '00:00' },
+          status: AttendanceStatus.HOLIDAY,
+        });
+        continue;
+      }
       if (existing) {
         if (existing.shift) {
           merged.push(existing);

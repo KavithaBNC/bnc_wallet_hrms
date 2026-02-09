@@ -11,6 +11,14 @@ export const ASSIGNABLE_MODULE_RESOURCES = [
   'employees',
   'departments',
   'positions',
+  'event_configuration',
+  'attendance_components',
+  'encashment_carry_forward',
+  'rights_allocation',
+  'workflow_mapping',
+  'rule_setting',
+  'auto_credit_setting',
+  'approval_workflow',
   'attendance',
   'attendance_policy',
   'leaves',
@@ -35,6 +43,8 @@ export class OrganizationModuleService {
    * Get enabled module resources for an organization.
    * Uses organization_modules table. If that is empty, falls back to ORG_ADMIN's
    * org-specific role_permissions so Org Admin sees modules assigned via Module Permission page.
+   * Also merges in ORG_ADMIN's role_permission resources so the Module Permission table shows
+   * every module the Org Admin can see (e.g. Event Configuration) and assign to HR/Manager/Employee.
    */
   async getModules(organizationId: string): Promise<string[]> {
     const org = await prisma.organization.findUnique({
@@ -60,6 +70,16 @@ export class OrganizationModuleService {
       });
       resources = [...new Set(orgAdminPerms.map((rp) => rp.permission.resource))];
     }
+    // Merge ORG_ADMIN's org-specific permissions so Module Permission table shows all modules Org Admin can see
+    const orgAdminPerms = await prisma.rolePermission.findMany({
+      where: { role: UserRole.ORG_ADMIN, organizationId },
+      include: { permission: { select: { resource: true } } },
+    });
+    const assignableList = ASSIGNABLE_MODULE_RESOURCES as readonly string[];
+    const fromPerms = orgAdminPerms
+      .map((rp) => rp.permission.resource)
+      .filter((r) => assignableList.includes(r));
+    resources = [...new Set([...resources, ...fromPerms])];
     // Payroll Master implies Employee Separation and Employee Rejoin: include when payroll is assigned
     if (resources.includes('payroll')) {
       if (!resources.includes('employee_separations')) resources = [...resources, 'employee_separations'];

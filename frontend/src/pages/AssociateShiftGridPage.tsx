@@ -317,20 +317,30 @@ export default function AssociateShiftGridPage() {
     });
   };
 
-  /** Set one shift for all visible employees from a date to end of month (e.g. "General Shift from 20th onwards"). */
+  /** Set one shift for all visible employees from a date to end of month (e.g. "General Shift from 20th onwards"). Batched in one state update so Save detects changes. */
   const handleFillFromDate = () => {
     if (!fillFromDate || !fillShiftName) {
       alert('Please select a start date and a shift.');
       return;
     }
     const fromStr = fillFromDate.slice(0, 10);
-    employees.forEach((emp) => {
-      dateRange.forEach((date) => {
-        const dateStr = format(date, 'yyyy-MM-dd');
-        if (dateStr >= fromStr) {
-          updateShiftAssignment(emp.id, dateStr, fillShiftName);
-        }
+    setShiftAssignments((prev) => {
+      const newMap = new Map(prev);
+      employees.forEach((emp) => {
+        dateRange.forEach((date) => {
+          const dateStr = format(date, 'yyyy-MM-dd');
+          if (dateStr >= fromStr) {
+            const key = `${emp.id}-${dateStr}`;
+            newMap.set(key, {
+              employeeId: emp.id,
+              date: dateStr,
+              shiftName: fillShiftName,
+              isWeekOff: fillShiftName === 'W',
+            });
+          }
+        });
       });
+      return newMap;
     });
     setFillFromDate('');
     setFillShiftName('');

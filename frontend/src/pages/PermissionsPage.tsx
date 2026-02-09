@@ -28,7 +28,6 @@ const PermissionsPage = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const headerCheckboxRefs = useRef<Record<PermissionScreenAction, HTMLInputElement | null>>({ read: null, create: null, update: null });
 
   const handleLogout = async () => {
     await logout();
@@ -190,7 +189,7 @@ const PermissionsPage = () => {
     );
   };
 
-  /** Permission IDs for a given action (column) – only modules that have that permission. */
+  /** All permission IDs for a given action (View/Add/Edit) across modules that have that permission. */
   const getPermissionIdsForAction = (action: PermissionScreenAction): string[] => {
     const ids: string[] = [];
     for (const mod of modules) {
@@ -200,25 +199,36 @@ const PermissionsPage = () => {
     return ids;
   };
 
-  const isAllSelectedForAction = (action: PermissionScreenAction): boolean => {
+  /** Toggle select all / deselect all for one column (e.g. all View checkboxes). */
+  const toggleAllForAction = (action: PermissionScreenAction) => {
+    const ids = getPermissionIdsForAction(action);
+    if (ids.length === 0) return;
+    const selectedSet = new Set(selectedPermissionIds);
+    const allSelected = ids.every((id) => selectedSet.has(id));
+    setSelectedPermissionIds((prev) => {
+      const prevSet = new Set(prev);
+      if (allSelected) {
+        ids.forEach((id) => prevSet.delete(id));
+        return prev.filter((id) => !ids.includes(id));
+      }
+      ids.forEach((id) => prevSet.add(id));
+      return [...new Set([...prev, ...ids])];
+    });
+  };
+
+  /** For header checkbox: are all (enabled) modules selected for this action? */
+  const isAllCheckedForAction = (action: PermissionScreenAction): boolean => {
     const ids = getPermissionIdsForAction(action);
     if (ids.length === 0) return false;
     return ids.every((id) => selectedPermissionIds.includes(id));
   };
 
-  const isSomeSelectedForAction = (action: PermissionScreenAction): boolean => {
+  /** For header checkbox: are some (but not all) selected? Used for indeterminate state. */
+  const isSomeCheckedForAction = (action: PermissionScreenAction): boolean => {
     const ids = getPermissionIdsForAction(action);
-    return ids.some((id) => selectedPermissionIds.includes(id));
-  };
-
-  /** Toggle all checkboxes in a column: if all selected then deselect all, else select all. */
-  const toggleAllForAction = (action: PermissionScreenAction) => {
-    const ids = getPermissionIdsForAction(action);
-    if (ids.length === 0) return;
-    const allSelected = ids.every((id) => selectedPermissionIds.includes(id));
-    setSelectedPermissionIds((prev) =>
-      allSelected ? prev.filter((id) => !ids.includes(id)) : [...new Set([...prev, ...ids])]
-    );
+    if (ids.length === 0) return false;
+    const count = ids.filter((id) => selectedPermissionIds.includes(id)).length;
+    return count > 0 && count < ids.length;
   };
 
   const handleSyncPermissions = async () => {
@@ -327,18 +337,6 @@ const PermissionsPage = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  // Set indeterminate on header "select all" checkboxes when some (but not all) are selected
-  useEffect(() => {
-    for (const action of PERMISSION_SCREEN_ACTIONS) {
-      const el = headerCheckboxRefs.current[action];
-      if (el) {
-        const allSelected = isAllSelectedForAction(action);
-        const someSelected = isSomeSelectedForAction(action);
-        el.indeterminate = someSelected && !allSelected;
-      }
-    }
-  }, [selectedPermissionIds, modules, permissionByKey]);
 
   if (!canManagePermissions) {
     return (
@@ -580,26 +578,30 @@ const PermissionsPage = () => {
                         MODULE
                       </th>
                       {PERMISSION_SCREEN_ACTIONS.map((action) => {
+                        const allChecked = isAllCheckedForAction(action);
+                        const someChecked = isSomeCheckedForAction(action);
                         const idsForAction = getPermissionIdsForAction(action);
-                        const allSelected = isAllSelectedForAction(action);
-                        const canToggle = idsForAction.length > 0;
+                        const hasAny = idsForAction.length > 0;
                         return (
                           <th
                             key={action}
                             className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider"
                           >
-                            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                              <input
-                                ref={(el) => { headerCheckboxRefs.current[action] = el; }}
-                                type="checkbox"
-                                checked={canToggle && allSelected}
-                                disabled={!canToggle}
-                                onChange={() => toggleAllForAction(action)}
-                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={`Select all ${PERMISSION_SCREEN_ACTION_LABELS[action]} for every module`}
-                              />
+                            <div className="flex flex-col items-center gap-1">
                               <span>{PERMISSION_SCREEN_ACTION_LABELS[action]}</span>
-                            </label>
+                              {hasAny && (
+                                <input
+                                  type="checkbox"
+                                  checked={allChecked}
+                                  ref={(el) => {
+                                    if (el) el.indeterminate = someChecked;
+                                  }}
+                                  onChange={() => toggleAllForAction(action)}
+                                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                  title={`Select all ${PERMISSION_SCREEN_ACTION_LABELS[action]} for all modules`}
+                                />
+                              )}
+                            </div>
                           </th>
                         );
                       })}

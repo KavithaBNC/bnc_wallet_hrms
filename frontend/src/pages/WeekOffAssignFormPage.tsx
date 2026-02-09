@@ -113,12 +113,15 @@ export default function WeekOffAssignFormPage() {
       return;
     }
 
-    // Update Saturdays based on selection
+    // Update Saturdays based on selection; clear Sunday for all weeks so only selected Saturdays are week off
     setWeekOffDetails((prev) => {
       const updated = prev.map((week) => [...week]);
-      
+      // Clear Sunday (day 0) for all weeks so "1st/3rd Saturday" doesn't show every Sunday as Week Off
+      for (let week = 0; week < 6; week++) {
+        updated[week][0] = false;
+      }
       if (alternateSaturdayId === '1ST_3RD') {
-        // Week 1 (index 0) and Week 3 (index 2) = YES
+        // Week 1 (index 0) and Week 3 (index 2) = YES — only 1st and 3rd Saturday off
         updated[0][6] = true; // Week 1 Saturday
         updated[2][6] = true; // Week 3 Saturday
         updated[1][6] = false; // Week 2 Saturday
@@ -126,7 +129,7 @@ export default function WeekOffAssignFormPage() {
         updated[4][6] = false; // Week 5 Saturday
         updated[5][6] = false; // Week 6 Saturday
       } else if (alternateSaturdayId === '2ND_4TH') {
-        // Week 2 (index 1) and Week 4 (index 3) = YES
+        // Week 2 (index 1) and Week 4 (index 3) = YES — only 2nd and 4th Saturday off
         updated[0][6] = false; // Week 1 Saturday
         updated[1][6] = true;  // Week 2 Saturday
         updated[2][6] = false; // Week 3 Saturday
@@ -134,7 +137,6 @@ export default function WeekOffAssignFormPage() {
         updated[4][6] = false; // Week 5 Saturday
         updated[5][6] = false; // Week 6 Saturday
       }
-      
       return updated;
     });
   }, [selectedAlternateSaturday]);
@@ -190,13 +192,13 @@ export default function WeekOffAssignFormPage() {
         if (rule.paygroup) {
           setSelectedPaygroups([{ id: rule.paygroup.id, name: rule.paygroup.name }]);
         } else {
-          setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
+          setSelectedPaygroups([]); // Optional: no paygroup selected
         }
         
         if (rule.department) {
           setSelectedDepartments([{ id: rule.department.id, name: rule.department.name }]);
         } else {
-          setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
+          setSelectedDepartments([]); // Optional: no department selected
         }
         
         if (rule.shift) {
@@ -303,12 +305,11 @@ export default function WeekOffAssignFormPage() {
       setError('Display Name is required.');
       return;
     }
-    if (selectedPaygroups.length === 0) {
-      setError('Paygroup is required.');
-      return;
-    }
-    if (selectedDepartments.length === 0) {
-      setError('Department is required.');
+    const hasEmployee = selectedEmployees.length > 0;
+    const hasPaygroup = selectedPaygroups.length > 0;
+    const hasDepartment = selectedDepartments.length > 0;
+    if (!hasEmployee && !hasPaygroup && !hasDepartment) {
+      setError('Select at least one: Associate, Pay Group, or Department.');
       return;
     }
     if (selectedAlternateSaturday.length === 0) {
@@ -323,8 +324,8 @@ export default function WeekOffAssignFormPage() {
     setError(null);
     setSaving(true);
     try {
-      const paygroupId = selectedPaygroups[0]?.id === '__ALL__' ? undefined : selectedPaygroups[0]?.id;
-      const departmentId = selectedDepartments[0]?.id === '__ALL__' ? undefined : selectedDepartments[0]?.id;
+      const paygroupId = selectedPaygroups.length > 0 && selectedPaygroups[0]?.id !== '__ALL__' ? selectedPaygroups[0]?.id : undefined;
+      const departmentId = selectedDepartments.length > 0 && selectedDepartments[0]?.id !== '__ALL__' ? selectedDepartments[0]?.id : undefined;
       
       // Store week off details in remarks as JSON
       const weekOffData = {
@@ -494,7 +495,7 @@ export default function WeekOffAssignFormPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Paygroup <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Paygroup</label>
                   <MultiSelectChips
                     selected={selectedPaygroups}
                     onRemove={removePaygroup}
@@ -502,12 +503,12 @@ export default function WeekOffAssignFormPage() {
                     options={[{ id: '__ALL__', name: 'All' }, ...paygroups].filter((o) => !selectedPaygroups.some((x) => x.id === o.id))}
                     showDropdown={showPaygroupDropdown}
                     setShowDropdown={setShowPaygroupDropdown}
-                    placeholder="Select paygroups..."
+                    placeholder="Select paygroups (optional)..."
                   />
-                  <p className="mt-1.5 text-xs text-gray-500">Select &quot;All&quot; to apply this rule to all paygroups in the organization.</p>
+                  <p className="mt-1.5 text-xs text-gray-500">Optional. Select &quot;All&quot; or specific paygroups to apply this rule to those employees.</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
                   <MultiSelectChips
                     selected={selectedDepartments}
                     onRemove={removeDepartment}
@@ -515,9 +516,9 @@ export default function WeekOffAssignFormPage() {
                     options={[{ id: '__ALL__', name: 'All' }, ...departments].filter((o) => !selectedDepartments.some((x) => x.id === o.id))}
                     showDropdown={showDepartmentDropdown}
                     setShowDropdown={setShowDepartmentDropdown}
-                    placeholder="Select departments..."
+                    placeholder="Select departments (optional)..."
                   />
-                  <p className="mt-1.5 text-xs text-gray-500">Select &quot;All&quot; to apply this rule to all departments in the organization.</p>
+                  <p className="mt-1.5 text-xs text-gray-500">Optional. Select &quot;All&quot; or specific departments to apply this rule to those employees.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Alternate Saturday Off <span className="text-red-500">*</span></label>
