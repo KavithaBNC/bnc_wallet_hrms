@@ -75,7 +75,7 @@ export default function EncashmentCarryForwardPage() {
   const columnPickerRef = useRef<HTMLDivElement>(null);
   
   // Employee name mapping
-  const [employeeNameMap, setEmployeeNameMap] = useState<Map<string, string>>(new Map());
+  const [_employeeNameMap, setEmployeeNameMap] = useState<Map<string, string>>(new Map());
   const [paygroups, setPaygroups] = useState<Array<{ id: string; name: string }>>([]);
   const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
 
@@ -252,7 +252,6 @@ export default function EncashmentCarryForwardPage() {
     });
   };
 
-  const totalPages = Math.max(1, pagination.totalPages);
   const startEntry = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
   const endEntry = Math.min(pagination.page * pagination.limit, pagination.total);
 

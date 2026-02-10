@@ -673,7 +673,7 @@ export default function ExcessTimeConversionFormPage() {
                                 ) : (
                                   <input
                                     type="number"
-                                    value={currentValue}
+                                    value={typeof currentValue === 'number' ? currentValue : ''}
                                     onChange={(e) => handleUpdateRule(ruleDef.key, Number(e.target.value))}
                                     className="h-9 px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-32"
                                   />

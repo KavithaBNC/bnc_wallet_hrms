@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Webcam from 'react-webcam';
+import Webcam, { WebcamRef } from 'react-webcam';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
@@ -24,7 +24,7 @@ function getCameraError(err: unknown): { message: string; isInUse: boolean } {
 const FaceAttendancePage = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const webcamRef = useRef<Webcam>(null);
+  const webcamRef = useRef<WebcamRef>(null);
   const [punching, setPunching] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [punchSuccess, setPunchSuccess] = useState(false);
@@ -169,7 +169,7 @@ const FaceAttendancePage = () => {
                     setCameraReady(true);
                     setCameraError(null);
                   }}
-                  onUserMediaError={(err) => {
+                  onUserMediaError={(err: unknown) => {
                     setCameraReady(false);
                     const { message, isInUse } = getCameraError(err);
                     setCameraError(message);

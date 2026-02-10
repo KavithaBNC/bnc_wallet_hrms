@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useLayoutEffect } from 'react';
-import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import paygroupService from '../services/paygroup.service';
@@ -114,7 +114,6 @@ function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boole
 export default function AutoCreditSettingFormPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const location = useLocation();
   const isEdit = Boolean(id);
   const { user, logout } = useAuthStore();
   const organizationName = user?.employee?.organization?.name;
@@ -308,12 +307,12 @@ export default function AutoCreditSettingFormPage() {
         daysCalculation: daysCalculation || undefined,
         joiningPeriodCredit,
         probationCredit,
-        entitlementDays: entitlementDays === '' ? 0 : Number(entitlementDays),
+        entitlementDays: String(entitlementDays) === '' ? 0 : Number(entitlementDays),
         roundOff,
         roundOffNature: roundOffNature || undefined,
-        roundOffValue: roundOffValue === '' ? 0 : Number(roundOffValue),
+        roundOffValue: String(roundOffValue) === '' ? 0 : Number(roundOffValue),
         carryForwardNextPeriod,
-        expireInMonth: expireInMonth === '' ? 0 : Number(expireInMonth),
+        expireInMonth: String(expireInMonth) === '' ? 0 : Number(expireInMonth),
         dayOfCreditPeriod: dayOfCreditPeriod.trim() || undefined,
         creditBaseOnPreviousWorkDays,
       };
@@ -340,6 +339,7 @@ export default function AutoCreditSettingFormPage() {
           associate: payload.associate ?? null,
           paygroupId: payload.paygroupId ?? null,
           departmentId: payload.departmentId ?? null,
+          condition: null,
           effectiveDate: payload.effectiveDate!,
           effectiveTo: payload.effectiveTo,
           priority: payload.priority,

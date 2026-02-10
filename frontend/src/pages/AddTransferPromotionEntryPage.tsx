@@ -46,7 +46,7 @@ export default function AddTransferPromotionEntryPage() {
   const [loadingPaygroups, setLoadingPaygroups] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [loadingPositions, setLoadingPositions] = useState(false);
-  const [loadingAssociateDetail, setLoadingAssociateDetail] = useState(false);
+  const [_loadingAssociateDetail, setLoadingAssociateDetail] = useState(false);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [loadingLocations, setLoadingLocations] = useState(false);
 

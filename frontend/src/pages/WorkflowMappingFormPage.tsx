@@ -4,14 +4,14 @@ import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import paygroupService from '../services/paygroup.service';
 import departmentService from '../services/department.service';
-import workflowMappingService, { ApprovalLevel } from '../services/workflowMapping.service';
+import workflowMappingService from '../services/workflowMapping.service';
 
 interface Option {
   id: string;
   name: string;
 }
 
-interface ApprovalLevel {
+interface ApprovalLevelRow {
   id: string;
   level: number;
   levelName: string;
@@ -45,7 +45,7 @@ export default function WorkflowMappingFormPage() {
   const [entryRightsTemplate, setEntryRightsTemplate] = useState('');
 
   // Approval Levels
-  const [approvalLevels, setApprovalLevels] = useState<ApprovalLevel[]>([]);
+  const [approvalLevels, setApprovalLevels] = useState<ApprovalLevelRow[]>([]);
   const [nextLevelId, setNextLevelId] = useState(1);
   const [openDropdowns, setOpenDropdowns] = useState<Record<string, 'hierarchy' | 'approvalLevel' | null>>({});
 
@@ -55,17 +55,17 @@ export default function WorkflowMappingFormPage() {
   const [entryRightsTemplates, setEntryRightsTemplates] = useState<Option[]>([]);
   
   // Approval Level dropdown options
-  const [associates, setAssociates] = useState<Option[]>([
+  const [associates, _setAssociates] = useState<Option[]>([
     { id: 'associate', name: 'Associate' },
     { id: 'manager', name: 'Manager' },
     { id: 'hr', name: 'HR' },
   ]);
-  const [hierarchies, setHierarchies] = useState<Option[]>([
+  const [hierarchies, _setHierarchies] = useState<Option[]>([
     { id: 'reporting_manager', name: 'Reporting Manager' },
     { id: 'department_head', name: 'Department Head' },
     { id: 'hr_manager', name: 'HR Manager' },
   ]);
-  const [approvalLevelOptions, setApprovalLevelOptions] = useState<Option[]>([
+  const [approvalLevelOptions, _setApprovalLevelOptions] = useState<Option[]>([
     { id: 'employee_approval', name: 'Employee Approval' },
     { id: 'manager_approval', name: 'Manager Approval' },
     { id: 'hr_approval', name: 'HR Approval' },
@@ -74,7 +74,7 @@ export default function WorkflowMappingFormPage() {
   // Dropdown states
   const [showPaygroupDropdown, setShowPaygroupDropdown] = useState(false);
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
-  const [showEntryRightsDropdown, setShowEntryRightsDropdown] = useState(false);
+  const [_showEntryRightsDropdown, setShowEntryRightsDropdown] = useState(false);
 
   // Refs for dropdowns
   const paygroupDropdownRef = useRef<HTMLDivElement>(null);
@@ -151,7 +151,7 @@ export default function WorkflowMappingFormPage() {
         setRemarks(data.remarks || '');
         setEntryRightsTemplate(data.entryRightsTemplate || '');
         if (data.approvalLevels && Array.isArray(data.approvalLevels)) {
-          setApprovalLevels(data.approvalLevels as ApprovalLevel[]);
+          setApprovalLevels(data.approvalLevels as ApprovalLevelRow[]);
         }
         setLoading(false);
       })
@@ -174,7 +174,7 @@ export default function WorkflowMappingFormPage() {
 
   // Approval Levels handlers
   const handleAddApprovalLevel = () => {
-    const newLevel: ApprovalLevel = {
+    const newLevel: ApprovalLevelRow = {
       id: `level-${nextLevelId}`,
       level: approvalLevels.length + 1,
       levelName: String(approvalLevels.length + 1),
@@ -199,7 +199,7 @@ export default function WorkflowMappingFormPage() {
     setApprovalLevels(renumbered);
   };
 
-  const handleUpdateApprovalLevel = (id: string, field: keyof ApprovalLevel, value: string) => {
+  const handleUpdateApprovalLevel = (id: string, field: keyof ApprovalLevelRow, value: string) => {
     setApprovalLevels(
       approvalLevels.map((level) => (level.id === id ? { ...level, [field]: value } : level))
     );

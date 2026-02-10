@@ -27,7 +27,6 @@ export default function EmployeesPage() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const { user, loadUser, logout } = useAuthStore();
-  const organizationName = user?.employee?.organization?.name;
   const { employees, pagination, loading, error, fetchEmployees, deleteEmployee } = useEmployeeStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ACTIVE');
@@ -68,7 +67,7 @@ export default function EmployeesPage() {
   // Super Admin: list of all orgs and selected org for Employee Directory
   const [superAdminOrganizations, setSuperAdminOrganizations] = useState<Organization[]>([]);
   const [superAdminSelectedOrgId, setSuperAdminSelectedOrgId] = useState<string | 'ALL'>('ALL');
-  const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const [_loadingOrgs, setLoadingOrgs] = useState(false);
   // View Credentials page filters
   const [credOrgFilter, setCredOrgFilter] = useState<string>('ALL');
   const [credDesignationFilter, setCredDesignationFilter] = useState<string>('ALL');
@@ -453,22 +452,6 @@ export default function EmployeesPage() {
         <path d="M15 8l-5 5-5-5h10z" />
       </svg>
     );
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case 'ACTIVE':
-        return 'bg-green-100 text-green-800';
-      case 'ON_LEAVE':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'SUSPENDED':
-        return 'bg-orange-100 text-orange-800';
-      case 'TERMINATED':
-      case 'RESIGNED':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
   };
 
   const handleExportExcel = () => {

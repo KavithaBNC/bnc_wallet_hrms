@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { attendanceService } from '../services/attendance.service';
@@ -6,6 +6,7 @@ import employeeService, { type Employee } from '../services/employee.service';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import shiftService, { Shift } from '../services/shift.service';
+import shiftAssignmentRuleService from '../services/shiftAssignmentRule.service';
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, getDay, addMonths } from 'date-fns';
 
 interface AttendanceRecord {
@@ -53,33 +54,186 @@ function formatWorkHoursAsHHMM(decimalHours: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-/** Early minutes from backend, or computed from checkOut vs shift end (fallback only when policy not applied). When policy says NO (isEarly === false), never show early going. */
-function getEarlyMinutes(record: AttendanceRecord): number | null {
-  if (record.isEarly === false) return null; // Policy says "Consider Early Going" = NO
+type ShiftLike = { startTime?: string | null; endTime?: string | null } | null;
+
+/** Policy from Late & Others rule (__POLICY_RULES__) for applying grace and shortfall. */
+type LateEarlyPolicy = {
+  shiftStartGraceMinutes?: number | null;
+  shiftEndGraceMinutes?: number | null;
+  shiftStartGraceTime?: string | null;
+  shiftEndGraceTime?: string | null;
+  considerLateFromGraceTime?: boolean;
+  considerEarlyGoingFromGraceTime?: boolean;
+  considerLateAsShortfall?: boolean;
+  considerEarlyGoingAsShortfall?: boolean;
+  minShortfallHoursAsDeviation?: string | null; // e.g. "00:10"
+} | null;
+
+/** Parse "HH:MM" or "H:MM" to total minutes (e.g. "00:04" -> 4, "01:30" -> 90). */
+function parseHHMMToMinutes(hhmm: string | null | undefined): number {
+  if (!hhmm || typeof hhmm !== 'string') return 0;
+  const parts = hhmm.trim().split(':');
+  const h = parseInt(parts[0] || '0', 10);
+  const m = parseInt(parts[1] || '0', 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return 0;
+  return h * 60 + m;
+}
+
+/** Resolve shift to use: record.shift or override (e.g. from Shift Master by name). */
+function effectiveShift(record: AttendanceRecord, override: ShiftLike): ShiftLike {
+  if (record.shift?.startTime != null || record.shift?.endTime != null) return record.shift;
+  return override ?? record.shift ?? null;
+}
+
+/** Grace minutes for shift start from policy (minutes field overrides HH:MM). */
+function getStartGraceMinutes(policy: LateEarlyPolicy): number {
+  if (!policy) return 0;
+  if (policy.shiftStartGraceMinutes != null && policy.shiftStartGraceMinutes !== '') {
+    const n = Number(policy.shiftStartGraceMinutes);
+    return Number.isNaN(n) ? parseHHMMToMinutes(policy.shiftStartGraceTime) : n;
+  }
+  return parseHHMMToMinutes(policy.shiftStartGraceTime);
+}
+
+/** Grace minutes for shift end from policy (minutes field overrides HH:MM). */
+function getEndGraceMinutes(policy: LateEarlyPolicy): number {
+  if (!policy) return 0;
+  if (policy.shiftEndGraceMinutes != null && policy.shiftEndGraceMinutes !== '') {
+    const n = Number(policy.shiftEndGraceMinutes);
+    return Number.isNaN(n) ? parseHHMMToMinutes(policy.shiftEndGraceTime) : n;
+  }
+  return parseHHMMToMinutes(policy.shiftEndGraceTime);
+}
+
+/** Late minutes from backend, or computed from checkIn vs shift start (with grace when policy provided). Only mask when current policy says "Consider Late" = NO. */
+function getLateMinutesFallback(record: AttendanceRecord, shiftOverride?: ShiftLike, policy?: LateEarlyPolicy): number | null {
+  if (policy && policy.considerLateFromGraceTime === false) return null; // Policy says don't consider late
+  if (record.isLate && record.lateMinutes != null) return record.lateMinutes;
+  const shift = effectiveShift(record, shiftOverride ?? null);
+  if (!record.checkIn || !shift?.startTime) return null;
+  const inTime = new Date(record.checkIn);
+  const parts = String(shift.startTime).trim().split(':');
+  const startH = parseInt(parts[0] || '0', 10);
+  const startM = parseInt(parts[1] || '0', 10);
+  const shiftStart = new Date(inTime.getFullYear(), inTime.getMonth(), inTime.getDate(), startH, startM, 0, 0);
+  const graceMs =
+    policy?.considerLateFromGraceTime !== false && (policy?.shiftStartGraceMinutes != null || policy?.shiftStartGraceTime != null)
+      ? getStartGraceMinutes(policy) * 60 * 1000
+      : 0;
+  const graceEnd = new Date(shiftStart.getTime() + graceMs);
+  if (inTime <= graceEnd) return null;
+  return Math.round((inTime.getTime() - graceEnd.getTime()) / (1000 * 60));
+}
+
+/** Early minutes from backend, or computed from checkOut vs shift end (with grace when policy provided). Only mask when current policy says "Consider Early Going" = NO. */
+function getEarlyMinutes(record: AttendanceRecord, shiftOverride?: ShiftLike, policy?: LateEarlyPolicy): number | null {
+  if (policy && policy.considerEarlyGoingFromGraceTime === false) return null; // Policy says don't consider early
   if (record.isEarly && record.earlyMinutes != null) return record.earlyMinutes;
-  if (!record.checkOut || !record.shift?.endTime) return null;
+  const shift = effectiveShift(record, shiftOverride ?? null);
+  if (!record.checkOut || !shift?.endTime) return null;
   const out = new Date(record.checkOut);
-  const parts = String(record.shift.endTime).trim().split(':');
+  const parts = String(shift.endTime).trim().split(':');
   const endH = parseInt(parts[0] || '0', 10);
   const endM = parseInt(parts[1] || '0', 10);
   const shiftEnd = new Date(out.getFullYear(), out.getMonth(), out.getDate(), endH, endM, 0, 0);
-  if (out >= shiftEnd) return null;
-  return Math.round((shiftEnd.getTime() - out.getTime()) / (1000 * 60));
+  const graceMs =
+    policy?.considerEarlyGoingFromGraceTime !== false && (policy?.shiftEndGraceMinutes != null || policy?.shiftEndGraceTime != null)
+      ? getEndGraceMinutes(policy) * 60 * 1000
+      : 0;
+  const graceStart = new Date(shiftEnd.getTime() - graceMs);
+  if (out >= graceStart) return null;
+  return Math.round((graceStart.getTime() - out.getTime()) / (1000 * 60));
 }
 
-/** Build In/Out session pairs from sorted punches; each pair is [inTime, outTime | null]. */
+/** Parse min shortfall from policy (e.g. "00:10" -> 10 minutes). */
+function getMinShortfallMinutes(policy: LateEarlyPolicy): number {
+  if (!policy?.minShortfallHoursAsDeviation) return 0;
+  return parseHHMMToMinutes(policy.minShortfallHoursAsDeviation);
+}
+
+/**
+ * Compute shortfall for display when policy says Consider Late/Early as Shortfall = YES.
+ * Uses backend values or frontend fallback for late/early minutes; returns total shortfall minutes
+ * and whether it meets the minimum so we can show Shortfall badge and D at read time.
+ */
+function getDisplayShortfall(
+  record: AttendanceRecord,
+  shiftOverride: ShiftLike,
+  policy: LateEarlyPolicy,
+  lateMin: number | null,
+  earlyMin: number | null
+): { shortfallMinutes: number; showShortfall: boolean } {
+  const late = lateMin ?? (record.lateMinutes ?? getLateMinutesFallback(record, shiftOverride, policy) ?? 0);
+  const early = earlyMin ?? (record.earlyMinutes ?? getEarlyMinutes(record, shiftOverride, policy) ?? 0);
+  let shortfallMinutes = 0;
+  if (policy?.considerLateAsShortfall && late > 0) shortfallMinutes += late;
+  if (policy?.considerEarlyGoingAsShortfall && early > 0) shortfallMinutes += early;
+  const minMins = getMinShortfallMinutes(policy);
+  const showShortfall = shortfallMinutes > 0 && shortfallMinutes >= minMins;
+  return { shortfallMinutes, showShortfall };
+}
+
+/**
+ * Build clean In/Out session pairs from sorted punches.
+ *
+ * Rules:
+ * - Walk sequentially using a simple state machine so each OUT is used at most once.
+ * - Consecutive IN punches without an OUT in between → close previous session with no OUT, start new session.
+ * - Stray OUT (no open IN) → ignored for session display.
+ * - If the day ends with an open IN, we keep a final "In … | Out —" row.
+ *
+ * This avoids weird rows like "In 01:00 PM | Out 01:00 PM" and duplicate "In 09:00 AM | Out 01:00 PM"
+ * that happened when we always paired each IN with the first later OUT using slice().find().
+ */
 function buildSessionPairs(punches: AttendancePunch[]): Array<{ in: string; out: string | null }> {
   const pairs: Array<{ in: string; out: string | null }> = [];
-  for (let i = 0; i < punches.length; i++) {
-    const p = punches[i];
-    if ((p.status?.toUpperCase() || '') === 'IN') {
-      const nextOut = punches.slice(i + 1).find((x) => (x.status?.toUpperCase() || '') === 'OUT');
-      pairs.push({
-        in: p.punchTime,
-        out: nextOut ? nextOut.punchTime : null,
-      });
+  if (!punches || punches.length === 0) return pairs;
+
+  // Ensure punches are in chronological order (defensive – backend already sorts, but don't rely on it)
+  const sorted = [...punches].sort(
+    (a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime()
+  );
+
+  let openIn: AttendancePunch | null = null;
+
+  for (const punch of sorted) {
+    // IMPORTANT: mirror backend logic in calculateWorkHoursFromPunches:
+    // const status = (p.status?.toUpperCase() === 'OUT' ? 'OUT' : 'IN');
+    // i.e. anything that is not explicitly OUT is treated as IN.
+    const raw = (punch.status?.toUpperCase() || '').trim();
+    const status: 'IN' | 'OUT' = raw === 'OUT' ? 'OUT' : 'IN';
+
+    if (status === 'IN') {
+      if (!openIn) {
+        // Normal case: start a new session
+        openIn = punch;
+      } else {
+        // We already had an open IN and got another IN without an OUT in between.
+        // Close the previous session without an OUT (device sent duplicate IN / user punched twice).
+        pairs.push({ in: openIn.punchTime, out: null });
+        openIn = punch;
+      }
+    } else {
+      if (openIn) {
+        // Normal case: close the current open session
+        if (new Date(punch.punchTime).getTime() > new Date(openIn.punchTime).getTime()) {
+          pairs.push({ in: openIn.punchTime, out: punch.punchTime });
+        } else {
+          // Guard: OUT time is not after IN (clock/device glitch) – show as open session instead of 0‑minute pair
+          pairs.push({ in: openIn.punchTime, out: null });
+        }
+        openIn = null;
+      } else {
+        // Stray OUT with no matching IN – ignore for sessions (still visible in raw punch list via APIs if needed)
+      }
     }
   }
+
+  // Day ended with an open IN and no OUT
+  if (openIn) {
+    pairs.push({ in: openIn.punchTime, out: null });
+  }
+
   return pairs;
 }
 
@@ -91,9 +245,10 @@ interface AttendanceCalendarViewProps {
   onMonthChange: (date: Date) => void;
   employeeId?: string;
   organizationId?: string;
+  lateEarlyPolicy?: LateEarlyPolicy;
 }
 
-const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange, employeeId, organizationId }: AttendanceCalendarViewProps) => {
+const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange, employeeId, organizationId, lateEarlyPolicy }: AttendanceCalendarViewProps) => {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -105,7 +260,7 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
   // State for shift assignments
   const [shiftAssignments, setShiftAssignments] = useState<Map<string, string>>(new Map()); // date -> shiftName
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [loadingShifts, setLoadingShifts] = useState(false);
+  const [_loadingShifts, setLoadingShifts] = useState(false);
   
   // Fetch shifts from Shift Master
   useEffect(() => {
@@ -286,7 +441,16 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
         {/* Calendar Days */}
         {daysInMonth.map((day) => {
           const dateStr = format(day, 'yyyy-MM-dd');
-          const dayRecords = recordsByDate.get(dateStr) || [];
+          const dayRecordsRaw = recordsByDate.get(dateStr) || [];
+          // Some back-end flows can accidentally return more than one record for the same
+          // employee and date (e.g. synthetic + real). For the calendar card we only want
+          // one row per employee per day, so keep the last record per (employeeId, date).
+          const byEmployee = new Map<string, AttendanceRecord>();
+          dayRecordsRaw.forEach((r) => {
+            const key = r.employee.id;
+            byEmployee.set(key, r); // later entries overwrite earlier ones
+          });
+          const dayRecords = Array.from(byEmployee.values());
           const isCurrentDay = isToday(day);
           const isWeekendDay = isWeekend(day);
           const dayNumber = format(day, 'd');
@@ -337,6 +501,15 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                     const isCurrentlyIn = firstIn && !lastOut && lastPunchOfDay && (lastPunchOfDay.status?.toUpperCase() || '') === 'IN';
                     const lastInTime = dayPunches.filter((p) => (p.status?.toUpperCase() || '') === 'IN').pop()?.punchTime;
                     const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                    // Prefer a shift that has startTime/endTime so Late/Early fallback can compute; use Shift Master by name when record.shift lacks times
+                    const shiftFromRecord = record.shift;
+                    const shiftFromList = shiftName ? shifts.find((s) => s.name === shiftName) : null;
+                    const hasFullShift = shiftFromRecord && shiftFromRecord.startTime != null && shiftFromRecord.endTime != null;
+                    let effectiveShiftForRecord: ShiftLike = hasFullShift ? shiftFromRecord : (shiftFromList || shiftFromRecord);
+                    // Last resort: if still no start/end (e.g. Shift Master not loaded or name mismatch), use default for common shift names so badges show
+                    if ((!effectiveShiftForRecord?.startTime || !effectiveShiftForRecord?.endTime) && shiftName && shiftName !== 'Weekoff' && shiftName !== 'W' && shiftName !== 'Week Off') {
+                      effectiveShiftForRecord = { startTime: '09:00', endTime: '18:00' };
+                    }
 
                     return (
                       <div
@@ -371,45 +544,72 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                             ))}
                           </div>
                         )}
-                        {record.status && (
+                        {(record.status || (firstIn && lastOut && 'PRESENT')) && (
                           <div className={`text-xs font-medium ${
-                            record.status === 'PRESENT'
+                            (record.status || 'PRESENT') === 'PRESENT'
                               ? 'text-green-700'
-                              : record.status === 'ABSENT'
+                              : (record.status || '') === 'ABSENT'
                               ? 'text-red-700'
-                              : record.status === 'LEAVE'
+                              : (record.status || '') === 'LEAVE'
                               ? 'text-purple-700'
-                              : record.status === 'HOLIDAY'
+                              : (record.status || '') === 'HOLIDAY'
                               ? 'text-orange-700'
                               : 'text-yellow-700'
                           }`}>
-                            {record.status}
+                            {(record.status || 'PRESENT') === 'PRESENT' && (record.isDeviation || (() => {
+                              const lateM = getLateMinutesFallback(record, effectiveShiftForRecord, lateEarlyPolicy);
+                              const earlyM = getEarlyMinutes(record, effectiveShiftForRecord, lateEarlyPolicy);
+                              return getDisplayShortfall(record, effectiveShiftForRecord, lateEarlyPolicy, lateM, earlyM).showShortfall;
+                            })()) ? 'Present (with deviation)' : (record.status || 'PRESENT')}
                           </div>
                         )}
-                        {/* Policy indicators: L (Late), EG (Early Going), D (Deviation), OT (Overtime) — only for working days */}
-                        {record.status === 'PRESENT' && (record.isLate || record.isEarly || (getEarlyMinutes(record) ?? 0) > 0 || record.isDeviation || (record.otMinutes != null && record.otMinutes > 0)) && (
+                        {/* Policy indicators: L (Late), EG (Early Going), D (Deviation), OT (Overtime), Shortfall.
+                            - Use frontend fallback so calendar reflects current policy even when record wasn't recalculated.
+                            - Shortfall badge and D shown from backend OR from read-time shortfall when policy says Consider X as Shortfall = YES. */}
+                        {(() => {
+                          const lateMin = getLateMinutesFallback(record, effectiveShiftForRecord, lateEarlyPolicy);
+                          const earlyMin = getEarlyMinutes(record, effectiveShiftForRecord, lateEarlyPolicy);
+                          const { showShortfall } = getDisplayShortfall(record, effectiveShiftForRecord, lateEarlyPolicy, lateMin, earlyMin);
+                          const hasAny = ((record.lateMinutes ?? 0) > 0) || record.isLate || (lateMin ?? 0) > 0 ||
+                            ((record.earlyMinutes ?? 0) > 0) || record.isEarly || (earlyMin ?? 0) > 0 ||
+                            record.isDeviation || showShortfall || (record.otMinutes != null && record.otMinutes > 0);
+                          return (record.status === 'PRESENT' || record.status === 'WEEKEND' || (firstIn && lastOut && effectiveShiftForRecord)) && hasAny ? (
                           <div className="flex flex-wrap gap-1 mt-0.5">
-                            {record.isLate && (
+                            {(((record.lateMinutes ?? 0) > 0) || record.isLate || (lateMin ?? 0) > 0) && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
-                                Late {record.lateMinutes != null ? `:${record.lateMinutes} min` : ''}
+                                Late: {(record.lateMinutes ?? lateMin ?? 0)} min
                               </span>
                             )}
-                            {(() => {
-                              const earlyMin = getEarlyMinutes(record);
-                              return earlyMin != null && earlyMin > 0 ? (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">
-                                  Early going :{earlyMin} min
-                                </span>
-                              ) : null;
-                            })()}
-                            {record.isDeviation && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800" title={record.deviationReason ?? 'Deviation'}>D</span>
+                            {((record.earlyMinutes ?? 0) > 0 || record.isEarly || (earlyMin ?? 0) > 0) && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">
+                                Early going: {(record.earlyMinutes ?? earlyMin ?? 0)} min
+                              </span>
                             )}
+                            {(record.isDeviation || showShortfall) && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800"
+                                title={record.deviationReason ?? (showShortfall ? 'Shortfall' : 'Deviation')}
+                              >
+                                D
+                              </span>
+                            )}
+                            {/* Shortfall: from backend deviationReason or from read-time when policy Consider Early/Late as Shortfall = YES */}
+                            {(record.isDeviation && (record.deviationReason ?? '').includes('Shortfall')) || showShortfall ? (() => {
+                              const backendShortfall = (record.lateMinutes ?? 0) + (record.earlyMinutes ?? 0);
+                              const { shortfallMinutes } = getDisplayShortfall(record, effectiveShiftForRecord, lateEarlyPolicy, lateMin, earlyMin);
+                              const mins = record.isDeviation && (record.deviationReason ?? '').includes('Shortfall') && backendShortfall > 0 ? backendShortfall : shortfallMinutes;
+                              return (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-800">
+                                  {mins > 0 ? `Shortfall: ${mins} min` : 'Shortfall'}
+                                </span>
+                              );
+                            })() : null}
                             {record.otMinutes != null && record.otMinutes > 0 && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title={`OT: ${formatWorkHoursAsHHMM(record.otMinutes / 60)}`}>OT {formatWorkHoursAsHHMM(record.otMinutes / 60)}</span>
                             )}
                           </div>
-                        )}
+                          ) : null;
+                        })()}
                         {/* Total Net Work Time in HH:mm right below PRESENT */}
                         {record.workHours !== null && record.workHours !== undefined && (
                           <div className="text-gray-800 font-medium">
@@ -420,7 +620,14 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                     );
                   })
                 ) : (
-                  <div className="text-xs text-gray-400 text-center py-2">No records</div>
+                  <div className="text-xs text-gray-400 text-center py-2">
+                    {/* When a specific employee is selected and a shift is shown for this day but there is
+                        no attendance record yet, treat it as "shift assigned – no punch yet" instead of
+                        a blank "No records" message so the calendar feels prefilled by default. */}
+                    {employeeId && shiftName && shiftName !== 'Weekoff' && shiftName !== 'W' && shiftName !== 'Week Off'
+                      ? 'Shift assigned – no punch yet'
+                      : 'No records'}
+                  </div>
                 )}
               </div>
             </div>
@@ -512,6 +719,7 @@ const AttendancePage = () => {
   const [manualPunchSubmitting, setManualPunchSubmitting] = useState(false);
   const [manualPunchMessage, setManualPunchMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [manualPunchEmployeeList, setManualPunchEmployeeList] = useState<Employee[]>([]);
+  const [lateEarlyPolicy, setLateEarlyPolicy] = useState<LateEarlyPolicy>(null);
   
   // Check if user is a manager
   const isManager = user?.role === 'MANAGER';
@@ -691,6 +899,54 @@ const AttendancePage = () => {
       });
     return () => { cancelled = true; };
   }, [isHRForCalendar, viewMode, orgId]);
+
+  // Fetch Late & Others policy (grace + consider toggles) for fallback late/early calculations with grace
+  const orgIdForPolicy = user?.employee?.organizationId || user?.employee?.organization?.id;
+  // Fetch current attendance policy (Late & Others). Used for read-time shortfall/Late/Early display.
+  // Call this after changing policy in UI so calendar reflects the new setting without full page reload.
+  const fetchLateEarlyPolicy = useCallback(async () => {
+    const orgId = user?.employee?.organizationId || user?.employee?.organization?.id;
+    if (!orgId) {
+      setLateEarlyPolicy(null);
+      return;
+    }
+    try {
+      const res = await shiftAssignmentRuleService.getAll({
+        organizationId: orgId,
+        remarksMarker: '__POLICY_RULES__',
+        limit: 1,
+      });
+      const rule = res.rules?.[0];
+      if (!rule?.remarks) {
+        setLateEarlyPolicy(null);
+        return;
+      }
+      const marker = '__POLICY_RULES__';
+      const idx = rule.remarks.indexOf(marker);
+      if (idx === -1) {
+        setLateEarlyPolicy(null);
+        return;
+      }
+      const policy = JSON.parse(rule.remarks.slice(idx + marker.length)) as LateEarlyPolicy;
+      setLateEarlyPolicy(policy);
+    } catch {
+      setLateEarlyPolicy(null);
+    }
+  }, [user?.employee?.organizationId, user?.employee?.organization?.id]);
+
+  useEffect(() => {
+    fetchLateEarlyPolicy();
+  }, [fetchLateEarlyPolicy]);
+
+  // When user returns to this tab (e.g. after changing policy in another tab/page), refetch policy
+  // so calendar shows according to the latest "Consider Early Going as Shortfall" etc. without code change.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchLateEarlyPolicy();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchLateEarlyPolicy]);
 
   // Close HR employee dropdown when clicking outside
   useEffect(() => {
@@ -1038,6 +1294,20 @@ const AttendancePage = () => {
     setShowSyncModal(true);
   };
 
+  // Refresh policy + records so calendar/table shows according to current Attendance Policy (e.g. after you change "Consider Early Going as Shortfall").
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefreshPolicyAndRecords = async () => {
+    setRefreshing(true);
+    try {
+      await fetchLateEarlyPolicy();
+      await fetchRecords();
+      await fetchPunches();
+      if (viewMode === 'my' || !canViewTeamAttendance) await fetchMyRecords();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-gray-100">
       <AppHeader
@@ -1146,7 +1416,7 @@ const AttendancePage = () => {
           </div>
         )}
 
-        {/* Attendance Records */}
+        {/* Attendance Records — badges (Late, Early going, Shortfall, D) follow current Attendance Policy; use Refresh after changing policy. */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex justify-between items-center">
@@ -1163,6 +1433,14 @@ const AttendancePage = () => {
                   : 'My Attendance Records'}
               </h2>
               <div className="flex items-center space-x-4">
+                <button
+                  onClick={handleRefreshPolicyAndRecords}
+                  disabled={refreshing}
+                  title="Reload policy and records so Late/Shortfall/Early badges match current Attendance Policy (e.g. after changing Consider Early Going as Shortfall)"
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-200 text-gray-800 hover:bg-gray-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {refreshing ? 'Refreshing...' : '🔄 Refresh'}
+                </button>
                 {canSyncBiometric && (
                   <button
                     onClick={openSyncModal}
@@ -1333,6 +1611,7 @@ const AttendancePage = () => {
               onMonthChange={setCurrentMonth}
               employeeId={viewMode === 'my' || !canViewTeamAttendance ? user?.employee?.id : (selectedEmployeeId || user?.employee?.id)}
               organizationId={user?.employee?.organizationId || user?.employee?.organization?.id}
+              lateEarlyPolicy={lateEarlyPolicy}
             />
           ) : (viewMode === 'my' ? myRecords : records).length === 0 ? (
             <div className="p-8 text-center text-gray-500">
@@ -1406,18 +1685,42 @@ const AttendancePage = () => {
                               : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
-                          {record.status}
+                          {record.status === 'PRESENT' && record.isDeviation ? 'Present (with deviation)' : record.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {record.status === 'PRESENT' && (record.isLate || record.isEarly || (getEarlyMinutes(record) ?? 0) > 0 || record.isDeviation || (record.otMinutes != null && record.otMinutes > 0)) ? (
+                        {(() => {
+                          const shiftT = record.shift ?? null;
+                          const lateM = getLateMinutesFallback(record, shiftT, lateEarlyPolicy);
+                          const earlyM = getEarlyMinutes(record, shiftT, lateEarlyPolicy);
+                          const { showShortfall, shortfallMinutes } = getDisplayShortfall(record, shiftT, lateEarlyPolicy, lateM, earlyM);
+                          const hasAny = ((record.lateMinutes ?? 0) > 0) || record.isLate || (lateM ?? 0) > 0 ||
+                            ((record.earlyMinutes ?? 0) > 0) || record.isEarly || (earlyM ?? 0) > 0 ||
+                            record.isDeviation || showShortfall || (record.otMinutes != null && record.otMinutes > 0);
+                          return (record.status === 'PRESENT' || record.status === 'WEEKEND') && hasAny ? (
                           <div className="flex flex-wrap gap-1">
-                            {record.isLate && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">Late {record.lateMinutes != null ? `:${record.lateMinutes} min` : ''}</span>}
-                            {(() => { const em = getEarlyMinutes(record); return em != null && em > 0 ? <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">Early going :{em} min</span> : null; })()}
-                            {record.isDeviation && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800" title={record.deviationReason ?? 'Deviation'}>D</span>}
+                            {(((record.lateMinutes ?? 0) > 0) || record.isLate || (lateM ?? 0) > 0) && (
+                              <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
+                                Late: {(record.lateMinutes ?? lateM ?? 0)} min
+                              </span>
+                            )}
+                            {((record.earlyMinutes ?? 0) > 0 || record.isEarly || (earlyM ?? 0) > 0) && (
+                              <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">Early going: {(record.earlyMinutes ?? earlyM ?? 0)} min</span>
+                            )}
+                            {(record.isDeviation || showShortfall) && (
+                              <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800" title={record.deviationReason ?? (showShortfall ? 'Shortfall' : 'Deviation')}>D</span>
+                            )}
+                            {((record.isDeviation && (record.deviationReason ?? '').includes('Shortfall')) || showShortfall) && (
+                              <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-800">
+                                {record.isDeviation && (record.deviationReason ?? '').includes('Shortfall') && ((record.lateMinutes ?? 0) + (record.earlyMinutes ?? 0)) > 0
+                                  ? `Shortfall: ${(record.lateMinutes ?? 0) + (record.earlyMinutes ?? 0)} min`
+                                  : `Shortfall: ${shortfallMinutes} min`}
+                              </span>
+                            )}
                             {record.otMinutes != null && record.otMinutes > 0 && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title="Overtime">OT {formatWorkHoursAsHHMM(record.otMinutes / 60)}</span>}
                           </div>
-                        ) : '-'}
+                          ) : '-';
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {record.workHours ? `${Number(record.workHours).toFixed(2)} hrs` : '-'}

@@ -232,8 +232,6 @@ const bottomNavItems = [
   )},
 ];
 
-const APPROVER_ROLES = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'];
-
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();

@@ -59,7 +59,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 }) => {
   const isViewMode = mode === 'view';
   const { createEmployee, updateEmployee, loading } = useEmployeeStore();
-  const [rejoinJoiningDate, setRejoinJoiningDate] = useState(
+  const [_rejoinJoiningDate, setRejoinJoiningDate] = useState(
     () => employee?.dateOfJoining?.split('T')[0] ?? new Date().toISOString().split('T')[0]
   );
   const [rejoinNewEmail, setRejoinNewEmail] = useState('');
@@ -391,7 +391,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     const fetchEntities = async () => {
       try {
         const list = await entityService.getByOrganization(organizationId);
-        setEntities(list);
+        setEntities(list.map((e) => ({ id: e.id, name: e.name, code: e.code ?? undefined })));
       } catch {
         setEntities([]);
       }
@@ -432,7 +432,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     const load = async () => {
       try {
         const list = await locationService.getByEntity(organizationId, formData.entityId);
-        if (!cancelled) setLocations(list);
+        if (!cancelled) setLocations(list.map((l) => ({ id: l.id, name: l.name, code: l.code ?? undefined })));
       } catch {
         if (!cancelled) setLocations([]);
       }
@@ -3540,7 +3540,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           organizationId={organizationId}
           onSuccess={async (createdEntity) => {
             const list = await entityService.getByOrganization(organizationId);
-            setEntities(list);
+            setEntities(list.map((e) => ({ id: e.id, name: e.name, code: e.code ?? undefined })));
             if (createdEntity) {
               setFormData(prev => ({ ...prev, entityId: createdEntity.id, locationId: '' }));
             }
@@ -3565,7 +3565,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           entityName={entities.find(e => e.id === formData.entityId)?.name}
           onSuccess={async (createdLocation) => {
             const list = await locationService.getByEntity(organizationId, formData.entityId);
-            setLocations(list);
+            setLocations(list.map((l) => ({ id: l.id, name: l.name, code: l.code ?? undefined })));
             if (createdLocation) {
               setFormData(prev => ({ ...prev, locationId: createdLocation.id }));
             }

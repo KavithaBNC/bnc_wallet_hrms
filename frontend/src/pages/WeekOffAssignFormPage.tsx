@@ -27,7 +27,6 @@ const ALTERNATE_SATURDAY_OPTIONS: Option[] = [
 
 // Week days
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
-type Day = typeof DAYS[number];
 
 // Week off details structure: weekIndex (0-5) -> day -> boolean
 type WeekOffDetails = boolean[][];
@@ -40,7 +39,7 @@ export default function WeekOffAssignFormPage() {
   const organizationName = user?.employee?.organization?.name;
   const organizationId = user?.employee?.organizationId || user?.employee?.organization?.id;
 
-  const [loading, setLoading] = useState(isEdit);
+  const [_loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -215,10 +215,10 @@ export class AttendanceService {
           : asOf
             ? new Date(asOf)
             : null;
-        if (outTime) {
+        if (outTime && outTime.getTime() > p.punchTime.getTime()) {
           const hours = (outTime.getTime() - p.punchTime.getTime()) / (1000 * 60 * 60);
-          pairs.push({ in: p.punchTime, out: outTime, hours: Math.max(0, hours) });
-          totalWorkHours += Math.max(0, hours);
+          pairs.push({ in: p.punchTime, out: outTime, hours });
+          totalWorkHours += hours;
         }
       }
     }
@@ -243,19 +243,43 @@ export class AttendanceService {
 
     const dayStart = new Date(date);
     dayStart.setHours(0, 0, 0, 0);
-    const { totalWorkHours } = await this.calculateWorkHoursFromPunches(employeeId, date, new Date());
+    const { totalWorkHours, pairs } = await this.calculateWorkHoursFromPunches(employeeId, date, new Date());
 
     const firstIn = punches.find((p) => (p.status?.toUpperCase() || '') === 'IN');
     const outPunches = punches.filter((p) => (p.status?.toUpperCase() || '') === 'OUT');
-    const lastOut = outPunches.length > 0 ? outPunches[outPunches.length - 1].punchTime : null;
+    const lastOutRaw = outPunches.length > 0 ? outPunches[outPunches.length - 1].punchTime : null;
+
+    // Use paired IN/OUT so checkOut is never before checkIn (fixes wrong "Early going: 735 min" and "Total Net Work Time: 00:00" when last OUT is before first IN, e.g. AM/PM or next-day punch)
+    let checkIn: Date | null = firstIn?.punchTime ?? null;
+    let checkOut: Date | null = lastOutRaw ?? null;
+    if (pairs.length > 0) {
+      checkIn = pairs[0].in;
+      checkOut = pairs[pairs.length - 1].out;
+      // If still in (last punch IN), checkOut stays null for "Currently In"
+      const lastPunch = punches[punches.length - 1];
+      if ((lastPunch?.status?.toUpperCase() || '') === 'IN') checkOut = null;
+    } else if (checkOut && checkIn && checkOut.getTime() < checkIn.getTime()) {
+      checkOut = null; // Invalid: last OUT before first IN; treat as no check-out yet
+    }
 
     let status: AttendanceStatus = AttendanceStatus.PRESENT;
     if (this.isWeekend(dayStart)) status = AttendanceStatus.WEEKEND;
     else if (await this.isHoliday(dayStart, employee.organizationId)) status = AttendanceStatus.HOLIDAY;
 
-    const checkIn = firstIn?.punchTime ?? null;
-    const checkOut = lastOut ?? null;
     const workHoursRounded = Math.round(totalWorkHours * 100) / 100;
+
+    // Break = sum of gaps between consecutive IN/OUT pairs (e.g. Out 13:00 → In 14:30 = 1.5h) for "Minimum Break Hours consider as Deviation" and excess break
+    let breakHoursFromPunches = 0;
+    if (pairs.length >= 2) {
+      for (let i = 0; i < pairs.length - 1; i++) {
+        const gapOut = pairs[i].out;
+        const gapIn = pairs[i + 1].in;
+        if (gapIn.getTime() > gapOut.getTime()) {
+          breakHoursFromPunches += (gapIn.getTime() - gapOut.getTime()) / (1000 * 60 * 60);
+        }
+      }
+    }
+    const breakHoursRounded = Math.round(breakHoursFromPunches * 100) / 100;
 
     const record = await prisma.attendanceRecord.upsert({
       where: {
@@ -268,23 +292,65 @@ export class AttendanceService {
         checkIn,
         checkOut,
         workHours: new Prisma.Decimal(workHoursRounded),
+        breakHours: breakHoursRounded > 0 ? new Prisma.Decimal(breakHoursRounded) : undefined,
         status,
       },
       update: {
         checkIn,
         checkOut,
         workHours: new Prisma.Decimal(workHoursRounded),
+        ...(breakHoursRounded >= 0 ? { breakHours: new Prisma.Decimal(breakHoursRounded) } : {}),
         status,
       },
     });
 
     // Apply policy: full (late/early/deviation/OT) when we have both check-in and check-out; late-only when only check-in (e.g. "Currently In")
-    const shiftId = record.shiftId ?? employee.shiftId;
-    if (status === AttendanceStatus.PRESENT && checkIn && shiftId) {
+    // Also compute late/early for WEEKEND so calendar can show them when policy is YES (e.g. 28th).
+    // Resolve shift: use record/employee shiftId; if missing, resolve from shift-assignment rules so policy and grace are applied.
+    let effectiveShiftId = record.shiftId ?? employee.shiftId;
+    let shiftForCompute: { startTime: string | null; endTime: string | null; breakDuration?: number | null } | null =
+      employee.shift
+        ? {
+            startTime: employee.shift.startTime,
+            endTime: employee.shift.endTime,
+            breakDuration: employee.shift.breakDuration,
+          }
+        : null;
+    if (!shiftForCompute && effectiveShiftId) {
+      const shiftRow = await prisma.shift.findUnique({
+        where: { id: effectiveShiftId },
+        select: { startTime: true, endTime: true, breakDuration: true },
+      });
+      if (shiftRow) {
+        shiftForCompute = {
+          startTime: shiftRow.startTime,
+          endTime: shiftRow.endTime,
+          breakDuration: shiftRow.breakDuration,
+        };
+      }
+    }
+    let resolvedShiftFromRules = false;
+    if (!effectiveShiftId || !shiftForCompute) {
+      const shiftFromRule = await shiftAssignmentRuleService.getApplicableShiftForEmployee(
+        employeeId,
+        dayStart,
+        employee.organizationId
+      );
+      if (shiftFromRule) {
+        effectiveShiftId = shiftFromRule.id;
+        shiftForCompute = {
+          startTime: shiftFromRule.startTime,
+          endTime: shiftFromRule.endTime,
+          breakDuration: null,
+        };
+        resolvedShiftFromRules = true;
+      }
+    }
+    if ((status === AttendanceStatus.PRESENT || status === AttendanceStatus.WEEKEND) && checkIn && effectiveShiftId && shiftForCompute) {
       let policyRules: Record<string, any> | null = null;
       try {
         policyRules = await shiftAssignmentRuleService.getApplicablePolicyRules(
-          shiftId,
+          effectiveShiftId,
           employeeId,
           dayStart,
           employee.organizationId
@@ -298,16 +364,9 @@ export class AttendanceService {
         const breakHours =
           record.breakHours != null
             ? parseFloat(record.breakHours.toString())
-            : employee.shift?.breakDuration
-              ? employee.shift.breakDuration / 60
+            : shiftForCompute?.breakDuration
+              ? shiftForCompute.breakDuration / 60
               : 0;
-        const shiftForCompute = employee.shift
-          ? {
-              startTime: employee.shift.startTime,
-              endTime: employee.shift.endTime,
-              breakDuration: employee.shift.breakDuration,
-            }
-          : null;
         const computed = await this.computePolicyFieldsForDay(
           checkIn,
           checkOut,
@@ -319,6 +378,7 @@ export class AttendanceService {
         await prisma.attendanceRecord.update({
           where: { id: record.id },
           data: {
+            ...(resolvedShiftFromRules ? { shiftId: effectiveShiftId } : {}),
             workHours: new Prisma.Decimal(computed.workHours),
             overtimeHours: new Prisma.Decimal(computed.overtimeHours),
             otMinutes: computed.otMinutes > 0 ? computed.otMinutes : null,
@@ -331,28 +391,29 @@ export class AttendanceService {
           },
         });
       } else {
-        // Only check-in so far ("Currently In"): compute and persist late only when policy says YES; otherwise clear late
-        if (employee.shift?.startTime) {
-          let isLate = false;
-          let lateMinutes: number | null = null;
-          if (policyRules?.considerLateFromGraceTime) {
-            const shiftStart = new Date(dayStart);
-            const [startHours, startMinutes] = (employee.shift.startTime as any).split(':').map(Number);
-            shiftStart.setHours(startHours, startMinutes, 0, 0);
-            const graceEndTime = this.getShiftTimeWithGrace(shiftStart, undefined, true, policyRules);
-            isLate = checkIn > graceEndTime;
-            lateMinutes = isLate
-              ? Math.round((checkIn.getTime() - graceEndTime.getTime()) / (1000 * 60))
-              : null;
-          }
-          await prisma.attendanceRecord.update({
-            where: { id: record.id },
-            data: {
-              isLate,
-              lateMinutes: lateMinutes ?? null,
-            },
-          });
+        // Only check-in so far ("Currently In"): compute and persist late; clear early-going (no check-out yet)
+        let isLate = false;
+        let lateMinutes: number | null = null;
+        if (shiftForCompute?.startTime && policyRules?.considerLateFromGraceTime) {
+          const shiftStart = new Date(dayStart);
+          const [startHours, startMinutes] = (shiftForCompute.startTime as any).split(':').map(Number);
+          shiftStart.setHours(startHours, startMinutes, 0, 0);
+          const graceEndTime = this.getShiftTimeWithGrace(shiftStart, undefined, true, policyRules);
+          isLate = checkIn > graceEndTime;
+          lateMinutes = isLate
+            ? Math.round((checkIn.getTime() - graceEndTime.getTime()) / (1000 * 60))
+            : null;
         }
+        await prisma.attendanceRecord.update({
+          where: { id: record.id },
+          data: {
+            ...(resolvedShiftFromRules ? { shiftId: effectiveShiftId } : {}),
+            isLate,
+            lateMinutes: lateMinutes ?? null,
+            isEarly: false,
+            earlyMinutes: null,
+          },
+        });
       }
     }
 
@@ -515,7 +576,8 @@ export class AttendanceService {
     if (policyRules?.considerExcessBreakAsShortfall && excessBreakHours > 0) shortfallHours += excessBreakHours;
     const minShortfallHours = policyRules?.minShortfallHoursAsDeviation
       ? this.parseTimeToHours(policyRules.minShortfallHoursAsDeviation) : 0;
-    const shortfallDeviation = shortfallHours >= minShortfallHours && minShortfallHours >= 0;
+    // Only treat as shortfall deviation when there is actual shortfall and it meets the threshold (avoid 0 shortfall marking deviation when min is 0)
+    const shortfallDeviation = shortfallHours > 0 && shortfallHours >= minShortfallHours;
 
     const isDeviation = breakDeviation || shortfallDeviation;
     const deviationReasons: string[] = [];
@@ -1017,6 +1079,12 @@ export class AttendanceService {
       resultLimit = merged.length;
     }
 
+    // Apply current "Consider Late / Consider Early Going" policy at read time so calendar shows correct Late/Early
+    // when policy was changed after last sync (e.g. 27th set to NO should not show Late/Early; 28th set to YES should show).
+    if (query.organizationId && resultRecords.length > 0) {
+      resultRecords = await this.applyCurrentLateEarlyPolicyToRecords(resultRecords as any[], query.organizationId);
+    }
+
     // Late backfill removed from getRecords to avoid slow load (N policy fetches + N updates per request).
     // L is set when sync runs (punch in/out) or via a separate recalc endpoint if needed.
 
@@ -1029,6 +1097,47 @@ export class AttendanceService {
         totalPages: Math.ceil(resultTotal / resultLimit) || 1,
       },
     };
+  }
+
+  /**
+   * Apply current "Consider Late from Grace Time" / "Consider Early Going from Grace Time" policy at read time.
+   * When policy is NO, mask isLate/lateMinutes and isEarly/earlyMinutes so calendar does not show them.
+   */
+  private async applyCurrentLateEarlyPolicyToRecords(
+    records: any[],
+    organizationId: string
+  ): Promise<any[]> {
+    const POLICY_MARKER = '__POLICY_RULES__';
+    const rule = await prisma.shiftAssignmentRule.findFirst({
+      where: {
+        organizationId,
+        remarks: { contains: POLICY_MARKER },
+      },
+      orderBy: { effectiveDate: 'desc' },
+    });
+    if (!rule?.remarks) return records;
+    const idx = rule.remarks.indexOf(POLICY_MARKER);
+    if (idx === -1) return records;
+    let policy: Record<string, any>;
+    try {
+      policy = JSON.parse(rule.remarks.slice(idx + POLICY_MARKER.length));
+    } catch {
+      return records;
+    }
+    const considerLate = policy.considerLateFromGraceTime === true;
+    const considerEarly = policy.considerEarlyGoingFromGraceTime === true;
+    return records.map((r: any) => {
+      const out = { ...r };
+      if (!considerLate) {
+        out.isLate = false;
+        out.lateMinutes = null;
+      }
+      if (!considerEarly) {
+        out.isEarly = false;
+        out.earlyMinutes = null;
+      }
+      return out;
+    });
   }
 
   /** Normalize to YYYY-MM-DD (UTC) so key matching works across timezones and Date vs string. */

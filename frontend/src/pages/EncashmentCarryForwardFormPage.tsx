@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import paygroupService from '../services/paygroup.service';
@@ -62,7 +62,7 @@ export default function EncashmentCarryForwardFormPage() {
       employeeService.getAll({ organizationId, page: 1, limit: 500, employeeStatus: 'ACTIVE' }),
     ]).then(([paygroupsData, departmentsData, empRes]) => {
       setPaygroups(paygroupsData.map((pg) => ({ id: pg.id, name: pg.name })));
-      setDepartments(departmentsData.map((dept) => ({ id: dept.id, name: dept.name })));
+      setDepartments((departmentsData.departments ?? []).map((dept: { id: string; name: string }) => ({ id: dept.id, name: dept.name })));
       setEmployees(empRes.employees || []);
     });
   }, [organizationId]);

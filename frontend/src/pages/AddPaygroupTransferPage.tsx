@@ -20,7 +20,7 @@ export default function AddPaygroupTransferPage() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [paygroups, setPaygroups] = useState<Paygroup[]>([]);
-  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [_loadingEmployees, setLoadingEmployees] = useState(false);
   const [loadingPaygroups, setLoadingPaygroups] = useState(false);
 
   const [associateId, setAssociateId] = useState(preselectedEmployeeId ?? '');

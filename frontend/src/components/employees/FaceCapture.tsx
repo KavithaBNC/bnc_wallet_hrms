@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import Webcam from 'react-webcam';
+import Webcam, { WebcamRef } from 'react-webcam';
 import api from '../../services/api';
 
 interface FaceCaptureProps {
@@ -33,7 +33,7 @@ export const FaceCapture: React.FC<FaceCaptureProps> = ({
   existingEncoding = null,
   disabled = false,
 }) => {
-  const webcamRef = useRef<Webcam>(null);
+  const webcamRef = useRef<WebcamRef>(null);
   const [capturing, setCapturing] = useState(false);
   const [faceServiceAvailable, setFaceServiceAvailable] = useState<boolean | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
@@ -156,7 +156,7 @@ export const FaceCapture: React.FC<FaceCaptureProps> = ({
                 setCameraReady(true);
                 setCameraError(null);
               }}
-              onUserMediaError={(err) => {
+              onUserMediaError={(err: unknown) => {
                 setCameraReady(false);
                 const { message, isInUse } = getCameraError(err);
                 setCameraError(message);

@@ -145,7 +145,6 @@ export default function WorkflowMappingPage() {
     });
   };
 
-  const totalPages = Math.max(1, pagination.totalPages);
   const startEntry = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
   const endEntry = Math.min(pagination.page * pagination.limit, pagination.total);
 

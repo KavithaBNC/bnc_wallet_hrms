@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import shiftAssignmentRuleService, {
@@ -80,6 +80,8 @@ export default function WeekOfAssignPage() {
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
     new Set(['displayName', 'associate', 'paygroup', 'department', 'alternateSaturdayOff', 'effectiveDate', 'priority', 'remarks', 'action'])
   );
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const columnPickerRef = useRef<HTMLDivElement>(null);
 
   const fetchList = async () => {
     if (!organizationId) return;
@@ -163,11 +165,8 @@ export default function WeekOfAssignPage() {
   const toggleColumn = (column: string) => {
     setVisibleColumns((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(column)) {
-        newSet.delete(column);
-      } else {
-        newSet.add(column);
-      }
+      if (newSet.has(column)) newSet.delete(column);
+      else newSet.add(column);
       return newSet;
     });
   };
@@ -305,10 +304,10 @@ export default function WeekOfAssignPage() {
                   </svg>
                   Save
                 </button>
-                <div className="relative">
+                <div className="relative" ref={columnPickerRef}>
                   <button
                     type="button"
-                    onClick={() => {}}
+                    onClick={() => setShowColumnPicker((prev) => !prev)}
                     className="h-9 px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition flex items-center gap-1.5"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -316,6 +315,21 @@ export default function WeekOfAssignPage() {
                     </svg>
                     Show / hide columns
                   </button>
+                  {showColumnPicker && (
+                    <div className="absolute right-0 mt-1 py-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                      {['displayName', 'associate', 'paygroup', 'department', 'alternateSaturdayOff', 'effectiveDate', 'priority', 'remarks', 'action'].map((col) => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => toggleColumn(col)}
+                          className="w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 hover:bg-gray-100"
+                        >
+                          <span className={visibleColumns.has(col) ? 'text-blue-600' : 'text-gray-400'}>{visibleColumns.has(col) ? '✓' : '○'}</span>
+                          {col === 'displayName' ? 'Display Name' : col === 'alternateSaturdayOff' ? 'Alt. Sat Off' : col.charAt(0).toUpperCase() + col.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

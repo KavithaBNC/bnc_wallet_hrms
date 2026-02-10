@@ -38,7 +38,7 @@ const PermissionsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
-  const [rolePermissions, setRolePermissions] = useState<RolePermission[]>([]);
+  const [_rolePermissions, setRolePermissions] = useState<RolePermission[]>([]);
   const [loadingRolePerms, setLoadingRolePerms] = useState(false);
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -174,11 +174,6 @@ const PermissionsPage = () => {
 
   const getPermissionId = (resource: string, action: PermissionScreenAction): string | null => {
     return permissionByKey[`${resource}.${action}`]?.id ?? null;
-  };
-
-  const isChecked = (resource: string, action: PermissionScreenAction): boolean => {
-    const id = getPermissionId(resource, action);
-    return id != null && selectedPermissionIds.includes(id);
   };
 
   const toggle = (resource: string, action: PermissionScreenAction) => {
