@@ -42,6 +42,7 @@ export const createLeaveRequestSchema = z.object({
   leaveTypeId: z.string().uuid('Invalid leave type ID'),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+  totalDays: z.number().positive().max(366).optional(), // Optional: for half-day/hourly (e.g. 0.5)
   reason: z.string().min(10, 'Reason must be at least 10 characters').max(1000, 'Reason too long'),
   supportingDocuments: z.array(z.object({
     name: z.string(),

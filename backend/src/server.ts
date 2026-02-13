@@ -95,6 +95,7 @@ app.get('/api/v1', (_req: Request, res: Response) => {
       attendance: '/api/v1/attendance',
       leaves: '/api/v1/leaves',
       payroll: '/api/v1/payroll',
+      monthlyAttendanceSummary: '/api/v1/monthly-attendance-summary',
       recruitment: '/api/v1/recruitment',
       chatbot: '/api/v1/chatbot',
       performance: '/api/v1/performance',
@@ -139,6 +140,8 @@ import approvalWorkflowRoutes from './routes/approval-workflow.routes';
 import workflowMappingRoutes from './routes/workflow-mapping.routes';
 import ruleSettingRoutes from './routes/rule-setting.routes';
 import autoCreditSettingRoutes from './routes/auto-credit-setting.routes';
+import monthlyAttendanceSummaryRoutes from './routes/monthly-attendance-summary.routes';
+import configRoutes from './routes/config.routes';
 
 // Mount routes (iclock at root so device can hit /iclock/cdata)
 app.use('/iclock', iclockRoutes);
@@ -165,6 +168,8 @@ app.use('/api/v1/approval-workflows', approvalWorkflowRoutes);
 app.use('/api/v1/workflow-mappings', workflowMappingRoutes);
 app.use('/api/v1/rule-settings', ruleSettingRoutes);
 app.use('/api/v1/auto-credit-settings', autoCreditSettingRoutes);
+app.use('/api/v1/monthly-attendance-summary', monthlyAttendanceSummaryRoutes);
+app.use('/api/v1/config', configRoutes);
 app.use('/api/v1/permissions', permissionRoutes);
 app.use('/api/v1/payroll', payrollRoutes);
 app.use('/api/v1/employee-separations', employeeSeparationRoutes);

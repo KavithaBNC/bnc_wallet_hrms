@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import shiftService from '../services/shift.service';
 import rightsAllocationService from '../services/rightsAllocation.service';
+import attendanceComponentService, { type AttendanceComponent } from '../services/attendanceComponent.service';
 
 export default function RightsAllocationFormPage() {
   const navigate = useNavigate();
@@ -28,7 +29,7 @@ export default function RightsAllocationFormPage() {
   // Dropdowns
   const [shifts, setShifts] = useState<Array<{ id: string; name: string }>>([]);
 
-  // Attendance Events table data
+  // Attendance Events table data - sourced from Attendance Components
   interface AttendanceEvent {
     id: string;
     name: string;
@@ -40,10 +41,12 @@ export default function RightsAllocationFormPage() {
     allowWeekOffSelection: boolean;
     allowHolidaySelection: boolean;
     maxDays: number | '';
-    maxMinutes: number | ''; // For events that need minutes (like Forgot Punch)
+    maxMinutes: number | '';
+    allowHourly: boolean;  // from AttendanceComponent - show Min input
+    allowDatewise: boolean; // from AttendanceComponent - show Day input
   }
 
-  // Excess Time table data
+  // Excess Time table data - sourced from Attendance Components (creditFromOverTime=true)
   interface ExcessTimeEvent {
     id: string;
     name: string;
@@ -51,6 +54,8 @@ export default function RightsAllocationFormPage() {
     add: boolean;
     maxDays: number | '';
     maxMinutes: number | '';
+    allowHourly: boolean;
+    allowDatewise: boolean;
   }
 
   // Request Type table data
@@ -75,30 +80,81 @@ export default function RightsAllocationFormPage() {
     delete: boolean;
   }
 
-  const [attendanceEvents, setAttendanceEvents] = useState<AttendanceEvent[]>([
-    { id: '1', name: 'BEREAVEMENT LEAVE', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '2', name: 'Casual Leave', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '3', name: 'Comp Off', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '4', name: 'Earned Leave', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '5', name: 'Forgot Punch', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '6', name: 'Loss of Pay', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '7', name: 'Marriage leave', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '8', name: 'Maternity Leave', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '9', name: 'On Duty', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '10', name: 'Paternity Leave', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '11', name: 'Permission', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '12', name: 'Present', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '13', name: 'Restricted Holiday', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '14', name: 'Sick Leave', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-    { id: '15', name: 'Work from Home', applicable: false, view: false, add: false, cancel: false, delete: false, allowWeekOffSelection: false, allowHolidaySelection: false, maxDays: '', maxMinutes: '' },
-  ]);
+  const [attendanceComponents, setAttendanceComponents] = useState<AttendanceComponent[]>([]);
+  const [attendanceEvents, setAttendanceEvents] = useState<AttendanceEvent[]>([]);
+  const [savedAttendanceEvents, setSavedAttendanceEvents] = useState<AttendanceEvent[] | null>(null);
 
-  // Excess Time events - Single table
-  const [excessTimeEvents, setExcessTimeEvents] = useState<ExcessTimeEvent[]>([
-    { id: 'et1', name: 'Excess time to Comp Off', applicable: false, add: false, maxDays: '', maxMinutes: '' },
-    { id: 'et2', name: 'Excess time to Permission', applicable: false, add: false, maxDays: '', maxMinutes: '' },
-    { id: 'et3', name: 'Excess time to Over-time', applicable: false, add: false, maxDays: '', maxMinutes: '' },
-  ]);
+  const buildDefaultEvent = (c: AttendanceComponent): AttendanceEvent => ({
+    id: c.id,
+    name: c.eventName,
+    applicable: false,
+    view: false,
+    add: false,
+    cancel: false,
+    delete: false,
+    allowWeekOffSelection: false,
+    allowHolidaySelection: false,
+    maxDays: '',
+    maxMinutes: '',
+    allowHourly: c.allowHourly,
+    allowDatewise: c.allowDatewise,
+  });
+
+  const mergeComponentsWithSaved = (components: AttendanceComponent[], saved: AttendanceEvent[]): AttendanceEvent[] => {
+    const savedById = new Map(saved.map((e) => [e.id, e]));
+    const savedByName = new Map(saved.map((e) => [e.name?.toLowerCase().trim(), e]));
+    return components.map((c) => {
+      const existing = savedById.get(c.id) ?? savedByName.get(c.eventName?.toLowerCase().trim());
+      if (existing) {
+        return {
+          ...existing,
+          id: c.id,
+          name: c.eventName,
+          allowHourly: c.allowHourly,
+          allowDatewise: c.allowDatewise,
+        };
+      }
+      return buildDefaultEvent(c);
+    });
+  };
+
+  const buildDefaultExcessEvent = (c: AttendanceComponent): ExcessTimeEvent => ({
+    id: c.id,
+    name: `Excess time to ${c.eventName}`,
+    applicable: false,
+    add: false,
+    maxDays: '',
+    maxMinutes: '',
+    allowHourly: c.allowHourly,
+    allowDatewise: c.allowDatewise,
+  });
+
+  const mergeExcessComponentsWithSaved = (
+    components: AttendanceComponent[],
+    saved: ExcessTimeEvent[]
+  ): ExcessTimeEvent[] => {
+    const savedById = new Map(saved.map((e) => [e.id, e]));
+    const savedByName = new Map(
+      saved.map((e) => [e.name?.toLowerCase().replace(/^excess time to\s*/i, '').trim(), e])
+    );
+    return components.map((c) => {
+      const existing =
+        savedById.get(c.id) ?? savedByName.get(c.eventName?.toLowerCase().trim());
+      if (existing) {
+        return {
+          ...existing,
+          id: c.id,
+          name: `Excess time to ${c.eventName}`,
+          allowHourly: c.allowHourly,
+          allowDatewise: c.allowDatewise,
+        };
+      }
+      return buildDefaultExcessEvent(c);
+    });
+  };
+
+  const [excessTimeEvents, setExcessTimeEvents] = useState<ExcessTimeEvent[]>([]);
+  const [savedExcessTimeEvents, setSavedExcessTimeEvents] = useState<ExcessTimeEvent[] | null>(null);
 
   // Request Type events
   const [requestTypeEvents, setRequestTypeEvents] = useState<RequestTypeEvent[]>([]);
@@ -121,6 +177,16 @@ export default function RightsAllocationFormPage() {
       prev.map((event) => ({
         ...event,
         [column]: value,
+      }))
+    );
+  };
+
+  const handleSelectAllAllow = (value: boolean) => {
+    setAttendanceEvents((prev) =>
+      prev.map((event) => ({
+        ...event,
+        allowWeekOffSelection: value,
+        allowHolidaySelection: value,
       }))
     );
   };
@@ -183,7 +249,7 @@ export default function RightsAllocationFormPage() {
     );
   };
 
-  // Fetch shifts
+  // Fetch shifts and attendance components
   useEffect(() => {
     if (!organizationId) return;
     shiftService
@@ -192,7 +258,34 @@ export default function RightsAllocationFormPage() {
         setShifts(shiftsData.shifts.map((s) => ({ id: s.id, name: s.name })));
       })
       .catch(() => {});
+    attendanceComponentService
+      .getAll({ organizationId, page: 1, limit: 500 })
+      .then((res) => setAttendanceComponents(res.components || []))
+      .catch(() => setAttendanceComponents([]));
   }, [organizationId]);
+
+  // Build attendance events from components (dynamic list - only show components that exist)
+  useEffect(() => {
+    if (attendanceComponents.length === 0) return;
+    if (isEdit && savedAttendanceEvents === null) return;
+    const built =
+      isEdit && savedAttendanceEvents
+        ? mergeComponentsWithSaved(attendanceComponents, savedAttendanceEvents)
+        : attendanceComponents.map(buildDefaultEvent);
+    setAttendanceEvents(built);
+  }, [attendanceComponents, savedAttendanceEvents, isEdit]);
+
+  // Build excess time events from components (creditFromOverTime=true only)
+  useEffect(() => {
+    const excessComps = attendanceComponents.filter((c) => c.creditFromOverTime);
+    if (excessComps.length === 0) return;
+    if (isEdit && savedExcessTimeEvents === null) return;
+    const built =
+      isEdit && savedExcessTimeEvents
+        ? mergeExcessComponentsWithSaved(excessComps, savedExcessTimeEvents)
+        : excessComps.map(buildDefaultExcessEvent);
+    setExcessTimeEvents(built);
+  }, [attendanceComponents, savedExcessTimeEvents, isEdit]);
 
   // Load data in edit mode
   useEffect(() => {
@@ -208,12 +301,24 @@ export default function RightsAllocationFormPage() {
         setShiftId(rule.shiftId || '');
         setMaxExcessTimeRequestDays(rule.maxExcessTimeRequestDays);
         setMonthlyRegularizationCount(rule.monthlyRegularizationCount || '');
-        // Load table data from JSON fields
+        // Load table data - attendanceEvents merged with components in useEffect (filters deleted components)
         if (rule.attendanceEvents && Array.isArray(rule.attendanceEvents)) {
-          setAttendanceEvents(rule.attendanceEvents as AttendanceEvent[]);
+          const raw = rule.attendanceEvents as AttendanceEvent[];
+          setSavedAttendanceEvents(raw.map((e) => ({ ...e, allowHourly: e.allowHourly ?? false, allowDatewise: e.allowDatewise ?? false })));
+        } else {
+          setSavedAttendanceEvents([]);
         }
         if (rule.excessTimeEvents && Array.isArray(rule.excessTimeEvents)) {
-          setExcessTimeEvents(rule.excessTimeEvents as ExcessTimeEvent[]);
+          const raw = rule.excessTimeEvents as ExcessTimeEvent[];
+          setSavedExcessTimeEvents(
+            raw.map((e) => ({
+              ...e,
+              allowHourly: e.allowHourly ?? false,
+              allowDatewise: e.allowDatewise ?? false,
+            }))
+          );
+        } else {
+          setSavedExcessTimeEvents([]);
         }
         if (rule.requestTypeEvents && Array.isArray(rule.requestTypeEvents)) {
           setRequestTypeEvents(rule.requestTypeEvents as RequestTypeEvent[]);
@@ -403,9 +508,10 @@ export default function RightsAllocationFormPage() {
                     </div>
                   </div>
 
-                  {/* Attendance Events Table */}
+                  {/* Attendance Events Table - dynamic from Attendance Components */}
                   <div className="mt-6 border-t border-gray-200 pt-6">
                     <h3 className="text-base font-semibold text-gray-900 mb-4">Attendance Events</h3>
+                    <p className="text-sm text-gray-500 mb-2">Events are loaded from Attendance Components. Add or remove events in the Attendance Components page.</p>
                     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
@@ -418,7 +524,7 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={attendanceEvents.every((e) => e.applicable)}
+                                    checked={attendanceEvents.length > 0 && attendanceEvents.every((e) => e.applicable)}
                                     onChange={(e) => handleSelectAll('applicable', e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
@@ -429,7 +535,7 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={attendanceEvents.every((e) => e.view)}
+                                    checked={attendanceEvents.length > 0 && attendanceEvents.every((e) => e.view)}
                                     onChange={(e) => handleSelectAll('view', e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
@@ -440,7 +546,7 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={attendanceEvents.every((e) => e.add)}
+                                    checked={attendanceEvents.length > 0 && attendanceEvents.every((e) => e.add)}
                                     onChange={(e) => handleSelectAll('add', e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
@@ -451,7 +557,7 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={attendanceEvents.every((e) => e.cancel)}
+                                    checked={attendanceEvents.length > 0 && attendanceEvents.every((e) => e.cancel)}
                                     onChange={(e) => handleSelectAll('cancel', e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
@@ -462,7 +568,7 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={attendanceEvents.every((e) => e.delete)}
+                                    checked={attendanceEvents.length > 0 && attendanceEvents.every((e) => e.delete)}
                                     onChange={(e) => handleSelectAll('delete', e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
@@ -473,13 +579,8 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={attendanceEvents.every((e) => e.allowWeekOffSelection && e.allowHolidaySelection)}
-                                    onChange={(e) => {
-                                      attendanceEvents.forEach((event) => {
-                                        updateEventField(event.id, 'allowWeekOffSelection', e.target.checked);
-                                        updateEventField(event.id, 'allowHolidaySelection', e.target.checked);
-                                      });
-                                    }}
+                                    checked={attendanceEvents.length > 0 && attendanceEvents.every((e) => e.allowWeekOffSelection && e.allowHolidaySelection)}
+                                    onChange={(e) => handleSelectAllAllow(e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
                                   <span className="ml-2">Allow</span>
@@ -491,7 +592,14 @@ export default function RightsAllocationFormPage() {
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                            {attendanceEvents.map((event) => (
+                            {attendanceEvents.length === 0 ? (
+                              <tr>
+                                <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                                  No attendance components found. Create events in the Attendance Components page first.
+                                </td>
+                              </tr>
+                            ) : (
+                            attendanceEvents.map((event) => (
                               <tr key={event.id} className="hover:bg-gray-50">
                                 <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                   {event.name}
@@ -560,7 +668,7 @@ export default function RightsAllocationFormPage() {
                                 </td>
                                 <td className="px-4 py-3 whitespace-nowrap">
                                   <div className="flex items-center gap-2">
-                                    {event.name === 'Forgot Punch' || event.name === 'On Duty' || event.name === 'Present' || event.name === 'Work from Home' ? (
+                                    {event.allowHourly && event.allowDatewise ? (
                                       <>
                                         <span className="text-sm text-gray-700">Min</span>
                                         <input
@@ -569,7 +677,7 @@ export default function RightsAllocationFormPage() {
                                           onChange={(e) => updateEventField(event.id, 'maxMinutes', e.target.value === '' ? '' : Number(e.target.value))}
                                           min="0"
                                           className="w-20 rounded border border-gray-300 !bg-white px-2 py-1 text-sm text-black"
-                                          placeholder="Max Minutes"
+                                          placeholder="Max Mi"
                                         />
                                         <span className="text-sm text-gray-700">Day</span>
                                         <input
@@ -578,10 +686,10 @@ export default function RightsAllocationFormPage() {
                                           onChange={(e) => updateEventField(event.id, 'maxDays', e.target.value === '' ? '' : Number(e.target.value))}
                                           min="0"
                                           className="w-20 rounded border border-gray-300 !bg-white px-2 py-1 text-sm text-black"
-                                          placeholder="Max Days"
+                                          placeholder="Max Da"
                                         />
                                       </>
-                                    ) : event.name === 'Permission' ? (
+                                    ) : event.allowHourly ? (
                                       <>
                                         <span className="text-sm text-gray-700">Min</span>
                                         <input
@@ -590,7 +698,7 @@ export default function RightsAllocationFormPage() {
                                           onChange={(e) => updateEventField(event.id, 'maxMinutes', e.target.value === '' ? '' : Number(e.target.value))}
                                           min="0"
                                           className="w-20 rounded border border-gray-300 !bg-white px-2 py-1 text-sm text-black"
-                                          placeholder="Max Minutes"
+                                          placeholder="Max Mi"
                                         />
                                       </>
                                     ) : (
@@ -609,18 +717,18 @@ export default function RightsAllocationFormPage() {
                                   </div>
                                 </td>
                               </tr>
-                            ))}
+                            ))
+                            )}
                           </tbody>
                         </table>
                       </div>
                     </div>
                   </div>
 
-                  {/* Excess Time Section */}
+                  {/* Excess Time Section - dynamic from Attendance Components (creditFromOverTime=true) */}
                   <div className="mt-6 border-t border-gray-200 pt-6">
                     <h3 className="text-base font-semibold text-blue-600 underline mb-4">Excess Time</h3>
-                    
-                    {/* Excess Time Table */}
+                    <p className="text-sm text-gray-500 mb-2">Events with &quot;Credit from Over Time&quot; enabled in Attendance Components.</p>
                     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
@@ -633,7 +741,7 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={excessTimeEvents.every((e) => e.applicable)}
+                                    checked={excessTimeEvents.length > 0 && excessTimeEvents.every((e) => e.applicable)}
                                     onChange={(e) => handleExcessTimeSelectAll('applicable', e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
@@ -644,7 +752,7 @@ export default function RightsAllocationFormPage() {
                                 <label className="flex items-center justify-center cursor-pointer">
                                   <input
                                     type="checkbox"
-                                    checked={excessTimeEvents.every((e) => e.add)}
+                                    checked={excessTimeEvents.length > 0 && excessTimeEvents.every((e) => e.add)}
                                     onChange={(e) => handleExcessTimeSelectAll('add', e.target.checked)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
@@ -657,7 +765,14 @@ export default function RightsAllocationFormPage() {
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                            {excessTimeEvents.map((event) => (
+                            {excessTimeEvents.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                                  No excess time events. Enable &quot;Credit from Over Time&quot; on components in Attendance Components page.
+                                </td>
+                              </tr>
+                            ) : (
+                            excessTimeEvents.map((event) => (
                               <tr key={event.id} className="hover:bg-gray-50">
                                 <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                   {event.name}
@@ -680,7 +795,7 @@ export default function RightsAllocationFormPage() {
                                 </td>
                                 <td className="px-4 py-3 whitespace-nowrap">
                                   <div className="flex items-center gap-2">
-                                    {event.name === 'Excess time to Comp Off' ? (
+                                    {event.allowDatewise && !event.allowHourly ? (
                                       <>
                                         <span className="text-sm text-gray-700">Day</span>
                                         <input
@@ -692,7 +807,7 @@ export default function RightsAllocationFormPage() {
                                           placeholder="Max Days"
                                         />
                                       </>
-                                    ) : (
+                                    ) : event.allowHourly ? (
                                       <>
                                         <span className="text-sm text-gray-700">Min</span>
                                         <input
@@ -701,14 +816,40 @@ export default function RightsAllocationFormPage() {
                                           onChange={(e) => updateExcessTimeField(event.id, 'maxMinutes', e.target.value === '' ? '' : Number(e.target.value))}
                                           min="0"
                                           className="w-24 rounded border border-gray-300 !bg-white px-2 py-1 text-sm text-black"
-                                          placeholder="Max Minutes"
+                                          placeholder="Max Mi"
+                                        />
+                                        {event.allowDatewise && (
+                                          <>
+                                            <span className="text-sm text-gray-700">Day</span>
+                                            <input
+                                              type="number"
+                                              value={event.maxDays}
+                                              onChange={(e) => updateExcessTimeField(event.id, 'maxDays', e.target.value === '' ? '' : Number(e.target.value))}
+                                              min="0"
+                                              className="w-24 rounded border border-gray-300 !bg-white px-2 py-1 text-sm text-black"
+                                              placeholder="Max Da"
+                                            />
+                                          </>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-sm text-gray-700">Day</span>
+                                        <input
+                                          type="number"
+                                          value={event.maxDays}
+                                          onChange={(e) => updateExcessTimeField(event.id, 'maxDays', e.target.value === '' ? '' : Number(e.target.value))}
+                                          min="0"
+                                          className="w-24 rounded border border-gray-300 !bg-white px-2 py-1 text-sm text-black"
+                                          placeholder="Max Days"
                                         />
                                       </>
                                     )}
                                   </div>
                                 </td>
                               </tr>
-                            ))}
+                            ))
+                            )}
                           </tbody>
                         </table>
                       </div>

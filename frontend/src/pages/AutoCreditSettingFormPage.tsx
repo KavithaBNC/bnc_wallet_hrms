@@ -4,27 +4,19 @@ import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import paygroupService from '../services/paygroup.service';
 import departmentService from '../services/department.service';
+import employeeService, { Employee } from '../services/employee.service';
 import autoCreditSettingService from '../services/autoCreditSetting.service';
+import attendanceComponentService, { type AttendanceComponent } from '../services/attendanceComponent.service';
+
+function fullName(e: Employee): string {
+  const parts = [e.firstName, e.middleName, e.lastName].filter(Boolean);
+  return parts.join(' ').trim() || e.employeeCode || '';
+}
 
 interface Option {
   id: string;
   name: string;
 }
-
-const EVENT_TYPES = [
-  'Paternity Leave',
-  'Marriage leave',
-  'BEREAVEMENT LEAVE',
-  'Maternity Leave',
-  'Present',
-  'Earned Leave',
-  'On Duty',
-  'Sick Leave',
-  'Casual Leave',
-  'Loss of Pay',
-  'Comp Off',
-  'Other',
-];
 
 const inputClass = 'mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm';
 
@@ -127,7 +119,9 @@ export default function AutoCreditSettingFormPage() {
 
   // Section 1 - Basic info - no auto-selection on add
   const [displayName, setDisplayName] = useState('');
-  const [associate, setAssociate] = useState('');
+  const [eventId, setEventId] = useState<string | null>(null);
+  const [attendanceComponents, setAttendanceComponents] = useState<AttendanceComponent[]>([]);
+  const [selectedAssociates, setSelectedAssociates] = useState<Option[]>([]);
   const [selectedPaygroups, setSelectedPaygroups] = useState<Option[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<Option[]>([]);
   const [effectiveDate, setEffectiveDate] = useState('');
@@ -159,12 +153,18 @@ export default function AutoCreditSettingFormPage() {
 
   const [paygroups, setPaygroups] = useState<Option[]>([]);
   const [departments, setDepartments] = useState<Option[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadedAssociateIds, setLoadedAssociateIds] = useState<string[]>([]);
+  const [loadedPaygroupIds, setLoadedPaygroupIds] = useState<string[]>([]);
+  const [loadedDepartmentIds, setLoadedDepartmentIds] = useState<string[]>([]);
   const [showPaygroupDropdown, setShowPaygroupDropdown] = useState(false);
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
-  const [showEventTypeDropdown, setShowEventTypeDropdown] = useState(false);
+  const [showAssociateDropdown, setShowAssociateDropdown] = useState(false);
+  const [showEventComponentDropdown, setShowEventComponentDropdown] = useState(false);
   const paygroupDropdownRef = useRef<HTMLDivElement>(null);
   const departmentDropdownRef = useRef<HTMLDivElement>(null);
-  const eventTypeDropdownRef = useRef<HTMLDivElement>(null);
+  const associateDropdownRef = useRef<HTMLDivElement>(null);
+  const eventComponentDropdownRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const savedScrollRef = useRef<{ el: HTMLElement; top: number }[]>([]);
   const shouldRestoreScrollRef = useRef(false);
@@ -190,7 +190,8 @@ export default function AutoCreditSettingFormPage() {
     const handleClickOutside = (event: MouseEvent) => {
       if (paygroupDropdownRef.current && !paygroupDropdownRef.current.contains(event.target as Node)) setShowPaygroupDropdown(false);
       if (departmentDropdownRef.current && !departmentDropdownRef.current.contains(event.target as Node)) setShowDepartmentDropdown(false);
-      if (eventTypeDropdownRef.current && !eventTypeDropdownRef.current.contains(event.target as Node)) setShowEventTypeDropdown(false);
+      if (associateDropdownRef.current && !associateDropdownRef.current.contains(event.target as Node)) setShowAssociateDropdown(false);
+      if (eventComponentDropdownRef.current && !eventComponentDropdownRef.current.contains(event.target as Node)) setShowEventComponentDropdown(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -201,11 +202,28 @@ export default function AutoCreditSettingFormPage() {
     Promise.all([
       paygroupService.getAll({ organizationId }),
       departmentService.getAll({ organizationId, limit: 500 }),
-    ]).then(([pgList, deptRes]) => {
+      employeeService.getAll({ organizationId, page: 1, limit: 2000, employeeStatus: 'ACTIVE' }),
+      attendanceComponentService.getAll({ organizationId, page: 1, limit: 500 }),
+    ]).then(([pgList, deptRes, empRes, compRes]) => {
       setPaygroups((pgList || []).map((p) => ({ id: p.id, name: p.name })));
       setDepartments((deptRes?.departments || []).map((d) => ({ id: d.id, name: d.name })));
+      setEmployees(empRes?.employees || []);
+      setAttendanceComponents(compRes?.components || []);
     }).catch(() => {});
   }, [organizationId]);
+
+  const associateOptions: Option[] = [
+    { id: '__ALL__', name: 'All' },
+    ...employees.map((e) => ({ id: e.id, name: `${e.employeeCode || e.id} - ${fullName(e)}` })),
+  ];
+
+  useEffect(() => {
+    if (!isEdit && employees.length > 0 && selectedAssociates.length === 0 && selectedPaygroups.length === 0 && selectedDepartments.length === 0) {
+      setSelectedAssociates([{ id: '__ALL__', name: 'All' }]);
+      setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
+      setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
+    }
+  }, [isEdit, employees.length, selectedAssociates.length, selectedPaygroups.length, selectedDepartments.length]);
 
   useEffect(() => {
     if (!isEdit || !id || !organizationId) return;
@@ -216,15 +234,34 @@ export default function AutoCreditSettingFormPage() {
       .then((data) => {
         setEventType(data.eventType);
         setDisplayName(data.displayName);
-        setAssociate(data.associate || '');
         setEffectiveDate(data.effectiveDate ? data.effectiveDate.split('T')[0] : '');
         setEffectiveTo(data.effectiveTo ? data.effectiveTo.split('T')[0] : '');
         setPriority(data.priority ?? 0);
         setRemarks(data.remarks || '');
-        if (data.paygroup) setSelectedPaygroups([{ id: data.paygroup.id, name: data.paygroup.name }]);
-        else setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
-        if (data.department) setSelectedDepartments([{ id: data.department.id, name: data.department.name }]);
-        else setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
+        const aIds = (data as { associateIds?: string[] }).associateIds;
+        if (Array.isArray(aIds) && aIds.length > 0) {
+          setLoadedAssociateIds(aIds);
+        } else if (data.associate) {
+          setLoadedAssociateIds([data.associate]);
+        } else {
+          setLoadedAssociateIds([]);
+        }
+        const pgIds = (data as { paygroupIds?: string[] }).paygroupIds;
+        if (Array.isArray(pgIds) && pgIds.length > 0) {
+          setLoadedPaygroupIds(pgIds);
+        } else if (data.paygroup) {
+          setLoadedPaygroupIds([data.paygroup.id]);
+        } else {
+          setLoadedPaygroupIds([]);
+        }
+        const deptIds = (data as { departmentIds?: string[] }).departmentIds;
+        if (Array.isArray(deptIds) && deptIds.length > 0) {
+          setLoadedDepartmentIds(deptIds);
+        } else if (data.department) {
+          setLoadedDepartmentIds([data.department.id]);
+        } else {
+          setLoadedDepartmentIds([]);
+        }
         const rule = data.autoCreditRule as Record<string, unknown> | null | undefined;
         if (rule) {
           if (rule.periodicity) setPeriodicity(String(rule.periodicity));
@@ -253,6 +290,53 @@ export default function AutoCreditSettingFormPage() {
       });
   }, [id, organizationId, isEdit]);
 
+  useEffect(() => {
+    const comp = attendanceComponents.find((c) => c.eventName === eventType);
+    if (comp) setEventId(comp.id);
+  }, [attendanceComponents, eventType]);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    if (loadedAssociateIds.length === 0) {
+      setSelectedAssociates([{ id: '__ALL__', name: 'All' }]);
+      return;
+    }
+    if (employees.length === 0) return;
+    const resolved = loadedAssociateIds
+      .map((aid) => {
+        const e = employees.find((emp) => emp.id === aid || emp.employeeCode === aid);
+        return e ? { id: e.id, name: `${e.employeeCode || e.id} - ${fullName(e)}` } : null;
+      })
+      .filter((o): o is Option => o != null);
+    if (resolved.length > 0) setSelectedAssociates(resolved);
+  }, [isEdit, loadedAssociateIds, employees]);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    if (loadedPaygroupIds.length === 0) {
+      setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
+      return;
+    }
+    if (paygroups.length === 0) return;
+    const resolved = loadedPaygroupIds
+      .map((pid) => paygroups.find((p) => p.id === pid))
+      .filter((p): p is Option => p != null);
+    if (resolved.length > 0) setSelectedPaygroups(resolved);
+  }, [isEdit, loadedPaygroupIds, paygroups]);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    if (loadedDepartmentIds.length === 0) {
+      setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
+      return;
+    }
+    if (departments.length === 0) return;
+    const resolved = loadedDepartmentIds
+      .map((did) => departments.find((d) => d.id === did))
+      .filter((d): d is Option => d != null);
+    if (resolved.length > 0) setSelectedDepartments(resolved);
+  }, [isEdit, loadedDepartmentIds, departments]);
+
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -262,21 +346,16 @@ export default function AutoCreditSettingFormPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!organizationId) return;
+    if (!organizationId) {
+      setError('Organization not found. Please log in again.');
+      return;
+    }
     if (!eventType?.trim()) {
-      setError('Event Type is required');
+      setError('Event (Attendance Component) is required');
       return;
     }
     if (!displayName.trim()) {
       setError('Display Name is required');
-      return;
-    }
-    if (selectedPaygroups.length === 0) {
-      setError('Paygroup is required');
-      return;
-    }
-    if (selectedDepartments.length === 0) {
-      setError('Department is required');
       return;
     }
     if (!effectiveDate.trim()) {
@@ -317,13 +396,26 @@ export default function AutoCreditSettingFormPage() {
         dayOfCreditPeriod: dayOfCreditPeriod.trim() || undefined,
         creditBaseOnPreviousWorkDays,
       };
+      const associateIdsArr =
+        selectedAssociates.length === 0 || selectedAssociates.some((a) => a.id === '__ALL__')
+          ? undefined
+          : selectedAssociates.map((a) => a.id).filter((id) => id !== '__ALL__');
+      const paygroupIdsArr =
+        selectedPaygroups.length === 0 || selectedPaygroups.some((p) => p.id === '__ALL__')
+          ? undefined
+          : selectedPaygroups.map((p) => p.id).filter((id) => id !== '__ALL__');
+      const departmentIdsArr =
+        selectedDepartments.length === 0 || selectedDepartments.some((d) => d.id === '__ALL__')
+          ? undefined
+          : selectedDepartments.map((d) => d.id).filter((id) => id !== '__ALL__');
+
       const payload = {
         organizationId,
         eventType,
         displayName: displayName.trim(),
-        associate: associate.trim() || undefined,
-        paygroupId: selectedPaygroups[0]?.id === '__ALL__' ? undefined : selectedPaygroups[0]?.id,
-        departmentId: selectedDepartments[0]?.id === '__ALL__' ? undefined : selectedDepartments[0]?.id,
+        associateIds: associateIdsArr,
+        paygroupIds: paygroupIdsArr,
+        departmentIds: departmentIdsArr,
         effectiveDate: effectiveDate.trim(),
         effectiveTo: effectiveTo.trim() || undefined,
         priority: priority === '' ? 0 : Number(priority),
@@ -337,9 +429,12 @@ export default function AutoCreditSettingFormPage() {
           organizationId,
           eventType,
           displayName: payload.displayName,
-          associate: payload.associate ?? null,
-          paygroupId: payload.paygroupId ?? null,
-          departmentId: payload.departmentId ?? null,
+          associate: null,
+          associateIds: payload.associateIds ?? null,
+          paygroupId: null,
+          paygroupIds: payload.paygroupIds ?? null,
+          departmentId: null,
+          departmentIds: payload.departmentIds ?? null,
           effectiveDate: payload.effectiveDate!,
           effectiveTo: payload.effectiveTo,
           priority: payload.priority,
@@ -485,27 +580,44 @@ export default function AutoCreditSettingFormPage() {
 
               {/* All fields under Auto Credit Setting - no sub-modules */}
               <div className="divide-y divide-gray-200 p-6">
-                <FormRow label="Event Type" required>
-                  <div className="relative" ref={eventTypeDropdownRef}>
+                <FormRow label="Event (Attendance Component)" required>
+                  <div className="relative" ref={eventComponentDropdownRef}>
                     <div
                       className="block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm cursor-pointer flex items-center pl-3 pr-10 sm:text-sm focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500"
-                      onClick={() => setShowEventTypeDropdown(!showEventTypeDropdown)}
+                      onClick={() => setShowEventComponentDropdown(!showEventComponentDropdown)}
                     >
-                      {eventType || <span className="text-gray-500">Select Event Type</span>}
+                      {eventId
+                        ? (() => {
+                            const c = attendanceComponents.find((x) => x.id === eventId);
+                            return c ? `${c.shortName} - ${c.eventName}` : eventType || 'Select...';
+                          })()
+                        : <span className="text-gray-500">Select Event (Attendance Component)</span>}
                     </div>
                     <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
-                    {showEventTypeDropdown && (
+                    {showEventComponentDropdown && (
                       <>
-                        <div className="fixed inset-0 z-10" onClick={() => setShowEventTypeDropdown(false)} aria-hidden="true" />
+                        <div className="fixed inset-0 z-10" onClick={() => setShowEventComponentDropdown(false)} aria-hidden="true" />
                         <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
-                          {EVENT_TYPES.map((t) => (
-                            <button key={t} type="button" onClick={() => { setEventType(t); setShowEventTypeDropdown(false); }}
-                                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${eventType === t ? 'bg-blue-50' : ''}`}>
-                              {t}
+                          {attendanceComponents.filter((c) => c.allowAutoCreditRule).map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setEventId(c.id);
+                                setEventType(c.eventName);
+                                setDisplayName(c.shortName);
+                                setShowEventComponentDropdown(false);
+                              }}
+                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${eventId === c.id ? 'bg-blue-50' : ''}`}
+                            >
+                              {c.shortName} - {c.eventName}
                             </button>
                           ))}
+                          {attendanceComponents.filter((c) => c.allowAutoCreditRule).length === 0 && (
+                            <div className="px-4 py-2 text-sm text-gray-500">No components with auto-credit allowed</div>
+                          )}
                         </div>
                       </>
                     )}
@@ -515,18 +627,48 @@ export default function AutoCreditSettingFormPage() {
                   <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="e.g. EL" className={inputClass} />
                 </FormRow>
                 <FormRow label="Associate">
-                  <input type="text" value={associate} onChange={(e) => setAssociate(e.target.value)} placeholder="Associate" className={inputClass} />
+                  <ChipSelect
+                    selected={selectedAssociates}
+                    onRemove={(item) =>
+                      item.id === '__ALL__'
+                        ? setSelectedAssociates([])
+                        : setSelectedAssociates(selectedAssociates.filter((a) => a.id !== item.id))
+                    }
+                    onToggle={(item) => {
+                      if (item.id === '__ALL__') {
+                        setSelectedAssociates([{ id: '__ALL__', name: 'All' }]);
+                      } else {
+                        const hasAll = selectedAssociates.some((a) => a.id === '__ALL__');
+                        if (hasAll) setSelectedAssociates([{ id: item.id, name: item.name }]);
+                        else {
+                          const exists = selectedAssociates.some((a) => a.id === item.id);
+                          if (exists) setSelectedAssociates(selectedAssociates.filter((a) => a.id !== item.id));
+                          else setSelectedAssociates([...selectedAssociates, { id: item.id, name: item.name }]);
+                        }
+                      }
+                    }}
+                    options={associateOptions}
+                    placeholder="Select Associate(s) or All"
+                    showDropdown={showAssociateDropdown}
+                    onToggleDropdown={() => setShowAssociateDropdown(!showAssociateDropdown)}
+                    dropdownRef={associateDropdownRef}
+                  />
                 </FormRow>
-                <FormRow label="Paygroup" required>
+                <FormRow label="Paygroup">
                   <ChipSelect
                     selected={selectedPaygroups}
                     onRemove={(pg) => pg.id === '__ALL__' ? setSelectedPaygroups([]) : setSelectedPaygroups(selectedPaygroups.filter((p) => p.id !== pg.id))}
                     onToggle={(pg) => {
-                      if (pg.id === '__ALL__') setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
-                      else {
-                        const withoutAll = selectedPaygroups.filter((p) => p.id !== '__ALL__');
-                        const exists = withoutAll.some((p) => p.id === pg.id);
-                        setSelectedPaygroups(exists ? withoutAll.filter((p) => p.id !== pg.id) : [...withoutAll, pg]);
+                      if (pg.id === '__ALL__') {
+                        setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
+                      } else {
+                        const hasAll = selectedPaygroups.some((p) => p.id === '__ALL__');
+                        if (hasAll) setSelectedPaygroups([{ id: pg.id, name: pg.name }]);
+                        else {
+                          const exists = selectedPaygroups.some((p) => p.id === pg.id);
+                          if (exists) setSelectedPaygroups(selectedPaygroups.filter((p) => p.id !== pg.id));
+                          else setSelectedPaygroups([...selectedPaygroups, { id: pg.id, name: pg.name }]);
+                        }
                       }
                     }}
                     options={[{ id: '__ALL__', name: 'All' }, ...paygroups]}
@@ -536,16 +678,21 @@ export default function AutoCreditSettingFormPage() {
                     dropdownRef={paygroupDropdownRef}
                   />
                 </FormRow>
-                <FormRow label="Department" required>
+                <FormRow label="Department">
                   <ChipSelect
                     selected={selectedDepartments}
                     onRemove={(d) => d.id === '__ALL__' ? setSelectedDepartments([]) : setSelectedDepartments(selectedDepartments.filter((x) => x.id !== d.id))}
                     onToggle={(d) => {
-                      if (d.id === '__ALL__') setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
-                      else {
-                        const withoutAll = selectedDepartments.filter((x) => x.id !== '__ALL__');
-                        const exists = withoutAll.some((x) => x.id === d.id);
-                        setSelectedDepartments(exists ? withoutAll.filter((x) => x.id !== d.id) : [...withoutAll, d]);
+                      if (d.id === '__ALL__') {
+                        setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
+                      } else {
+                        const hasAll = selectedDepartments.some((x) => x.id === '__ALL__');
+                        if (hasAll) setSelectedDepartments([{ id: d.id, name: d.name }]);
+                        else {
+                          const exists = selectedDepartments.some((x) => x.id === d.id);
+                          if (exists) setSelectedDepartments(selectedDepartments.filter((x) => x.id !== d.id));
+                          else setSelectedDepartments([...selectedDepartments, { id: d.id, name: d.name }]);
+                        }
                       }
                     }}
                     options={[{ id: '__ALL__', name: 'All' }, ...departments]}

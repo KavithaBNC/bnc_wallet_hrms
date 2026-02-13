@@ -4,27 +4,19 @@ import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import paygroupService from '../services/paygroup.service';
 import departmentService from '../services/department.service';
+import employeeService, { Employee } from '../services/employee.service';
 import ruleSettingService from '../services/ruleSetting.service';
+import attendanceComponentService, { type AttendanceComponent } from '../services/attendanceComponent.service';
+
+function fullName(e: Employee): string {
+  const parts = [e.firstName, e.middleName, e.lastName].filter(Boolean);
+  return parts.join(' ').trim() || e.employeeCode || '';
+}
 
 interface Option {
   id: string;
   name: string;
 }
-
-const EVENT_TYPES = [
-  'Paternity Leave',
-  'Marriage leave',
-  'BEREAVEMENT LEAVE',
-  'Maternity Leave',
-  'Present',
-  'Earned Leave',
-  'On Duty',
-  'Sick Leave',
-  'Casual Leave',
-  'Loss of Pay',
-  'Comp Off',
-  'Other',
-];
 
 const inputClass = 'mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm';
 const tableInputClass = 'block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm';
@@ -65,13 +57,17 @@ export default function RuleSettingFormPage() {
 
   const stateEventType = (location.state as { eventType?: string })?.eventType;
   const [eventType, setEventType] = useState(stateEventType || '');
+  const [eventId, setEventId] = useState<string | null>(null);
+  const [attendanceComponents, setAttendanceComponents] = useState<AttendanceComponent[]>([]);
+  const [showEventComponentDropdown, setShowEventComponentDropdown] = useState(false);
+  const eventComponentDropdownRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState('');
-  const [associate, setAssociate] = useState('');
+  const [selectedAssociates, setSelectedAssociates] = useState<{ id: string; name: string }[]>([]);
   const [selectedPaygroups, setSelectedPaygroups] = useState<Option[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<Option[]>([]);
   const [remarks, setRemarks] = useState('');
@@ -111,12 +107,14 @@ export default function RuleSettingFormPage() {
 
   const [paygroups, setPaygroups] = useState<Option[]>([]);
   const [departments, setDepartments] = useState<Option[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [showPaygroupDropdown, setShowPaygroupDropdown] = useState(false);
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
-  const [showEventTypeDropdown, setShowEventTypeDropdown] = useState(false);
+  const [showAssociateDropdown, setShowAssociateDropdown] = useState(false);
+  const [loadedAssociateIds, setLoadedAssociateIds] = useState<string[]>([]);
   const paygroupDropdownRef = useRef<HTMLDivElement>(null);
   const departmentDropdownRef = useRef<HTMLDivElement>(null);
-  const eventTypeDropdownRef = useRef<HTMLDivElement>(null);
+  const associateDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (stateEventType) setEventType(stateEventType);
@@ -130,8 +128,11 @@ export default function RuleSettingFormPage() {
       if (departmentDropdownRef.current && !departmentDropdownRef.current.contains(event.target as Node)) {
         setShowDepartmentDropdown(false);
       }
-      if (eventTypeDropdownRef.current && !eventTypeDropdownRef.current.contains(event.target as Node)) {
-        setShowEventTypeDropdown(false);
+      if (associateDropdownRef.current && !associateDropdownRef.current.contains(event.target as Node)) {
+        setShowAssociateDropdown(false);
+      }
+      if (eventComponentDropdownRef.current && !eventComponentDropdownRef.current.contains(event.target as Node)) {
+        setShowEventComponentDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -143,11 +144,16 @@ export default function RuleSettingFormPage() {
     Promise.all([
       paygroupService.getAll({ organizationId }),
       departmentService.getAll({ organizationId, limit: 500 }),
-    ]).then(([pgList, deptRes]) => {
+      employeeService.getAll({ organizationId, page: 1, limit: 2000, employeeStatus: 'ACTIVE' }),
+      attendanceComponentService.getAll({ organizationId, page: 1, limit: 500 }),
+    ]).then(([pgList, deptRes, empRes, compRes]) => {
       setPaygroups((pgList || []).map((p) => ({ id: p.id, name: p.name })));
       setDepartments((deptRes?.departments || []).map((d) => ({ id: d.id, name: d.name })));
+      setEmployees(empRes?.employees || []);
+      setAttendanceComponents(compRes?.components || []);
     }).catch(() => {});
   }, [organizationId]);
+
 
   useEffect(() => {
     if (!isEdit || !id || !organizationId) return;
@@ -157,8 +163,15 @@ export default function RuleSettingFormPage() {
       .getById(id)
       .then((data) => {
         setEventType(data.eventType);
+        setEventId(data.eventId || null);
         setDisplayName(data.displayName);
-        setAssociate(data.associate || '');
+        if (data.associateIds && Array.isArray(data.associateIds) && data.associateIds.length > 0) {
+          setLoadedAssociateIds(data.associateIds);
+        } else if (data.associate) {
+          setLoadedAssociateIds([data.associate]);
+        } else {
+          setLoadedAssociateIds([]);
+        }
         setRemarks(data.remarks || '');
         if (data.paygroup) {
           setSelectedPaygroups([{ id: data.paygroup.id, name: data.paygroup.name }]);
@@ -212,6 +225,21 @@ export default function RuleSettingFormPage() {
       });
   }, [id, organizationId, isEdit]);
 
+  useEffect(() => {
+    if (loadedAssociateIds.length === 0) {
+      setSelectedAssociates([]);
+      return;
+    }
+    if (employees.length === 0) return;
+    const resolved = loadedAssociateIds
+      .map((eid) => {
+        const emp = employees.find((e) => e.id === eid || e.employeeCode === eid);
+        return emp ? { id: emp.id, name: `${emp.employeeCode || ''} - ${fullName(emp)}`.trim() || emp.id } : null;
+      })
+      .filter((x): x is { id: string; name: string } => x != null);
+    setSelectedAssociates(resolved);
+  }, [loadedAssociateIds, employees]);
+
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -223,19 +251,11 @@ export default function RuleSettingFormPage() {
     e.preventDefault();
     if (!organizationId) return;
     if (!eventType?.trim()) {
-      setError('Event Type is required');
+      setError('Please select an Attendance Component to set Event Type');
       return;
     }
     if (!displayName.trim()) {
       setError('Display Name is required');
-      return;
-    }
-    if (selectedPaygroups.length === 0) {
-      setError('Paygroup is required');
-      return;
-    }
-    if (selectedDepartments.length === 0) {
-      setError('Department is required');
       return;
     }
 
@@ -271,13 +291,19 @@ export default function RuleSettingFormPage() {
         requestInAdvanceDays,
         allowEventForFutureDays,
       };
+      const associateIds = selectedAssociates.some((a) => a.id === '__ALL__')
+        ? null
+        : selectedAssociates.length > 0
+          ? selectedAssociates.map((a) => a.id).filter((id) => id !== '__ALL__')
+          : null;
       const payload = {
         organizationId,
+        eventId: eventId || undefined,
         eventType,
         displayName: displayName.trim(),
-        associate: associate.trim() || undefined,
-        paygroupId: selectedPaygroups[0]?.id === '__ALL__' ? undefined : selectedPaygroups[0]?.id,
-        departmentId: selectedDepartments[0]?.id === '__ALL__' ? undefined : selectedDepartments[0]?.id,
+        associateIds,
+        paygroupId: selectedPaygroups[0]?.id === '__ALL__' || selectedPaygroups.length === 0 ? undefined : selectedPaygroups[0]?.id,
+        departmentId: selectedDepartments[0]?.id === '__ALL__' || selectedDepartments.length === 0 ? undefined : selectedDepartments[0]?.id,
         priority: 0,
         remarks: remarks.trim() || undefined,
         eventRuleDefinition,
@@ -414,35 +440,58 @@ export default function RuleSettingFormPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Event Type <span className="text-red-500">*</span></label>
-                  <div className="relative" ref={eventTypeDropdownRef}>
+                  <label className="block text-sm font-medium text-gray-700">Event (Attendance Component)</label>
+                  <div className="relative" ref={eventComponentDropdownRef}>
                     <div
                       className="mt-1 block w-full h-10 bg-white text-black rounded-md border border-black shadow-sm cursor-pointer flex items-center pl-3 pr-10 sm:text-sm"
-                      onClick={() => setShowEventTypeDropdown(!showEventTypeDropdown)}
+                      onClick={() => setShowEventComponentDropdown(!showEventComponentDropdown)}
                     >
-                      {eventType || <span className="text-gray-500">Select Event Type</span>}
+                      {eventId
+                        ? (() => {
+                            const c = attendanceComponents.find((x) => x.id === eventId);
+                            return c ? `${c.shortName} - ${c.eventName}` : 'Select...';
+                          })()
+                        : <span className="text-gray-500">Select Attendance Component (optional)</span>}
                     </div>
                     <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
-                    {showEventTypeDropdown && (
+                    {showEventComponentDropdown && (
                       <>
-                        <div className="fixed inset-0 z-10" onClick={() => setShowEventTypeDropdown(false)} aria-hidden="true" />
+                        <div className="fixed inset-0 z-10" onClick={() => setShowEventComponentDropdown(false)} aria-hidden="true" />
                         <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
-                          {EVENT_TYPES.map((t) => (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEventId(null);
+                              setEventType('');
+                              setDisplayName('');
+                              setShowEventComponentDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 text-gray-500"
+                          >
+                            (None)
+                          </button>
+                          {attendanceComponents.map((c) => (
                             <button
-                              key={t}
+                              key={c.id}
                               type="button"
-                              onClick={() => { setEventType(t); setShowEventTypeDropdown(false); }}
-                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${eventType === t ? 'bg-blue-50' : ''}`}
+                              onClick={() => {
+                                setEventId(c.id);
+                                setEventType(c.eventName);
+                                setDisplayName(c.shortName);
+                                setShowEventComponentDropdown(false);
+                              }}
+                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${eventId === c.id ? 'bg-blue-50' : ''}`}
                             >
-                              {t}
+                              {c.shortName} - {c.eventName}
                             </button>
                           ))}
                         </div>
                       </>
                     )}
                   </div>
+                  <p className="mt-1 text-xs text-gray-500">Links this rule to an Attendance Component (e.g. EL, CL). Event Type is auto-filled from selection.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Display Name <span className="text-red-500">*</span></label>
@@ -454,21 +503,44 @@ export default function RuleSettingFormPage() {
                     className={inputClass}
                   />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700">Associate</label>
-                  <input
-                    type="text"
-                    value={associate}
-                    onChange={(e) => setAssociate(e.target.value)}
-                    placeholder="Associate"
-                    className={inputClass}
+                  <p className="text-xs text-gray-500 mb-1">Select one, multiple, or All. Rule applies to selected associates only.</p>
+                  <ChipSelect
+                    selected={selectedAssociates}
+                    onRemove={(item) => {
+                      if (item.id === '__ALL__') setSelectedAssociates([]);
+                      else setSelectedAssociates(selectedAssociates.filter((a) => a.id !== item.id));
+                    }}
+                    onToggle={(item) => {
+                      if (item.id === '__ALL__') {
+                        setSelectedAssociates([{ id: '__ALL__', name: 'All' }]);
+                      } else {
+                        const withoutAll = selectedAssociates.filter((a) => a.id !== '__ALL__');
+                        const exists = withoutAll.some((a) => a.id === item.id);
+                        setSelectedAssociates(
+                          exists ? withoutAll.filter((a) => a.id !== item.id) : [...withoutAll, item]
+                        );
+                      }
+                    }}
+                    options={[
+                      { id: '__ALL__', name: 'All associates' },
+                      ...employees.map((e) => ({
+                        id: e.id,
+                        name: `${e.employeeCode || e.id} - ${fullName(e)}`,
+                      })),
+                    ]}
+                    placeholder="Select associate(s) or All"
+                    showDropdown={showAssociateDropdown}
+                    onToggleDropdown={() => setShowAssociateDropdown(!showAssociateDropdown)}
+                    dropdownRef={associateDropdownRef}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Paygroup <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700">Paygroup</label>
                   <ChipSelect
                     selected={selectedPaygroups}
                     onRemove={(pg) => pg.id === '__ALL__' ? setSelectedPaygroups([]) : setSelectedPaygroups(selectedPaygroups.filter((p) => p.id !== pg.id))}
@@ -488,7 +560,7 @@ export default function RuleSettingFormPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Department <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700">Department</label>
                   <ChipSelect
                     selected={selectedDepartments}
                     onRemove={(d) => d.id === '__ALL__' ? setSelectedDepartments([]) : setSelectedDepartments(selectedDepartments.filter((x) => x.id !== d.id))}

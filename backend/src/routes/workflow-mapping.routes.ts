@@ -33,6 +33,16 @@ router.get(
 );
 
 /**
+ * @route   GET /api/v1/workflow-mappings/resolve
+ * @desc    Resolve workflow for employee (rule-based)
+ * @access  Private (All authenticated users)
+ */
+router.get(
+  '/resolve',
+  controller.resolve.bind(controller)
+);
+
+/**
  * @route   GET /api/v1/workflow-mappings/:id
  * @desc    Get workflow mapping by ID
  * @access  Private (All authenticated users)

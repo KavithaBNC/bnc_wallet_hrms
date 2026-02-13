@@ -42,21 +42,21 @@ const EVENT_RULES: Omit<EventRule, 'value'>[] = [
   { key: 'halfDayRequirementInWorkDay', label: 'Half day requirement in work day', type: 'number' },
 ];
 
-// Default values for event rules
+// Default values for event rules (used when editing; add page starts with empty/unselected)
 const DEFAULT_RULE_VALUES: Record<string, boolean | number> = {
-  allowBeforeEntryDate: true,
-  combineMultipleDaysExcessTimeToCompOff: true,
-  considerExtraHours: true,
-  considerExtraHoursAsCompOff: true,
-  expiryDaysForHoliday: 180,
-  expiryDaysForWeekOff: 180,
-  expiryDaysForWorkDay: 180,
-  fullDayRequirementInHoliday: 480,
-  fullDayRequirementInWeekOff: 480,
-  fullDayRequirementInWorkDay: 480,
-  halfDayRequirementInHoliday: 240,
-  halfDayRequirementInWeekOff: 240,
-  halfDayRequirementInWorkDay: 240,
+  allowBeforeEntryDate: false,
+  combineMultipleDaysExcessTimeToCompOff: false,
+  considerExtraHours: false,
+  considerExtraHoursAsCompOff: false,
+  expiryDaysForHoliday: 0,
+  expiryDaysForWeekOff: 0,
+  expiryDaysForWorkDay: 0,
+  fullDayRequirementInHoliday: 0,
+  fullDayRequirementInWeekOff: 0,
+  fullDayRequirementInWorkDay: 0,
+  halfDayRequirementInHoliday: 0,
+  halfDayRequirementInWeekOff: 0,
+  halfDayRequirementInWorkDay: 0,
 };
 
 export default function ExcessTimeConversionFormPage() {
@@ -230,7 +230,7 @@ export default function ExcessTimeConversionFormPage() {
   });
 
   const handleUpdateRule = (key: string, value: boolean | number) => {
-    setEventRules(new Map(eventRules.set(key, value)));
+    setEventRules(new Map(eventRules).set(key, value));
   };
 
   const handleSave = async () => {
@@ -405,9 +405,7 @@ export default function ExcessTimeConversionFormPage() {
           </div>
         </div>
         {showDropdown && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => onToggleDropdown()} aria-hidden="true" />
-            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
               {options.length === 0 ? (
                 <div className="px-4 py-2 text-sm text-gray-500">No options found</div>
               ) : (
@@ -423,7 +421,9 @@ export default function ExcessTimeConversionFormPage() {
                     <button
                       key={isEmployee(item) ? item.id : item.id}
                       type="button"
-                      onClick={() => {
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         onToggle(item);
                         if (!isEmployee(item) && item.id === '__ALL__') {
                           onToggleDropdown();
@@ -439,7 +439,6 @@ export default function ExcessTimeConversionFormPage() {
                 })
               )}
             </div>
-          </>
         )}
       </div>
     );
@@ -535,6 +534,7 @@ export default function ExcessTimeConversionFormPage() {
                       } else {
                         setSelectedPaygroups([pg as Option]);
                       }
+                      setShowPaygroupDropdown(false);
                     }}
                     options={[{ id: '__ALL__', name: 'All' }, ...paygroups]}
                     placeholder="Paygroup"
@@ -560,6 +560,7 @@ export default function ExcessTimeConversionFormPage() {
                       } else {
                         setSelectedDepartments([dept as Option]);
                       }
+                      setShowDepartmentDropdown(false);
                     }}
                     options={[{ id: '__ALL__', name: 'All' }, ...departments]}
                     placeholder="Department"
@@ -649,7 +650,10 @@ export default function ExcessTimeConversionFormPage() {
                                   <div className="flex items-center gap-2">
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateRule(ruleDef.key, !currentValue)}
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        handleUpdateRule(ruleDef.key, !currentValue);
+                                      }}
                                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                                         currentValue ? 'bg-green-500' : 'bg-gray-300'
                                       }`}
@@ -673,8 +677,9 @@ export default function ExcessTimeConversionFormPage() {
                                 ) : (
                                   <input
                                     type="number"
-                                    value={currentValue}
-                                    onChange={(e) => handleUpdateRule(ruleDef.key, Number(e.target.value))}
+                                    value={currentValue === 0 ? '' : currentValue}
+                                    onChange={(e) => handleUpdateRule(ruleDef.key, e.target.value === '' ? 0 : Number(e.target.value))}
+                                    placeholder="0"
                                     className="h-9 px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-32"
                                   />
                                 )}

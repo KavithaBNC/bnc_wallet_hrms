@@ -6,9 +6,11 @@ import { parsePagination, parseString } from '../utils/queryParser';
 export class RuleSettingService {
   async create(data: {
     organizationId: string;
+    eventId?: string;
     eventType: string;
     displayName: string;
     associate?: string;
+    associateIds?: string[] | null;
     paygroupId?: string;
     departmentId?: string;
     priority?: number;
@@ -37,13 +39,37 @@ export class RuleSettingService {
         throw new AppError('Department not found', 404);
       }
     }
+    if (data.eventId) {
+      const component = await prisma.attendanceComponent.findUnique({
+        where: { id: data.eventId },
+      });
+      if (!component || component.organizationId !== data.organizationId) {
+        throw new AppError('Attendance component not found or does not belong to this organization', 404);
+      }
+    }
+    const associateIdsArr = data.associateIds && data.associateIds.length > 0
+      ? data.associateIds.filter(Boolean)
+      : null;
+    if (associateIdsArr && associateIdsArr.length > 0) {
+      const empCount = await prisma.employee.count({
+        where: {
+          id: { in: associateIdsArr },
+          organizationId: data.organizationId,
+        },
+      });
+      if (empCount !== associateIdsArr.length) {
+        throw new AppError('One or more selected associates are not found or do not belong to this organization', 400);
+      }
+    }
 
     const ruleSetting = await prisma.ruleSetting.create({
       data: {
         organizationId: data.organizationId,
+        eventId: data.eventId || null,
         eventType: data.eventType.trim(),
         displayName: data.displayName.trim(),
         associate: data.associate?.trim() || null,
+        associateIds: associateIdsArr as Prisma.InputJsonValue | undefined,
         paygroupId: data.paygroupId || null,
         departmentId: data.departmentId || null,
         priority: data.priority ?? 0,
@@ -51,6 +77,7 @@ export class RuleSettingService {
         eventRuleDefinition: (data.eventRuleDefinition ?? undefined) as Prisma.InputJsonValue | undefined,
       },
       include: {
+        attendanceComponent: { select: { id: true, shortName: true, eventName: true } },
         paygroup: { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
       },
@@ -60,6 +87,7 @@ export class RuleSettingService {
 
   async getAll(query: {
     organizationId?: string;
+    eventId?: string;
     eventType?: string;
     page?: string;
     limit?: string;
@@ -72,6 +100,9 @@ export class RuleSettingService {
     const where: Prisma.RuleSettingWhereInput = {};
     if (query.organizationId) {
       where.organizationId = query.organizationId;
+    }
+    if (query.eventId) {
+      where.eventId = query.eventId;
     }
     if (query.eventType) {
       where.eventType = query.eventType;
@@ -90,6 +121,7 @@ export class RuleSettingService {
         take: limit,
         orderBy: { priority: 'asc' },
         include: {
+          attendanceComponent: { select: { id: true, shortName: true, eventName: true } },
           paygroup: { select: { id: true, name: true } },
           department: { select: { id: true, name: true } },
         },
@@ -112,6 +144,7 @@ export class RuleSettingService {
     const ruleSetting = await prisma.ruleSetting.findUnique({
       where: { id },
       include: {
+        attendanceComponent: { select: { id: true, shortName: true, eventName: true } },
         paygroup: { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
       },
@@ -125,9 +158,11 @@ export class RuleSettingService {
   async update(
     id: string,
     data: {
+      eventId?: string | null;
       eventType?: string;
       displayName?: string;
       associate?: string;
+      associateIds?: string[] | null;
       paygroupId?: string;
       departmentId?: string;
       priority?: number;
@@ -155,11 +190,38 @@ export class RuleSettingService {
         throw new AppError('Department not found', 404);
       }
     }
+    if (data.eventId !== undefined && data.eventId) {
+      const component = await prisma.attendanceComponent.findUnique({
+        where: { id: data.eventId },
+      });
+      if (!component || component.organizationId !== existing.organizationId) {
+        throw new AppError('Attendance component not found or does not belong to this organization', 404);
+      }
+    }
+    if (data.associateIds !== undefined && data.associateIds && data.associateIds.length > 0) {
+      const empCount = await prisma.employee.count({
+        where: {
+          id: { in: data.associateIds },
+          organizationId: existing.organizationId,
+        },
+      });
+      if (empCount !== data.associateIds.length) {
+        throw new AppError('One or more selected associates are not found or do not belong to this organization', 400);
+      }
+    }
 
     const updateData: Prisma.RuleSettingUpdateInput = {};
+    if (data.eventId !== undefined) {
+      updateData.attendanceComponent = data.eventId ? { connect: { id: data.eventId } } : { disconnect: true };
+    }
     if (data.eventType !== undefined) updateData.eventType = data.eventType.trim();
     if (data.displayName !== undefined) updateData.displayName = data.displayName.trim();
     if (data.associate !== undefined) updateData.associate = data.associate?.trim() || null;
+    if (data.associateIds !== undefined) {
+      updateData.associateIds = (data.associateIds && data.associateIds.length > 0
+        ? data.associateIds
+        : null) as Prisma.InputJsonValue;
+    }
     if (data.paygroupId !== undefined) {
       updateData.paygroup = data.paygroupId ? { connect: { id: data.paygroupId } } : { disconnect: true };
     }
@@ -174,6 +236,7 @@ export class RuleSettingService {
       where: { id },
       data: updateData,
       include: {
+        attendanceComponent: { select: { id: true, shortName: true, eventName: true } },
         paygroup: { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
       },

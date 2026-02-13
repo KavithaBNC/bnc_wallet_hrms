@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { attendanceComponentService } from '../services/attendance-component.service';
+import { getLeaveComponentToLeaveTypeMapping } from '../utils/event-config';
 
 export class AttendanceComponentController {
   /**
@@ -38,6 +39,26 @@ export class AttendanceComponentController {
       return res.status(200).json({
         status: 'success',
         data: result,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Get mapping of Leave attendance component id -> leave type id for apply-event UI.
+   * GET /api/v1/attendance-components/leave-type-mapping?organizationId=...
+   */
+  async getLeaveTypeMapping(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.query.organizationId as string;
+      if (!organizationId) {
+        return res.status(400).json({ status: 'error', message: 'organizationId is required' });
+      }
+      const mapping = await getLeaveComponentToLeaveTypeMapping(organizationId);
+      return res.status(200).json({
+        status: 'success',
+        data: { mapping },
       });
     } catch (error) {
       return next(error);

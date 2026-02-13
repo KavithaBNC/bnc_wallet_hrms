@@ -43,7 +43,7 @@ export default function AutoCreditSettingPage() {
   const [pageSize, setPageSize] = useState(20);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [selectedEventType, setSelectedEventType] = useState<string>('Earned Leave');
+  const [selectedEventType, setSelectedEventType] = useState<string>(ALL_EVENT_TYPES);
   const [eventTypeSearch, setEventTypeSearch] = useState('');
   const [showEventTypeDropdown, setShowEventTypeDropdown] = useState(false);
   const eventTypeDropdownRef = useRef<HTMLDivElement>(null);

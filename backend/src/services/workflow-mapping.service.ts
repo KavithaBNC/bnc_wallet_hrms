@@ -11,8 +11,11 @@ export class WorkflowMappingService {
     organizationId: string;
     displayName: string;
     associate?: string;
+    associateIds?: string[] | null;
     paygroupId?: string;
+    paygroupIds?: string[] | null;
     departmentId?: string;
+    departmentIds?: string[] | null;
     priority?: number;
     remarks?: string;
     entryRightsTemplate?: string;
@@ -47,13 +50,45 @@ export class WorkflowMappingService {
       }
     }
 
+    const associateIdsArr = data.associateIds && data.associateIds.length > 0 ? data.associateIds.filter(Boolean) : null;
+    const paygroupIdsArr = data.paygroupIds && data.paygroupIds.length > 0 ? data.paygroupIds.filter(Boolean) : null;
+    const departmentIdsArr = data.departmentIds && data.departmentIds.length > 0 ? data.departmentIds.filter(Boolean) : null;
+
+    if (associateIdsArr && associateIdsArr.length > 0) {
+      const empCount = await prisma.employee.count({
+        where: { id: { in: associateIdsArr }, organizationId: data.organizationId },
+      });
+      if (empCount !== associateIdsArr.length) {
+        throw new AppError('One or more associates not found or do not belong to this organization', 400);
+      }
+    }
+    if (paygroupIdsArr && paygroupIdsArr.length > 0) {
+      const pgCount = await prisma.paygroup.count({
+        where: { id: { in: paygroupIdsArr }, organizationId: data.organizationId },
+      });
+      if (pgCount !== paygroupIdsArr.length) {
+        throw new AppError('One or more paygroups not found or do not belong to this organization', 400);
+      }
+    }
+    if (departmentIdsArr && departmentIdsArr.length > 0) {
+      const deptCount = await prisma.department.count({
+        where: { id: { in: departmentIdsArr }, organizationId: data.organizationId },
+      });
+      if (deptCount !== departmentIdsArr.length) {
+        throw new AppError('One or more departments not found or do not belong to this organization', 400);
+      }
+    }
+
     const workflowMapping = await prisma.workflowMapping.create({
       data: {
         organizationId: data.organizationId,
         displayName: data.displayName.trim(),
         associate: data.associate?.trim() || null,
-        paygroupId: data.paygroupId || null,
-        departmentId: data.departmentId || null,
+        associateIds: associateIdsArr as Prisma.InputJsonValue | undefined,
+        paygroupId: data.paygroupId || (paygroupIdsArr?.length === 1 ? paygroupIdsArr[0] : null),
+        paygroupIds: paygroupIdsArr as Prisma.InputJsonValue | undefined,
+        departmentId: data.departmentId || (departmentIdsArr?.length === 1 ? departmentIdsArr[0] : null),
+        departmentIds: departmentIdsArr as Prisma.InputJsonValue | undefined,
         priority: data.priority ?? null,
         remarks: data.remarks?.trim() || null,
         entryRightsTemplate: data.entryRightsTemplate?.trim() || null,
@@ -182,8 +217,11 @@ export class WorkflowMappingService {
     data: {
       displayName?: string;
       associate?: string;
+      associateIds?: string[] | null;
       paygroupId?: string;
+      paygroupIds?: string[] | null;
       departmentId?: string;
+      departmentIds?: string[] | null;
       priority?: number;
       remarks?: string;
       entryRightsTemplate?: string;
@@ -222,6 +260,41 @@ export class WorkflowMappingService {
       }
     }
 
+    const associateIdsArr = data.associateIds !== undefined
+      ? (data.associateIds && data.associateIds.length > 0 ? data.associateIds.filter(Boolean) : null)
+      : undefined;
+    const paygroupIdsArr = data.paygroupIds !== undefined
+      ? (data.paygroupIds && data.paygroupIds.length > 0 ? data.paygroupIds.filter(Boolean) : null)
+      : undefined;
+    const departmentIdsArr = data.departmentIds !== undefined
+      ? (data.departmentIds && data.departmentIds.length > 0 ? data.departmentIds.filter(Boolean) : null)
+      : undefined;
+
+    if (associateIdsArr && associateIdsArr.length > 0) {
+      const empCount = await prisma.employee.count({
+        where: { id: { in: associateIdsArr }, organizationId: existing.organizationId },
+      });
+      if (empCount !== associateIdsArr.length) {
+        throw new AppError('One or more associates not found or do not belong to this organization', 400);
+      }
+    }
+    if (paygroupIdsArr && paygroupIdsArr.length > 0) {
+      const pgCount = await prisma.paygroup.count({
+        where: { id: { in: paygroupIdsArr }, organizationId: existing.organizationId },
+      });
+      if (pgCount !== paygroupIdsArr.length) {
+        throw new AppError('One or more paygroups not found or do not belong to this organization', 400);
+      }
+    }
+    if (departmentIdsArr && departmentIdsArr.length > 0) {
+      const deptCount = await prisma.department.count({
+        where: { id: { in: departmentIdsArr }, organizationId: existing.organizationId },
+      });
+      if (deptCount !== departmentIdsArr.length) {
+        throw new AppError('One or more departments not found or do not belong to this organization', 400);
+      }
+    }
+
     const updateData: Prisma.WorkflowMappingUpdateInput = {};
 
     if (data.displayName !== undefined) {
@@ -230,14 +303,23 @@ export class WorkflowMappingService {
     if (data.associate !== undefined) {
       updateData.associate = data.associate?.trim() || null;
     }
-    if (data.paygroupId !== undefined) {
+    if (associateIdsArr !== undefined) {
+      updateData.associateIds = associateIdsArr as Prisma.InputJsonValue;
+    }
+    if (paygroupIdsArr !== undefined) {
+      updateData.paygroupIds = paygroupIdsArr as Prisma.InputJsonValue;
+      updateData.paygroup = paygroupIdsArr?.length === 1 ? { connect: { id: paygroupIdsArr[0] } } : { disconnect: true };
+    } else if (data.paygroupId !== undefined) {
       if (data.paygroupId) {
         updateData.paygroup = { connect: { id: data.paygroupId } };
       } else {
         updateData.paygroup = { disconnect: true };
       }
     }
-    if (data.departmentId !== undefined) {
+    if (departmentIdsArr !== undefined) {
+      updateData.departmentIds = departmentIdsArr as Prisma.InputJsonValue;
+      updateData.department = departmentIdsArr?.length === 1 ? { connect: { id: departmentIdsArr[0] } } : { disconnect: true };
+    } else if (data.departmentId !== undefined) {
       if (data.departmentId) {
         updateData.department = { connect: { id: data.departmentId } };
       } else {

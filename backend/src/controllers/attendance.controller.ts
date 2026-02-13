@@ -448,6 +448,29 @@ export class AttendanceController {
   }
 
   /**
+   * Get monthly details for calendar sidebar (short fall, leave/onduty/permission/present from attendance components, late, early going).
+   * GET /api/v1/attendance/monthly-details?organizationId=&employeeId=&year=&month=
+   */
+  async getMonthlyDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.query.organizationId as string;
+      const employeeId = req.query.employeeId as string;
+      const year = parseInt(req.query.year as string, 10);
+      const month = parseInt(req.query.month as string, 10);
+      if (!organizationId || !employeeId || !year || !month || month < 1 || month > 12) {
+        return res.status(400).json({
+          status: 'fail',
+          message: 'organizationId, employeeId, year, and month (1-12) are required',
+        });
+      }
+      const data = await attendanceService.getMonthlyDetails(organizationId, employeeId, year, month);
+      return res.status(200).json({ status: 'success', data });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * Bulk update shift assignments
    * POST /api/v1/attendance/shift-assignments/bulk
    */

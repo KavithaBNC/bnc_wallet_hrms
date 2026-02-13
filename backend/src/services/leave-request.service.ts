@@ -10,6 +10,15 @@ import {
   UpdateLeaveRequestInput,
   QueryLeaveRequestsInput,
 } from '../utils/leave.validation';
+import { getEntitlementForEmployeeAndLeaveType } from '../utils/auto-credit-entitlement';
+import { getAttendanceComponentForLeaveType } from '../utils/event-config';
+import { resolveWorkflowForEmployeeOrNull } from './workflow-resolution.service';
+import {
+  getFirstApprover,
+  getNextApprover,
+  parseApprovalLevels,
+  type ApprovalLevelConfig,
+} from './approval-routing.service';
 
 export class LeaveRequestService {
   /**
@@ -71,6 +80,64 @@ export class LeaveRequestService {
   }
 
   /**
+   * Check if date is weekend (Saturday/Sunday)
+   */
+  private isWeekend(date: Date): boolean {
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }
+
+  /**
+   * Check if date is a holiday for the organization
+   */
+  private async isHoliday(organizationId: string, date: Date): Promise<boolean> {
+    const dateOnly = new Date(date);
+    dateOnly.setHours(0, 0, 0, 0);
+    const holiday = await prisma.holiday.findFirst({
+      where: {
+        organizationId,
+        date: dateOnly,
+      },
+    });
+    return !!holiday;
+  }
+
+  /**
+   * Validate leave dates against Allow WeekOff / Allow Holiday flags.
+   * If allowWeekOffSelection is false, no date in range may be a weekend.
+   * If allowHolidaySelection is false, no date in range may be a holiday.
+   */
+  private async validateWeekOffAndHoliday(
+    organizationId: string,
+    startDate: Date,
+    endDate: Date,
+    allowWeekOff: boolean,
+    allowHoliday: boolean
+  ): Promise<{ valid: boolean; reason?: string }> {
+    if (allowWeekOff && allowHoliday) return { valid: true };
+    const current = new Date(startDate);
+    current.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    while (current <= end) {
+      if (!allowWeekOff && this.isWeekend(current)) {
+        return {
+          valid: false,
+          reason: `This leave type cannot be applied on week-offs. ${current.toISOString().split('T')[0]} is a weekend.`,
+        };
+      }
+      if (!allowHoliday && (await this.isHoliday(organizationId, current))) {
+        return {
+          valid: false,
+          reason: `This leave type cannot be applied on holidays. ${current.toISOString().split('T')[0]} is a holiday.`,
+        };
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return { valid: true };
+  }
+
+  /**
    * Check for blackout periods
    */
   private async checkBlackoutPeriods(
@@ -116,7 +183,8 @@ export class LeaveRequestService {
   }
 
   /**
-   * Get or create leave balance for employee
+   * Get or create leave balance for employee. When creating, entitlement is taken only from
+   * Auto Credit settings that match the employee's department and paygroup.
    */
   private async getOrCreateLeaveBalance(
     employeeId: string,
@@ -134,30 +202,45 @@ export class LeaveRequestService {
     });
 
     if (!balance) {
-      // Get leave type to get default days
-      const leaveType = await prisma.leaveType.findUnique({
-        where: { id: leaveTypeId },
-      });
+      const [employee, leaveType] = await Promise.all([
+        prisma.employee.findUnique({
+          where: { id: employeeId },
+          select: {
+            id: true,
+            organizationId: true,
+            paygroupId: true,
+            departmentId: true,
+            employeeCode: true,
+          },
+        }),
+        prisma.leaveType.findUnique({
+          where: { id: leaveTypeId },
+        }),
+      ]);
 
       if (!leaveType) {
         throw new AppError('Leave type not found', 404);
       }
+      if (!employee) {
+        throw new AppError('Employee not found', 404);
+      }
 
-      // Create new balance with default days
+      const { entitlement } = await getEntitlementForEmployeeAndLeaveType(
+        employee.organizationId,
+        employee,
+        leaveType,
+        year
+      );
+      const dec = (n: number) => new Prisma.Decimal(n);
+
       balance = await prisma.employeeLeaveBalance.create({
         data: {
           employeeId,
           leaveTypeId,
           year,
-          openingBalance: leaveType.defaultDaysPerYear
-            ? new Prisma.Decimal(leaveType.defaultDaysPerYear.toString())
-            : new Prisma.Decimal(0),
-          accrued: leaveType.defaultDaysPerYear
-            ? new Prisma.Decimal(leaveType.defaultDaysPerYear.toString())
-            : new Prisma.Decimal(0),
-          available: leaveType.defaultDaysPerYear
-            ? new Prisma.Decimal(leaveType.defaultDaysPerYear.toString())
-            : new Prisma.Decimal(0),
+          openingBalance: dec(entitlement),
+          accrued: dec(entitlement),
+          available: dec(entitlement),
         },
       });
     }
@@ -235,8 +318,33 @@ export class LeaveRequestService {
       throw new AppError(blackoutCheck.reason || 'Leave not allowed during this period', 400);
     }
 
-    // Calculate total days
-    const totalDays = this.calculateTotalDays(startDate, endDate);
+    // Event config: resolve AttendanceComponent for this leave type (by name/code)
+    const component = await getAttendanceComponentForLeaveType(employee.organizationId, leaveType);
+
+    // Calculate total days (optional totalDays from body for half-day e.g. 0.5)
+    const totalDays =
+      data.totalDays != null ? data.totalDays : this.calculateTotalDays(startDate, endDate);
+
+    // Allow Hourly = NO → reject half-day/hourly requests
+    const isHourlyOrHalfDay = totalDays < 1 || totalDays % 1 !== 0;
+    if (isHourlyOrHalfDay && component && !component.allowHourly) {
+      throw new AppError(
+        'This leave type does not allow hourly or half-day leave.',
+        400
+      );
+    }
+
+    // Allow WeekOff/Holiday = NO → block applying on those days
+    const weekOffHolidayCheck = await this.validateWeekOffAndHoliday(
+      employee.organizationId,
+      startDate,
+      endDate,
+      component?.allowWeekOffSelection ?? true,
+      component?.allowHolidaySelection ?? true
+    );
+    if (!weekOffHolidayCheck.valid) {
+      throw new AppError(weekOffHolidayCheck.reason ?? 'Leave dates not allowed for this leave type', 400);
+    }
 
     // Check max consecutive days
     if (leaveType.maxConsecutiveDays && totalDays > leaveType.maxConsecutiveDays) {
@@ -244,6 +352,23 @@ export class LeaveRequestService {
         `Maximum consecutive days for this leave type is ${leaveType.maxConsecutiveDays}`,
         400
       );
+    }
+
+    // Resolve workflow and first approver (rule-based, dynamic)
+    let workflowMappingId: string | undefined;
+    let currentApprovalLevel: number | undefined;
+    let assignedApproverEmployeeId: string | undefined;
+    let approvalLevels: ApprovalLevelConfig[] | null = null;
+
+    const workflow = await resolveWorkflowForEmployeeOrNull(employeeId, employee.organizationId);
+    if (workflow) {
+      workflowMappingId = workflow.id;
+      approvalLevels = parseApprovalLevels(workflow.approvalLevels);
+      assignedApproverEmployeeId =
+        (await getFirstApprover(employeeId, employee.organizationId, approvalLevels)) ?? undefined;
+      currentApprovalLevel = 1;
+    } else {
+      assignedApproverEmployeeId = employee.reportingManagerId ?? undefined;
     }
 
     // Check advance notice requirement (from policy)
@@ -283,28 +408,37 @@ export class LeaveRequestService {
     // Get current year
     const year = new Date().getFullYear();
 
-    // Check leave balance
-    const balance = await this.getOrCreateLeaveBalance(employeeId, data.leaveTypeId, year);
-    const availableDays = parseFloat(balance.available.toString());
-
-    if (totalDays > availableDays && !leaveType.canBeNegative) {
-      throw new AppError(
-        `Insufficient leave balance. Available: ${availableDays} days, Requested: ${totalDays} days`,
-        400
-      );
+    // Has Balance = NO → do not maintain balance; skip balance check and deduction on approve
+    const shouldCheckBalance = component === null || component.hasBalance;
+    if (shouldCheckBalance) {
+      const balance = await this.getOrCreateLeaveBalance(employeeId, data.leaveTypeId, year);
+      const availableDays = parseFloat(balance.available.toString());
+      if (totalDays > availableDays && !leaveType.canBeNegative) {
+        throw new AppError(
+          `Insufficient leave balance. Available: ${availableDays} days, Requested: ${totalDays} days`,
+          400
+        );
+      }
     }
 
-    // Create leave request
+    // Create leave request (using Prisma connect for relations)
     const leaveRequest = await prisma.leaveRequest.create({
       data: {
-        employeeId,
-        leaveTypeId: data.leaveTypeId,
+        employee: { connect: { id: employeeId } },
+        leaveType: { connect: { id: data.leaveTypeId } },
         startDate,
         endDate,
         totalDays: new Prisma.Decimal(totalDays),
         reason: data.reason,
         supportingDocuments: data.supportingDocuments || undefined,
         status: LeaveStatus.PENDING,
+        ...(workflowMappingId && {
+          workflowMapping: { connect: { id: workflowMappingId } },
+        }),
+        currentApprovalLevel: currentApprovalLevel ?? undefined,
+        ...(assignedApproverEmployeeId && {
+          assignedApprover: { connect: { id: assignedApproverEmployeeId } },
+        }),
       },
       include: {
         employee: {
@@ -343,12 +477,12 @@ export class LeaveRequestService {
       // Don't fail the request if email fails
     }
 
-    // Send notification to manager if exists
-    if (employee.reportingManagerId) {
+    // Send notification to assigned approver (from workflow) or reporting manager
+    const approverEmployeeId = assignedApproverEmployeeId ?? employee.reportingManagerId;
+    if (approverEmployeeId) {
       try {
-        // Get manager details
-        const manager = await prisma.employee.findUnique({
-          where: { id: employee.reportingManagerId },
+        const approver = await prisma.employee.findUnique({
+          where: { id: approverEmployeeId },
           include: {
             user: {
               select: {
@@ -358,10 +492,10 @@ export class LeaveRequestService {
           },
         });
 
-        if (manager?.user?.email) {
+        if (approver?.user?.email) {
           await emailService.sendLeaveRequestPendingEmail(
-            manager.user.email,
-            `${manager.firstName} ${manager.lastName}`,
+            approver.user.email,
+            `${approver.firstName} ${approver.lastName}`,
             `${employee.firstName} ${employee.lastName}`,
             leaveType.name,
             startDate.toISOString().split('T')[0],
@@ -370,7 +504,7 @@ export class LeaveRequestService {
           );
         }
       } catch (error) {
-        logger.error('Failed to send leave request pending email to manager:', error);
+        logger.error('Failed to send leave request pending email to approver:', error);
         // Don't fail the request if email fails
       }
     }
@@ -530,7 +664,7 @@ export class LeaveRequestService {
    * @param reviewComments - Optional review comments
    * @param reviewerRole - Role of the reviewer (for RBAC validation)
    */
-  async approve(id: string, reviewerId: string, reviewComments?: string, reviewerRole?: string) {
+  async approve(id: string, reviewerId: string, reviewComments?: string, _reviewerRole?: string) {
     const leaveRequest = await prisma.leaveRequest.findUnique({
       where: { id },
       include: {
@@ -548,6 +682,13 @@ export class LeaveRequestService {
           select: {
             id: true,
             name: true,
+            code: true,
+          },
+        },
+        workflowMapping: {
+          select: {
+            id: true,
+            approvalLevels: true,
           },
         },
       },
@@ -564,35 +705,77 @@ export class LeaveRequestService {
       );
     }
 
-    // RBAC: MANAGER can only approve requests from their team (subordinates)
-    if (reviewerRole === 'MANAGER') {
-      const reviewerEmployee = await prisma.employee.findUnique({
-        where: { userId: reviewerId },
-        select: { id: true },
-      });
+    const component = await getAttendanceComponentForLeaveType(
+      leaveRequest.employee.organizationId,
+      leaveRequest.leaveType
+    );
+    const shouldDeductBalance = component === null || component.hasBalance;
 
-      if (!reviewerEmployee) {
-        throw new AppError('Reviewer employee record not found', 404);
-      }
+    const reviewerEmployee = await prisma.employee.findUnique({
+      where: { userId: reviewerId },
+      select: { id: true },
+    });
 
-      // Verify the leave request is from an employee who reports to this manager
-      if (leaveRequest.employee.reportingManagerId !== reviewerEmployee.id) {
-        throw new AppError(
-          'Access denied. You can only approve leave requests from employees in your team.',
-          403
-        );
-      }
+    if (!reviewerEmployee) {
+      throw new AppError('Reviewer employee record not found', 404);
+    }
+
+    // RBAC: verify reviewer is the assigned approver (workflow) or reporting manager (fallback)
+    const assignedApproverId = leaveRequest.assignedApproverEmployeeId ?? leaveRequest.employee.reportingManagerId;
+    if (assignedApproverId !== reviewerEmployee.id) {
+      throw new AppError(
+        'Access denied. You are not the assigned approver for this request.',
+        403
+      );
+    }
+
+    const approvalLevels = parseApprovalLevels(leaveRequest.workflowMapping?.approvalLevels);
+    const currentLevel = leaveRequest.currentApprovalLevel ?? 1;
+    const hasNextLevel =
+      Array.isArray(approvalLevels) &&
+      approvalLevels.some((l: ApprovalLevelConfig) => l.level === currentLevel + 1);
+
+    let updateData: Record<string, unknown> = {
+      reviewedBy: reviewerId,
+      reviewedAt: new Date(),
+      reviewComments: reviewComments || null,
+      approvalHistory: [
+        ...(Array.isArray(leaveRequest.approvalHistory) ? (leaveRequest.approvalHistory as object[]) : []),
+        {
+          level: currentLevel,
+          approverEmployeeId: reviewerEmployee.id,
+          reviewedAt: new Date().toISOString(),
+          action: 'APPROVED',
+        },
+      ],
+    };
+
+    if (hasNextLevel && Array.isArray(approvalLevels)) {
+      const nextApprover = await getNextApprover(
+        leaveRequest.employeeId,
+        leaveRequest.employee.organizationId,
+        approvalLevels,
+        currentLevel
+      );
+      updateData = {
+        ...updateData,
+        currentApprovalLevel: currentLevel + 1,
+        assignedApproverEmployeeId: nextApprover,
+        status: LeaveStatus.PENDING,
+      };
+    } else {
+      updateData = {
+        ...updateData,
+        status: LeaveStatus.APPROVED,
+        assignedApproverEmployeeId: null,
+        currentApprovalLevel: null,
+      };
     }
 
     // Update leave request status
     const updated = await prisma.leaveRequest.update({
       where: { id },
-      data: {
-        status: LeaveStatus.APPROVED,
-        reviewedBy: reviewerId,
-        reviewedAt: new Date(),
-        reviewComments: reviewComments || null,
-      },
+      data: updateData as object,
       include: {
         employee: {
           select: {
@@ -611,32 +794,63 @@ export class LeaveRequestService {
       },
     });
 
-    // Update leave balance
-    const year = new Date().getFullYear();
-    const balance = await this.getOrCreateLeaveBalance(
-      leaveRequest.employeeId,
-      leaveRequest.leaveTypeId,
-      year
-    );
+    const isFullyApproved = (updateData.status as string) === LeaveStatus.APPROVED;
 
-    const usedDays = parseFloat(balance.used.toString()) + parseFloat(leaveRequest.totalDays.toString());
-    const availableDays = parseFloat(balance.available.toString()) - parseFloat(leaveRequest.totalDays.toString());
+    // Update leave balance only when FULLY approved and event config Has Balance = YES
+    if (isFullyApproved && shouldDeductBalance) {
+      const year = new Date().getFullYear();
+      const balance = await this.getOrCreateLeaveBalance(
+        leaveRequest.employeeId,
+        leaveRequest.leaveTypeId,
+        year
+      );
 
-    await prisma.employeeLeaveBalance.update({
-      where: {
-        employeeId_leaveTypeId_year: {
-          employeeId: leaveRequest.employeeId,
-          leaveTypeId: leaveRequest.leaveTypeId,
-          year,
+      const usedDays = parseFloat(balance.used.toString()) + parseFloat(leaveRequest.totalDays.toString());
+      const availableDays = parseFloat(balance.available.toString()) - parseFloat(leaveRequest.totalDays.toString());
+
+      await prisma.employeeLeaveBalance.update({
+        where: {
+          employeeId_leaveTypeId_year: {
+            employeeId: leaveRequest.employeeId,
+            leaveTypeId: leaveRequest.leaveTypeId,
+            year,
+          },
         },
-      },
-      data: {
-        used: new Prisma.Decimal(usedDays),
-        available: new Prisma.Decimal(Math.max(0, availableDays)), // Don't go below 0
-      },
-    });
+        data: {
+          used: new Prisma.Decimal(usedDays),
+          available: new Prisma.Decimal(Math.max(0, availableDays)), // Don't go below 0
+        },
+      });
+    }
 
-    // Create attendance records with status LEAVE for each day so they show on the employee's calendar
+    // When advancing to next level, notify the next approver
+    if (!isFullyApproved && updateData.assignedApproverEmployeeId) {
+      try {
+        const nextApprover = await prisma.employee.findUnique({
+          where: { id: updateData.assignedApproverEmployeeId as string },
+          include: { user: { select: { email: true } } },
+        });
+        if (nextApprover?.user?.email) {
+          await emailService.sendLeaveRequestPendingEmail(
+            nextApprover.user.email,
+            `${nextApprover.firstName} ${nextApprover.lastName}`,
+            `${leaveRequest.employee.firstName} ${leaveRequest.employee.lastName}`,
+            leaveRequest.leaveType.name,
+            leaveRequest.startDate.toISOString().split('T')[0],
+            leaveRequest.endDate.toISOString().split('T')[0],
+            leaveRequest.id
+          );
+        }
+      } catch (error) {
+        logger.error('Failed to send leave request pending email to next approver:', error);
+      }
+      return updated;
+    }
+
+    if (!isFullyApproved) {
+      return updated;
+    }
+
     const start = new Date(leaveRequest.startDate);
     start.setHours(0, 0, 0, 0);
     const end = new Date(leaveRequest.endDate);
@@ -686,7 +900,7 @@ export class LeaveRequestService {
    * @param reviewComments - Review comments
    * @param reviewerRole - Role of the reviewer (for RBAC validation)
    */
-  async reject(id: string, reviewerId: string, reviewComments: string, reviewerRole?: string) {
+  async reject(id: string, reviewerId: string, reviewComments: string, _reviewerRole?: string) {
     const leaveRequest = await prisma.leaveRequest.findUnique({
       where: { id },
       include: {
@@ -720,24 +934,21 @@ export class LeaveRequestService {
       );
     }
 
-    // RBAC: MANAGER can only reject requests from their team (subordinates)
-    if (reviewerRole === 'MANAGER') {
-      const reviewerEmployee = await prisma.employee.findUnique({
-        where: { userId: reviewerId },
-        select: { id: true },
-      });
-
-      if (!reviewerEmployee) {
-        throw new AppError('Reviewer employee record not found', 404);
-      }
-
-      // Verify the leave request is from an employee who reports to this manager
-      if (leaveRequest.employee.reportingManagerId !== reviewerEmployee.id) {
-        throw new AppError(
-          'Access denied. You can only reject leave requests from employees in your team.',
-          403
-        );
-      }
+    // RBAC: verify reviewer is the assigned approver (workflow) or reporting manager (fallback)
+    const reviewerEmployee = await prisma.employee.findUnique({
+      where: { userId: reviewerId },
+      select: { id: true },
+    });
+    if (!reviewerEmployee) {
+      throw new AppError('Reviewer employee record not found', 404);
+    }
+    const assignedApproverIdForReject =
+      leaveRequest.assignedApproverEmployeeId ?? leaveRequest.employee.reportingManagerId;
+    if (assignedApproverIdForReject !== reviewerEmployee.id) {
+      throw new AppError(
+        'Access denied. You are not the assigned approver for this request.',
+        403
+      );
     }
 
     const updated = await prisma.leaveRequest.update({
