@@ -10,6 +10,7 @@ import {
   manualPunchSchema,
   cardPunchSchema,
   queryAttendanceRecordsSchema,
+  queryMonthlyDetailsSchema,
   queryAttendanceSummarySchema,
   queryAttendanceReportSchema,
   queryWorkHoursSchema,
@@ -106,6 +107,17 @@ router.get(
   '/records',
   validateQuery(queryAttendanceRecordsSchema),
   attendanceController.getRecords.bind(attendanceController)
+);
+
+/**
+ * @route   GET /api/v1/attendance/monthly-details
+ * @desc    Get monthly details for calendar sidebar (from attendance components + leave balance + records)
+ * @access  Private
+ */
+router.get(
+  '/monthly-details',
+  validateQuery(queryMonthlyDetailsSchema),
+  attendanceController.getMonthlyDetails.bind(attendanceController)
 );
 
 /**

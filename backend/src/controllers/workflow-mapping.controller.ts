@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import { WorkflowMappingService } from '../services/workflow-mapping.service';
+import { resolveWorkflowForEmployee } from '../services/workflow-resolution.service';
+import { getFirstApprover } from '../services/approval-routing.service';
+import { parseApprovalLevels } from '../services/approval-routing.service';
 
 const workflowMappingService = new WorkflowMappingService();
 
@@ -15,8 +18,11 @@ export class WorkflowMappingController {
         organizationId,
         displayName: req.body.displayName,
         associate: req.body.associate,
+        associateIds: req.body.associateIds,
         paygroupId: req.body.paygroupId,
+        paygroupIds: req.body.paygroupIds,
         departmentId: req.body.departmentId,
+        departmentIds: req.body.departmentIds,
         priority: req.body.priority,
         remarks: req.body.remarks,
         entryRightsTemplate: req.body.entryRightsTemplate,
@@ -65,6 +71,40 @@ export class WorkflowMappingController {
     }
   }
 
+  /**
+   * Resolve workflow for an employee (rule-based match).
+   * GET /workflow-mappings/resolve?employeeId=xxx
+   */
+  async resolve(req: Request, res: Response) {
+    try {
+      const employeeId = req.query.employeeId as string | undefined;
+      const organizationId = req.query.organizationId as string | undefined;
+      if (!employeeId || !organizationId) {
+        return res.status(400).json({ message: 'employeeId and organizationId are required' });
+      }
+
+      const workflow = await resolveWorkflowForEmployee(employeeId, organizationId);
+      const approvalLevels = parseApprovalLevels(workflow.approvalLevels);
+      const firstApproverId = await getFirstApprover(
+        employeeId,
+        organizationId,
+        approvalLevels
+      );
+
+      return res.status(200).json({
+        message: 'Workflow resolved successfully',
+        data: {
+          workflow,
+          firstApproverEmployeeId: firstApproverId,
+        },
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to resolve workflow';
+      const status = error && typeof error === 'object' && 'status' in error ? (error.status as number) : 500;
+      return res.status(status).json({ message });
+    }
+  }
+
   async getById(req: Request, res: Response) {
     try {
       const workflowMapping = await workflowMappingService.getById(req.params.id);
@@ -85,8 +125,11 @@ export class WorkflowMappingController {
       const workflowMapping = await workflowMappingService.update(req.params.id, {
         displayName: req.body.displayName,
         associate: req.body.associate,
+        associateIds: req.body.associateIds,
         paygroupId: req.body.paygroupId,
+        paygroupIds: req.body.paygroupIds,
         departmentId: req.body.departmentId,
+        departmentIds: req.body.departmentIds,
         priority: req.body.priority,
         remarks: req.body.remarks,
         entryRightsTemplate: req.body.entryRightsTemplate,

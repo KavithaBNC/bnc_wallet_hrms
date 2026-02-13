@@ -369,10 +369,11 @@ const DashboardPage = () => {
           </div>
         )}
 
-        {/* Modules Grid - for EMPLOYEE role only show Attendance and Leave Management */}
+        {/* Modules Grid - Leave Management hidden; for EMPLOYEE role only show Attendance */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {getModules(canManagePermissions)
-            .filter((m) => !isEmployee || ['Attendance', 'Leave Management'].includes(m.name))
+            .filter((m) => m.name !== 'Leave Management')
+            .filter((m) => !isEmployee || ['Attendance'].includes(m.name))
             .map((module, index) => {
             const isPermissionsModule = module.name === 'Permissions';
             const shouldShow = module.enabled && module.route;

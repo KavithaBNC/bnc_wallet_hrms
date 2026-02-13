@@ -4,7 +4,15 @@ import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import paygroupService from '../services/paygroup.service';
 import departmentService from '../services/department.service';
-import workflowMappingService from '../services/workflowMapping.service';
+import employeeService, { Employee } from '../services/employee.service';
+import rightsAllocationService from '../services/rightsAllocation.service';
+import configService from '../services/config.service';
+import workflowMappingService, { ApprovalLevel } from '../services/workflowMapping.service';
+
+function fullName(e: Employee): string {
+  const parts = [e.firstName, e.middleName, e.lastName].filter(Boolean);
+  return parts.join(' ').trim() || e.employeeCode || '';
+}
 
 interface Option {
   id: string;
@@ -37,7 +45,7 @@ export default function WorkflowMappingFormPage() {
 
   // Form fields
   const [displayName, setDisplayName] = useState('');
-  const [associate, setAssociate] = useState('');
+  const [selectedAssociates, setSelectedAssociates] = useState<Option[]>([]);
   const [selectedPaygroups, setSelectedPaygroups] = useState<Option[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<Option[]>([]);
   const [priority, setPriority] = useState('');
@@ -47,38 +55,27 @@ export default function WorkflowMappingFormPage() {
   // Approval Levels
   const [approvalLevels, setApprovalLevels] = useState<ApprovalLevelRow[]>([]);
   const [nextLevelId, setNextLevelId] = useState(1);
-  const [openDropdowns, setOpenDropdowns] = useState<Record<string, 'hierarchy' | 'approvalLevel' | null>>({});
 
   // Dropdowns
   const [paygroups, setPaygroups] = useState<Option[]>([]);
   const [departments, setDepartments] = useState<Option[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [entryRightsTemplates, setEntryRightsTemplates] = useState<Option[]>([]);
   
-  // Approval Level dropdown options
-  const [associates, _setAssociates] = useState<Option[]>([
-    { id: 'associate', name: 'Associate' },
-    { id: 'manager', name: 'Manager' },
-    { id: 'hr', name: 'HR' },
-  ]);
-  const [hierarchies, _setHierarchies] = useState<Option[]>([
-    { id: 'reporting_manager', name: 'Reporting Manager' },
-    { id: 'department_head', name: 'Department Head' },
-    { id: 'hr_manager', name: 'HR Manager' },
-  ]);
-  const [approvalLevelOptions, _setApprovalLevelOptions] = useState<Option[]>([
-    { id: 'employee_approval', name: 'Employee Approval' },
-    { id: 'manager_approval', name: 'Manager Approval' },
-    { id: 'hr_approval', name: 'HR Approval' },
-  ]);
+  // Approval Level dropdown options (dynamic from backend)
+  const [hierarchies, setHierarchies] = useState<Option[]>([]);
+  const [approvalLevelOptions, setApprovalLevelOptions] = useState<Option[]>([]);
 
   // Dropdown states
   const [showPaygroupDropdown, setShowPaygroupDropdown] = useState(false);
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
-  const [_showEntryRightsDropdown, setShowEntryRightsDropdown] = useState(false);
+  const [showAssociateDropdown, setShowAssociateDropdown] = useState(false);
+  const [, setShowEntryRightsDropdown] = useState(false);
 
   // Refs for dropdowns
   const paygroupDropdownRef = useRef<HTMLDivElement>(null);
   const departmentDropdownRef = useRef<HTMLDivElement>(null);
+  const associateDropdownRef = useRef<HTMLDivElement>(null);
   const entryRightsDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns when clicking outside
@@ -90,6 +87,9 @@ export default function WorkflowMappingFormPage() {
       if (departmentDropdownRef.current && !departmentDropdownRef.current.contains(event.target as Node)) {
         setShowDepartmentDropdown(false);
       }
+      if (associateDropdownRef.current && !associateDropdownRef.current.contains(event.target as Node)) {
+        setShowAssociateDropdown(false);
+      }
       if (entryRightsDropdownRef.current && !entryRightsDropdownRef.current.contains(event.target as Node)) {
         setShowEntryRightsDropdown(false);
       }
@@ -98,60 +98,129 @@ export default function WorkflowMappingFormPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Approval-level Associate options: employees only (EmployeeCode - Full Name)
+  const approvalLevelAssociateOptions: Option[] = employees.map((e) => ({
+    id: e.id,
+    name: `${e.employeeCode || e.id} - ${fullName(e)}`,
+  }));
+
   // Fetch dropdown options
   useEffect(() => {
     if (!organizationId) return;
     Promise.all([
       paygroupService.getAll({ organizationId }),
       departmentService.getAll({ organizationId, limit: 500 }),
-    ]).then(([pgList, deptRes]) => {
+      employeeService.getAll({ organizationId, page: 1, limit: 500, employeeStatus: 'ACTIVE' }),
+      rightsAllocationService.getAll({ organizationId, page: 1, limit: 500 }),
+      configService.getWorkflowApprovalOptions({ organizationId }),
+    ]).then(([pgList, deptRes, empRes, rightsRes, configOptions]) => {
       setPaygroups((pgList || []).map((p) => ({ id: p.id, name: p.name })));
       setDepartments((deptRes?.departments || []).map((d) => ({ id: d.id, name: d.name })));
+      setEmployees(empRes?.employees || []);
+      setEntryRightsTemplates(
+        (rightsRes?.items || []).map((r) => ({
+          id: r.id,
+          name: r.shortName || r.longName || r.id,
+        }))
+      );
+      setHierarchies(configOptions?.hierarchyTypes || []);
+      setApprovalLevelOptions(configOptions?.approvalLevelTypes || []);
     }).catch(() => {});
-
-    // Mock entry rights templates - replace with actual API call when available
-    setEntryRightsTemplates([
-      { id: '1', name: 'Employee Rights' },
-      { id: '2', name: 'Manager Rights' },
-      { id: '3', name: 'HR Rights' },
-    ]);
   }, [organizationId]);
+
+  // Associate options for ChipSelect: All + employees
+  const associateOptions: Option[] = [
+    { id: '__ALL__', name: 'All' },
+    ...employees.map((e) => ({ id: e.id, name: `${e.employeeCode || e.id} - ${fullName(e)}` })),
+  ];
 
   // Load data in edit mode
   useEffect(() => {
     if (!isEdit || !id || !organizationId) return;
     setLoading(true);
     setError(null);
-    workflowMappingService
-      .getById(id)
-      .then((data) => {
+    Promise.all([
+      workflowMappingService.getById(id),
+      rightsAllocationService.getAll({ organizationId, page: 1, limit: 500 }),
+      employeeService.getAll({ organizationId, page: 1, limit: 500, employeeStatus: 'ACTIVE' }),
+    ])
+      .then(([data, rightsRes, empRes]) => {
         setDisplayName(data.displayName);
-        setAssociate(data.associate || '');
-        if (data.paygroupId) {
-          paygroupService.getAll({ organizationId }).then((pgList) => {
+        const empList = empRes?.employees || [];
+        if (data.associateIds && Array.isArray(data.associateIds) && data.associateIds.length > 0) {
+          const ids = data.associateIds as string[];
+          const selected = ids
+            .map((empId) => empList.find((e) => e.id === empId))
+            .filter(Boolean)
+            .map((e) => ({ id: e!.id, name: `${e!.employeeCode || e!.id} - ${fullName(e!)}` }));
+          setSelectedAssociates(selected);
+        } else if (data.associate) {
+          const emp = empList.find((e) => e.employeeCode === data.associate || e.id === data.associate);
+          setSelectedAssociates(emp ? [{ id: emp.id, name: `${emp.employeeCode || emp.id} - ${fullName(emp)}` }] : []);
+        } else {
+          setSelectedAssociates([]);
+        }
+        const rightsList = rightsRes?.items || [];
+        if (data.entryRightsTemplate) {
+          const byId = rightsList.find((r) => r.id === data.entryRightsTemplate);
+          const byName = rightsList.find(
+            (r) =>
+              r.shortName === data.entryRightsTemplate || r.longName === data.entryRightsTemplate
+          );
+          setEntryRightsTemplate(byId?.id ?? byName?.id ?? data.entryRightsTemplate);
+        } else {
+          setEntryRightsTemplate('');
+        }
+        paygroupService.getAll({ organizationId }).then((pgList) => {
+          if (data.paygroupIds && Array.isArray(data.paygroupIds) && data.paygroupIds.length > 0) {
+            const selected = data.paygroupIds
+              .map((pgId) => pgList.find((p) => p.id === pgId))
+              .filter(Boolean)
+              .map((p) => ({ id: p!.id, name: p!.name }));
+            setSelectedPaygroups(selected.length > 0 ? selected : []);
+          } else if (data.paygroupId) {
             const pg = pgList.find((p) => p.id === data.paygroupId);
-            if (pg) {
-              setSelectedPaygroups([{ id: pg.id, name: pg.name }]);
-            }
-          });
-        } else {
-          setSelectedPaygroups([{ id: '__ALL__', name: 'All' }]);
-        }
-        if (data.departmentId) {
-          departmentService.getAll({ organizationId, limit: 500 }).then((deptRes) => {
-            const dept = deptRes.departments?.find((d) => d.id === data.departmentId);
-            if (dept) {
-              setSelectedDepartments([{ id: dept.id, name: dept.name }]);
-            }
-          });
-        } else {
-          setSelectedDepartments([{ id: '__ALL__', name: 'All' }]);
-        }
+            if (pg) setSelectedPaygroups([{ id: pg.id, name: pg.name }]);
+            else setSelectedPaygroups([]);
+          } else {
+            setSelectedPaygroups([]);
+          }
+        });
+        departmentService.getAll({ organizationId, limit: 500 }).then((deptRes) => {
+          const deptList = deptRes.departments || [];
+          if (data.departmentIds && Array.isArray(data.departmentIds) && data.departmentIds.length > 0) {
+            const selected = data.departmentIds
+              .map((deptId) => deptList.find((d) => d.id === deptId))
+              .filter(Boolean)
+              .map((d) => ({ id: d!.id, name: d!.name }));
+            setSelectedDepartments(selected.length > 0 ? selected : []);
+          } else if (data.departmentId) {
+            const dept = deptList.find((d) => d.id === data.departmentId);
+            if (dept) setSelectedDepartments([{ id: dept.id, name: dept.name }]);
+            else setSelectedDepartments([]);
+          } else {
+            setSelectedDepartments([]);
+          }
+        });
         setPriority(data.priority ? String(data.priority) : '');
         setRemarks(data.remarks || '');
-        setEntryRightsTemplate(data.entryRightsTemplate || '');
         if (data.approvalLevels && Array.isArray(data.approvalLevels)) {
-          setApprovalLevels(data.approvalLevels as ApprovalLevelRow[]);
+          const seen = new Set<string>();
+          const levels = (data.approvalLevels as ApprovalLevel[]).map((lev, idx) => {
+            let id = lev.id && typeof lev.id === 'string' ? lev.id : null;
+            if (!id || seen.has(id)) {
+              id = `level-${Date.now()}-${idx}`;
+            }
+            seen.add(id);
+            return {
+              ...lev,
+              id,
+              level: lev.level ?? idx + 1,
+              levelName: lev.levelName ?? String(idx + 1),
+            };
+          });
+          setApprovalLevels(levels);
+          setNextLevelId((prev) => Math.max(prev, levels.length + 1));
         }
         setLoading(false);
       })
@@ -200,20 +269,9 @@ export default function WorkflowMappingFormPage() {
   };
 
   const handleUpdateApprovalLevel = (id: string, field: keyof ApprovalLevelRow, value: string) => {
-    setApprovalLevels(
-      approvalLevels.map((level) => (level.id === id ? { ...level, [field]: value } : level))
+    setApprovalLevels((prev) =>
+      prev.map((level) => (level.id === id ? { ...level, [field]: value } : level))
     );
-    // Close dropdown after selection
-    if (field === 'hierarchy' || field === 'approvalLevel') {
-      setOpenDropdowns((prev) => ({ ...prev, [id]: null }));
-    }
-  };
-
-  const toggleDropdown = (levelId: string, type: 'hierarchy' | 'approvalLevel') => {
-    setOpenDropdowns((prev) => ({
-      ...prev,
-      [levelId]: prev[levelId] === type ? null : type,
-    }));
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -224,14 +282,6 @@ export default function WorkflowMappingFormPage() {
       setError('Display Name is required');
       return;
     }
-    if (selectedPaygroups.length === 0) {
-      setError('Paygroup is required');
-      return;
-    }
-    if (selectedDepartments.length === 0) {
-      setError('Department is required');
-      return;
-    }
     if (!entryRightsTemplate) {
       setError('Entry Rights Template is required');
       return;
@@ -240,12 +290,27 @@ export default function WorkflowMappingFormPage() {
     setError(null);
     setSaving(true);
     try {
+      const hasAllAssociate = selectedAssociates.some((a) => a.id === '__ALL__');
+      const hasAllPaygroup = selectedPaygroups.some((p) => p.id === '__ALL__');
+      const hasAllDept = selectedDepartments.some((d) => d.id === '__ALL__');
+      const associateIds =
+        hasAllAssociate || selectedAssociates.length === 0
+          ? null
+          : selectedAssociates.map((a) => a.id).filter((id) => id !== '__ALL__');
+      const paygroupIds =
+        hasAllPaygroup || selectedPaygroups.length === 0
+          ? null
+          : selectedPaygroups.map((p) => p.id).filter((id) => id !== '__ALL__');
+      const departmentIds =
+        hasAllDept || selectedDepartments.length === 0
+          ? null
+          : selectedDepartments.map((d) => d.id).filter((id) => id !== '__ALL__');
       const payload = {
         organizationId,
         displayName: displayName.trim(),
-        associate: associate.trim() || undefined,
-        paygroupId: selectedPaygroups[0]?.id === '__ALL__' ? undefined : selectedPaygroups[0]?.id,
-        departmentId: selectedDepartments[0]?.id === '__ALL__' ? undefined : selectedDepartments[0]?.id,
+        associateIds,
+        paygroupIds,
+        departmentIds,
         priority: priority.trim() ? Number(priority) : undefined,
         remarks: remarks.trim() || undefined,
         entryRightsTemplate: entryRightsTemplate || undefined,
@@ -458,27 +523,47 @@ export default function WorkflowMappingFormPage() {
                     Associate
                   </label>
                   <span className="text-gray-700">:</span>
-                  <input
-                    type="text"
-                    value={associate}
-                    onChange={(e) => setAssociate(e.target.value)}
-                    className="flex-1 border-0 border-b border-gray-300 bg-transparent px-0 py-1 text-sm text-gray-900 focus:ring-0 focus:border-blue-500 focus:outline-none"
-                    placeholder="Associate"
-                  />
+                  <div className="flex-1">
+                    <MultiSelectChips
+                      selected={selectedAssociates}
+                      onRemove={(a) => {
+                        if (a.id === '__ALL__') setSelectedAssociates([]);
+                        else setSelectedAssociates(selectedAssociates.filter((x) => x.id !== a.id));
+                      }}
+                      onToggle={(a) => {
+                        if (a.id === '__ALL__') {
+                          setSelectedAssociates([{ id: '__ALL__', name: 'All' }]);
+                        } else {
+                          const withoutAll = selectedAssociates.filter((x) => x.id !== '__ALL__');
+                          const exists = withoutAll.some((x) => x.id === a.id);
+                          if (exists) {
+                            setSelectedAssociates(withoutAll.filter((x) => x.id !== a.id));
+                          } else {
+                            setSelectedAssociates([...withoutAll, a]);
+                          }
+                        }
+                      }}
+                      options={associateOptions}
+                      placeholder="Select Associate"
+                      showDropdown={showAssociateDropdown}
+                      onToggleDropdown={() => setShowAssociateDropdown(!showAssociateDropdown)}
+                      dropdownRef={associateDropdownRef}
+                    />
+                  </div>
                 </div>
 
                 {/* Paygroup */}
                 <div className="flex items-center gap-4 px-6 py-4">
                   <label className="w-48 shrink-0 text-sm font-medium text-gray-700">
-                    Paygroup <span className="text-red-500">*</span>
+                    Paygroup
                   </label>
                   <span className="text-gray-700">:</span>
                   <div className="flex-1">
                     <MultiSelectChips
                       selected={selectedPaygroups}
                       onRemove={(pg) => {
-                        if (pg.id === '__ALL__') return;
-                        setSelectedPaygroups(selectedPaygroups.filter((p) => p.id !== pg.id));
+                        if (pg.id === '__ALL__') setSelectedPaygroups([]);
+                        else setSelectedPaygroups(selectedPaygroups.filter((p) => p.id !== pg.id));
                       }}
                       onToggle={(pg) => {
                         if (pg.id === '__ALL__') {
@@ -505,15 +590,15 @@ export default function WorkflowMappingFormPage() {
                 {/* Department */}
                 <div className="flex items-center gap-4 px-6 py-4">
                   <label className="w-48 shrink-0 text-sm font-medium text-gray-700">
-                    Department <span className="text-red-500">*</span>
+                    Department
                   </label>
                   <span className="text-gray-700">:</span>
                   <div className="flex-1">
                     <MultiSelectChips
                       selected={selectedDepartments}
                       onRemove={(dept) => {
-                        if (dept.id === '__ALL__') return;
-                        setSelectedDepartments(selectedDepartments.filter((d) => d.id !== dept.id));
+                        if (dept.id === '__ALL__') setSelectedDepartments([]);
+                        else setSelectedDepartments(selectedDepartments.filter((d) => d.id !== dept.id));
                       }}
                       onToggle={(dept) => {
                         if (dept.id === '__ALL__') {
@@ -579,7 +664,11 @@ export default function WorkflowMappingFormPage() {
                       onChange={(e) => setEntryRightsTemplate(e.target.value)}
                       className="w-full border-0 border-b border-gray-300 bg-transparent px-0 py-1 pr-6 text-sm text-gray-900 focus:ring-0 focus:border-blue-500 focus:outline-none appearance-none"
                     >
-                      <option value="">Select Entry Rights Template</option>
+                      <option value="">
+                        {entryRightsTemplates.length === 0
+                          ? 'No Rights Allocations found - create one first'
+                          : 'Select Entry Rights Template'}
+                      </option>
                       {entryRightsTemplates.map((template) => (
                         <option key={template.id} value={template.id}>
                           {template.name}
@@ -671,7 +760,7 @@ export default function WorkflowMappingFormPage() {
                                 className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               >
                                 <option value="">Select Associate</option>
-                                {associates.map((assoc) => (
+                                {approvalLevelAssociateOptions.map((assoc) => (
                                   <option key={assoc.id} value={assoc.id}>
                                     {assoc.name}
                                   </option>
@@ -679,56 +768,18 @@ export default function WorkflowMappingFormPage() {
                               </select>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <div className="relative">
-                                <input
-                                  type="text"
-                                  value={level.hierarchy}
-                                  onChange={(e) => handleUpdateApprovalLevel(level.id, 'hierarchy', e.target.value)}
-                                  onFocus={() => toggleDropdown(level.id, 'hierarchy')}
-                                  className="w-full border-0 border-b border-gray-300 bg-transparent px-0 py-1 pr-8 text-sm text-gray-900 focus:ring-0 focus:border-blue-500 focus:outline-none"
-                                  placeholder="Reporting Ma..."
-                                />
-                                {level.hierarchy && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUpdateApprovalLevel(level.id, 'hierarchy', '');
-                                    }}
-                                    className="absolute right-6 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleDropdown(level.id, 'hierarchy')}
-                                  className="absolute right-0 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                  </svg>
-                                </button>
-                                {openDropdowns[level.id] === 'hierarchy' && (
-                                  <>
-                                    <div className="fixed inset-0 z-10" onClick={() => toggleDropdown(level.id, 'hierarchy')} aria-hidden="true" />
-                                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-                                      {hierarchies.map((hierarchy) => (
-                                        <button
-                                          key={hierarchy.id}
-                                          type="button"
-                                          onClick={() => handleUpdateApprovalLevel(level.id, 'hierarchy', hierarchy.name)}
-                                          className="w-full text-left px-4 py-2 text-sm cursor-pointer hover:bg-gray-100"
-                                        >
-                                          {hierarchy.name}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
+                              <select
+                                value={hierarchies.find((h) => h.id === level.hierarchy || h.name === level.hierarchy)?.id ?? level.hierarchy ?? ''}
+                                onChange={(e) => handleUpdateApprovalLevel(level.id, 'hierarchy', e.target.value)}
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              >
+                                <option value="">Select Hierarchy</option>
+                                {hierarchies.map((h) => (
+                                  <option key={h.id} value={h.id}>
+                                    {h.name}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <select
@@ -759,56 +810,18 @@ export default function WorkflowMappingFormPage() {
                               </select>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <div className="relative">
-                                <input
-                                  type="text"
-                                  value={level.approvalLevel}
-                                  onChange={(e) => handleUpdateApprovalLevel(level.id, 'approvalLevel', e.target.value)}
-                                  onFocus={() => toggleDropdown(level.id, 'approvalLevel')}
-                                  className="w-full border-0 border-b border-gray-300 bg-transparent px-0 py-1 pr-8 text-sm text-gray-900 focus:ring-0 focus:border-blue-500 focus:outline-none"
-                                  placeholder="Employee Ap..."
-                                />
-                                {level.approvalLevel && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUpdateApprovalLevel(level.id, 'approvalLevel', '');
-                                    }}
-                                    className="absolute right-6 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleDropdown(level.id, 'approvalLevel')}
-                                  className="absolute right-0 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                  </svg>
-                                </button>
-                                {openDropdowns[level.id] === 'approvalLevel' && (
-                                  <>
-                                    <div className="fixed inset-0 z-10" onClick={() => toggleDropdown(level.id, 'approvalLevel')} aria-hidden="true" />
-                                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-                                      {approvalLevelOptions.map((option) => (
-                                        <button
-                                          key={option.id}
-                                          type="button"
-                                          onClick={() => handleUpdateApprovalLevel(level.id, 'approvalLevel', option.name)}
-                                          className="w-full text-left px-4 py-2 text-sm cursor-pointer hover:bg-gray-100"
-                                        >
-                                          {option.name}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
+                              <select
+                                value={approvalLevelOptions.find((o) => o.id === level.approvalLevel || o.name === level.approvalLevel)?.id ?? level.approvalLevel ?? ''}
+                                onChange={(e) => handleUpdateApprovalLevel(level.id, 'approvalLevel', e.target.value)}
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              >
+                                <option value="">Select Approval Level</option>
+                                {approvalLevelOptions.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.name}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-right">
                               <button

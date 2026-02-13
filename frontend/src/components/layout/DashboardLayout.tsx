@@ -285,6 +285,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const visibleNavItems = useMemo(() => {
     const items: AppModule[] = [];
     for (const mod of APP_MODULES) {
+      if (mod.path === '/leave') continue; // Leave Management module hidden from sidebar
       const isDashboard = mod.path === '/dashboard';
       if (isDashboard) {
         items.push(mod); // Always show Dashboard for authenticated users
@@ -392,7 +393,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
         <nav className="flex-1 py-4 px-4 space-y-2 overflow-y-auto">
           {topLevelNavItems.map((mod) => {
-            const isActive = location.pathname === mod.path;
+            const isActive =
+              location.pathname === mod.path ||
+              (mod.path === '/leave' && location.pathname.startsWith('/leave/'));
             const icon = ICONS_BY_PATH[mod.path];
             const childItems = visibleNavItems.filter((m) => m.parentPath === mod.path);
             const isParentWithChildren = childItems.length > 0;

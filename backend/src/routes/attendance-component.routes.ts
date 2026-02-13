@@ -32,6 +32,16 @@ router.get(
 );
 
 /**
+ * @route   GET /api/v1/attendance-components/leave-type-mapping
+ * @desc    Get component id -> leave type id for Leave category (for apply-event UI)
+ * @access  Private (All authenticated users)
+ */
+router.get(
+  '/leave-type-mapping',
+  attendanceComponentController.getLeaveTypeMapping.bind(attendanceComponentController)
+);
+
+/**
  * @route   GET /api/v1/attendance-components/:id
  * @desc    Get attendance component by ID
  * @access  Private (All authenticated users)

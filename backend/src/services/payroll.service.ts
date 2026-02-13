@@ -349,19 +349,16 @@ export class PayrollService {
           }
         }
 
-        // Get attendance data
-        const attendanceData = await this.getAttendanceData(
-          employee.id,
-          periodStart,
-          periodEnd
-        );
-
-        // Get leave data
-        const leaveData = await this.getLeaveData(
-          employee.id,
-          periodStart,
-          periodEnd
-        );
+        // Prefer finalized/locked monthly attendance summary when period is a full calendar month
+        const { attendance: attendanceData, leaves: leaveData } =
+          await this.getAttendanceAndLeaveForPeriod(
+            employee.id,
+            payrollCycle.organizationId,
+            periodStart,
+            periodEnd,
+            payrollCycle.payrollYear,
+            payrollCycle.payrollMonth
+          );
 
         // Prepare period data
         const periodData: EmployeePeriodData = {
@@ -509,6 +506,86 @@ export class PayrollService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Get attendance and leave data for payroll. Uses finalized/locked MonthlyAttendanceSummary
+   * when the period is a full calendar month and a summary exists; otherwise uses raw records.
+   */
+  private async getAttendanceAndLeaveForPeriod(
+    employeeId: string,
+    organizationId: string,
+    periodStart: Date,
+    periodEnd: Date,
+    payrollYear: number,
+    payrollMonth: number
+  ): Promise<{ attendance: AttendanceData; leaves: LeaveData }> {
+    const lastDayOfMonth = new Date(payrollYear, payrollMonth, 0);
+    const isFullMonth =
+      periodStart.getFullYear() === payrollYear &&
+      periodStart.getMonth() === payrollMonth - 1 &&
+      periodStart.getDate() === 1 &&
+      periodEnd.getFullYear() === lastDayOfMonth.getFullYear() &&
+      periodEnd.getMonth() === lastDayOfMonth.getMonth() &&
+      periodEnd.getDate() === lastDayOfMonth.getDate();
+
+    if (isFullMonth) {
+      const summary = await prisma.monthlyAttendanceSummary.findUnique({
+        where: {
+          organizationId_employeeId_year_month: {
+            organizationId,
+            employeeId,
+            year: payrollYear,
+            month: payrollMonth,
+          },
+        },
+        include: {
+          leaveBreakdown: {
+            include: { leaveType: { select: { id: true, name: true, isPaid: true } } },
+          },
+        },
+      });
+      if (
+        summary &&
+        (summary.status === 'FINALIZED' || summary.status === 'LOCKED')
+      ) {
+        let paidLeaveDays = 0;
+        let unpaidLeaveDays = 0;
+        const leaveDetails: Array<{ leaveType: string; days: number; isPaid: boolean }> = [];
+        for (const row of summary.leaveBreakdown) {
+          const days = Number(row.days);
+          if (row.isPaid) paidLeaveDays += days;
+          else unpaidLeaveDays += days;
+          leaveDetails.push({
+            leaveType: row.leaveType.name,
+            days,
+            isPaid: row.isPaid,
+          });
+        }
+        return {
+          attendance: {
+            presentDays: summary.presentDays,
+            absentDays: summary.absentDays,
+            halfDays: summary.halfDays,
+            holidayDays: summary.holidayDays,
+            weekendDays: summary.weekendDays,
+            overtimeHours: Number(summary.overtimeHours),
+            totalWorkingDays: summary.totalWorkingDays,
+          },
+          leaves: {
+            paidLeaveDays,
+            unpaidLeaveDays,
+            leaveDetails,
+          },
+        };
+      }
+    }
+
+    const [attendance, leaves] = await Promise.all([
+      this.getAttendanceData(employeeId, periodStart, periodEnd),
+      this.getLeaveData(employeeId, periodStart, periodEnd),
+    ]);
+    return { attendance, leaves };
   }
 
   /**

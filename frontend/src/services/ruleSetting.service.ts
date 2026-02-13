@@ -3,9 +3,11 @@ import api from './api';
 export interface RuleSetting {
   id: string;
   organizationId: string;
+  eventId?: string | null;
   eventType: string;
   displayName: string;
   associate: string | null;
+  associateIds?: string[] | null;
   paygroupId: string | null;
   departmentId: string | null;
   priority: number;
@@ -13,12 +15,14 @@ export interface RuleSetting {
   eventRuleDefinition?: Record<string, unknown> | null;
   createdAt?: string;
   updatedAt?: string;
+  attendanceComponent?: { id: string; shortName: string; eventName: string } | null;
   paygroup?: { id: string; name: string } | null;
   department?: { id: string; name: string } | null;
 }
 
 export interface RuleSettingListParams {
   organizationId: string;
+  eventId?: string;
   eventType?: string;
   page?: number;
   limit?: number;
@@ -35,6 +39,7 @@ const ruleSettingService = {
     const { data } = await api.get<{ data: RuleSettingListResponse }>('/rule-settings', {
       params: {
         organizationId: params.organizationId,
+        eventId: params.eventId || undefined,
         eventType: params.eventType || undefined,
         page: params.page ?? 1,
         limit: params.limit ?? 10,

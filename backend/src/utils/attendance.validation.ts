@@ -139,8 +139,16 @@ export const bulkShiftAssignmentsSchema = z.object({
   })).min(1, 'At least one assignment is required'),
 });
 
+export const queryMonthlyDetailsSchema = z.object({
+  organizationId: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
 // Types
 export type CheckInInput = z.infer<typeof checkInSchema>;
+export type QueryMonthlyDetailsInput = z.infer<typeof queryMonthlyDetailsSchema>;
 export type CheckOutInput = z.infer<typeof checkOutSchema>;
 export type QueryAttendanceRecordsInput = z.infer<typeof queryAttendanceRecordsSchema>;
 export type CreateRegularizationInput = z.infer<typeof createRegularizationSchema>;

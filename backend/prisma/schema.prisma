@@ -45,8 +45,8 @@ model Organization {
   leavePolicies                LeavePolicy[]
   leaveTypes                   LeaveType[]
   locations                    Location[]
-  monthly_attendance_locks     monthly_attendance_locks[]
-  monthly_attendance_summaries monthly_attendance_summaries[]
+  monthlyAttendanceSummaries   MonthlyAttendanceSummary[]
+  monthlyAttendanceLocks       MonthlyAttendanceLock[]
   organizationModules          OrganizationModule[]
   paygroups                    Paygroup[]
   payrollCycles                PayrollCycle[]
@@ -402,7 +402,7 @@ model Employee {
   separations                  EmployeeSeparation[]
   costCentre                   CostCentre?                    @relation(fields: [costCentreId], references: [id])
   department                   Department?                    @relation("EmployeeDepartment", fields: [departmentId], references: [id])
-  entity                       Entity?                        @relation(fields: [entityId], references: [id])
+  entity                       Entity?                        @relation(fields: [entityId], references: [id], onDelete: SetNull)
   location                     Location?                      @relation(fields: [locationId], references: [id])
   organization                 Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   paygroup                     Paygroup?                      @relation(fields: [paygroupId], references: [id])
@@ -417,9 +417,10 @@ model Employee {
   esopRecords                  Esop[]
   hiringManagerJobs            JobOpening[]                   @relation("HiringManager")
   leaveRequests                LeaveRequest[]
+  leaveRequestsToApprove       LeaveRequest[]                 @relation("LeaveRequestApprover")
   compOffRequests              CompOffRequest[]
   compOffLedgers               CompOffLedger[]
-  monthly_attendance_summaries monthly_attendance_summaries[]
+  monthlyAttendanceSummaries   MonthlyAttendanceSummary[]
   payslips                     Payslip[]
   transferPromotionEntries     TransferPromotionEntry[]
   transferPromotions           TransferPromotion[]
@@ -611,6 +612,7 @@ model AttendanceComponent {
   createdAt                   DateTime     @default(now()) @map("created_at")
   updatedAt                   DateTime     @updatedAt @map("updated_at")
   organization                Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ruleSettings                RuleSetting[]
 
   @@map("attendance_components")
 }
@@ -680,60 +682,70 @@ model WorkflowMapping {
   organizationId      String       @map("organization_id") @db.Uuid
   displayName         String       @map("display_name") @db.VarChar(255)
   associate           String?      @db.VarChar(255)
+  associateIds        Json?        @map("associate_ids")
   paygroupId          String?      @map("paygroup_id") @db.Uuid
+  paygroupIds         Json?        @map("paygroup_ids")
   departmentId        String?      @map("department_id") @db.Uuid
+  departmentIds       Json?        @map("department_ids")
   priority            Int?
   remarks             String?
   entryRightsTemplate String?      @map("entry_rights_template") @db.VarChar(255)
   approvalLevels      Json?        @map("approval_levels")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
-  department          Department?  @relation(fields: [departmentId], references: [id])
+  department          Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  paygroup            Paygroup?    @relation(fields: [paygroupId], references: [id])
+  paygroup            Paygroup?    @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  leaveRequests      LeaveRequest[]
 
   @@map("workflow_mappings")
 }
 
 model RuleSetting {
-  id                  String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId      String       @map("organization_id") @db.Uuid
-  eventType           String       @map("event_type") @db.VarChar(100)
-  displayName         String       @map("display_name") @db.VarChar(255)
-  associate           String?      @db.VarChar(255)
-  paygroupId          String?      @map("paygroup_id") @db.Uuid
-  departmentId        String?      @map("department_id") @db.Uuid
-  priority            Int          @default(0)
-  createdAt           DateTime     @default(now()) @map("created_at")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
-  remarks             String?
-  eventRuleDefinition Json?        @map("event_rule_definition")
-  department          Department?  @relation(fields: [departmentId], references: [id])
-  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  paygroup            Paygroup?    @relation(fields: [paygroupId], references: [id])
+  id                    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  eventId               String?   @map("event_id") @db.Uuid
+  eventType             String    @map("event_type") @db.VarChar(100)
+  displayName           String    @map("display_name") @db.VarChar(255)
+  associate             String?   @db.VarChar(255)
+  associateIds          Json?     @map("associate_ids")
+  paygroupId            String?   @map("paygroup_id") @db.Uuid
+  departmentId          String?   @map("department_id") @db.Uuid
+  priority              Int       @default(0)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  remarks               String?
+  eventRuleDefinition   Json?     @map("event_rule_definition")
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  attendanceComponent   AttendanceComponent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  paygroup              Paygroup? @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  department            Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   @@map("rule_settings")
 }
 
 model AutoCreditSetting {
-  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
-  eventType      String       @map("event_type") @db.VarChar(100)
-  displayName    String       @map("display_name") @db.VarChar(255)
-  associate      String?      @db.VarChar(255)
-  paygroupId     String?      @map("paygroup_id") @db.Uuid
-  departmentId   String?      @map("department_id") @db.Uuid
-  condition      String?
-  effectiveDate  DateTime     @map("effective_date") @db.Date
-  priority       Int          @default(0)
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
-  remarks        String?
-  effectiveTo    DateTime?    @map("effective_to") @db.Date
-  autoCreditRule Json?        @map("auto_credit_rule")
-  department     Department?  @relation(fields: [departmentId], references: [id])
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  paygroup       Paygroup?    @relation(fields: [paygroupId], references: [id])
+  id                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId      String    @map("organization_id") @db.Uuid
+  eventType           String    @map("event_type") @db.VarChar(100)
+  displayName         String    @map("display_name") @db.VarChar(255)
+  associate           String?   @db.VarChar(255)
+  associateIds        Json?     @map("associate_ids")
+  paygroupId          String?   @map("paygroup_id") @db.Uuid
+  paygroupIds         Json?     @map("paygroup_ids")
+  departmentId        String?   @map("department_id") @db.Uuid
+  departmentIds       Json?     @map("department_ids")
+  condition           String?   @db.Text
+  effectiveDate       DateTime  @map("effective_date") @db.Date
+  effectiveTo         DateTime? @map("effective_to") @db.Date
+  priority            Int       @default(0) @db.Integer
+  remarks             String?   @db.Text
+  autoCreditRule      Json?     @map("auto_credit_rule")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paygroup            Paygroup? @relation(fields: [paygroupId], references: [id], onDelete: SetNull)
+  department          Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   @@map("auto_credit_settings")
 }
@@ -760,30 +772,98 @@ model AttendanceRegularization {
   @@map("attendance_regularizations")
 }
 
+// Monthly roll-up of attendance for an employee; respects event config, approvals, and locking.
+model MonthlyAttendanceSummary {
+  id                    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  employeeId            String    @map("employee_id") @db.Uuid
+  year                  Int       @db.Integer
+  month                 Int       @db.Integer
+  presentDays           Int       @default(0) @map("present_days") @db.Integer
+  absentDays            Int       @default(0) @map("absent_days") @db.Integer
+  leaveDays             Decimal   @default(0) @map("leave_days") @db.Decimal(5, 2)
+  lopDays               Decimal   @default(0) @map("lop_days") @db.Decimal(5, 2)
+  halfDays              Int       @default(0) @map("half_days") @db.Integer
+  holidayDays           Int       @default(0) @map("holiday_days") @db.Integer
+  weekendDays           Int       @default(0) @map("weekend_days") @db.Integer
+  overtimeHours         Decimal   @default(0) @map("overtime_hours") @db.Decimal(8, 2)
+  paidDays               Decimal   @default(0) @map("paid_days") @db.Decimal(5, 2)
+  totalWorkingDays      Int       @default(0) @map("total_working_days") @db.Integer
+  status                 MonthlyAttendanceSummaryStatus @default(DRAFT)
+  finalizedAt           DateTime? @map("finalized_at")
+  finalizedBy           String?   @map("finalized_by") @db.Uuid
+  lockedAt              DateTime? @map("locked_at")
+  lockedBy              String?   @map("locked_by") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee              Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveBreakdown        MonthlyAttendanceSummaryLeave[]
+
+  @@unique([organizationId, employeeId, year, month])
+  @@index([organizationId, year, month])
+  @@index([employeeId, year, month])
+  @@map("monthly_attendance_summaries")
+}
+
+// Leave-type-wise breakdown for a monthly summary (for payroll and audit).
+model MonthlyAttendanceSummaryLeave {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  summaryId         String   @map("summary_id") @db.Uuid
+  leaveTypeId       String   @map("leave_type_id") @db.Uuid
+  days              Decimal  @db.Decimal(5, 2)
+  isPaid            Boolean  @default(true) @map("is_paid")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  summary           MonthlyAttendanceSummary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  leaveType         LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([summaryId, leaveTypeId])
+  @@map("monthly_attendance_summary_leaves")
+}
+
+// Org-level lock for a month: no edits to attendance summary for that month once locked.
+model MonthlyAttendanceLock {
+  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  year            Int       @db.Integer
+  month           Int       @db.Integer
+  lockedAt        DateTime  @map("locked_at")
+  lockedBy        String?   @map("locked_by") @db.Uuid
+  remarks         String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, year, month])
+  @@index([organizationId, year, month])
+  @@map("monthly_attendance_locks")
+}
+
 model LeaveType {
-  id                                String                              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId                    String                              @map("organization_id") @db.Uuid
-  name                              String                              @db.VarChar(100)
-  code                              String?                             @unique @db.VarChar(50)
-  description                       String?
-  isPaid                            Boolean                             @default(true) @map("is_paid")
-  defaultDaysPerYear                Decimal?                            @map("default_days_per_year") @db.Decimal(5, 2)
-  maxCarryForward                   Decimal?                            @map("max_carry_forward") @db.Decimal(5, 2)
-  maxConsecutiveDays                Int?                                @map("max_consecutive_days")
-  requiresDocument                  Boolean                             @default(false) @map("requires_document")
-  requiresApproval                  Boolean                             @default(true) @map("requires_approval")
-  canBeNegative                     Boolean                             @default(false) @map("can_be_negative")
-  accrualType                       AccrualType?                        @map("accrual_type")
-  colorCode                         String?                             @map("color_code") @db.VarChar(20)
-  isActive                          Boolean                             @default(true) @map("is_active")
-  createdAt                         DateTime                            @default(now()) @map("created_at")
-  updatedAt                         DateTime                            @updatedAt @map("updated_at")
-  leaveBalances                     EmployeeLeaveBalance[]
-  leavePolicies                     LeavePolicy[]
-  leaveRequests                     LeaveRequest[]
-  compOffLedgers                    CompOffLedger[]
-  organization                      Organization                        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  monthly_attendance_summary_leaves monthly_attendance_summary_leaves[]
+  id                 String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId     String                 @map("organization_id") @db.Uuid
+  name               String                 @db.VarChar(100)
+  code               String?                @unique @db.VarChar(50)
+  description        String?
+  isPaid             Boolean                @default(true) @map("is_paid")
+  defaultDaysPerYear Decimal?               @map("default_days_per_year") @db.Decimal(5, 2)
+  maxCarryForward    Decimal?               @map("max_carry_forward") @db.Decimal(5, 2)
+  maxConsecutiveDays Int?                   @map("max_consecutive_days")
+  requiresDocument   Boolean                @default(false) @map("requires_document")
+  requiresApproval   Boolean                @default(true) @map("requires_approval")
+  canBeNegative      Boolean                @default(false) @map("can_be_negative")
+  accrualType        AccrualType?           @map("accrual_type")
+  colorCode          String?                @map("color_code") @db.VarChar(20)
+  isActive           Boolean                @default(true) @map("is_active")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+  leaveBalances      EmployeeLeaveBalance[]
+  leavePolicies      LeavePolicy[]
+  leaveRequests      LeaveRequest[]
+  compOffLedgers     CompOffLedger[]
+  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  monthlySummaryLeaves MonthlyAttendanceSummaryLeave[]
 
   @@map("leave_types")
 }
@@ -848,24 +928,30 @@ model CompOffLedger {
 }
 
 model LeaveRequest {
-  id                  String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  employeeId          String      @map("employee_id") @db.Uuid
-  leaveTypeId         String      @map("leave_type_id") @db.Uuid
-  startDate           DateTime    @map("start_date") @db.Date
-  endDate             DateTime    @map("end_date") @db.Date
-  totalDays           Decimal     @map("total_days") @db.Decimal(5, 2)
-  reason              String
-  supportingDocuments Json?       @map("supporting_documents")
-  status              LeaveStatus @default(PENDING)
-  appliedOn           DateTime    @default(now()) @map("applied_on")
-  reviewedBy          String?     @map("reviewed_by") @db.Uuid
-  reviewedAt          DateTime?   @map("reviewed_at")
-  reviewComments      String?     @map("review_comments")
-  cancellationReason  String?     @map("cancellation_reason")
-  createdAt           DateTime    @default(now()) @map("created_at")
-  updatedAt           DateTime    @updatedAt @map("updated_at")
-  employee            Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType           LeaveType   @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  id                         String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employeeId                 String      @map("employee_id") @db.Uuid
+  leaveTypeId                String      @map("leave_type_id") @db.Uuid
+  startDate                  DateTime    @map("start_date") @db.Date
+  endDate                    DateTime    @map("end_date") @db.Date
+  totalDays                  Decimal     @map("total_days") @db.Decimal(5, 2)
+  reason                     String
+  supportingDocuments        Json?       @map("supporting_documents")
+  status                     LeaveStatus @default(PENDING)
+  appliedOn                  DateTime    @default(now()) @map("applied_on")
+  reviewedBy                 String?     @map("reviewed_by") @db.Uuid
+  reviewedAt                 DateTime?   @map("reviewed_at")
+  reviewComments             String?     @map("review_comments")
+  cancellationReason         String?     @map("cancellation_reason")
+  workflowMappingId          String?     @map("workflow_mapping_id") @db.Uuid
+  currentApprovalLevel       Int?        @map("current_approval_level")
+  assignedApproverEmployeeId String?     @map("assigned_approver_employee_id") @db.Uuid
+  approvalHistory            Json?       @map("approval_history")
+  createdAt                  DateTime    @default(now()) @map("created_at")
+  updatedAt                  DateTime    @updatedAt @map("updated_at")
+  employee                   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType                  LeaveType   @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  workflowMapping            WorkflowMapping? @relation(fields: [workflowMappingId], references: [id], onDelete: SetNull)
+  assignedApprover           Employee?   @relation("LeaveRequestApprover", fields: [assignedApproverEmployeeId], references: [id], onDelete: SetNull)
 
   @@map("leave_requests")
 }
@@ -1355,68 +1441,6 @@ model EmployeeSeparation {
   @@map("employee_separations")
 }
 
-model monthly_attendance_locks {
-  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id String       @db.Uuid
-  year            Int
-  month           Int
-  locked_at       DateTime
-  locked_by       String?      @db.Uuid
-  remarks         String?
-  created_at      DateTime     @default(now())
-  updated_at      DateTime
-  organizations   Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-
-  @@unique([organization_id, year, month])
-  @@index([organization_id, year, month])
-}
-
-model monthly_attendance_summaries {
-  id                                String                              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id                   String                              @db.Uuid
-  employee_id                       String                              @db.Uuid
-  year                              Int
-  month                             Int
-  present_days                      Int                                 @default(0)
-  absent_days                       Int                                 @default(0)
-  leave_days                        Decimal                             @default(0) @db.Decimal(5, 2)
-  lop_days                          Decimal                             @default(0) @db.Decimal(5, 2)
-  half_days                         Int                                 @default(0)
-  holiday_days                      Int                                 @default(0)
-  weekend_days                      Int                                 @default(0)
-  overtime_hours                    Decimal                             @default(0) @db.Decimal(8, 2)
-  paid_days                         Decimal                             @default(0) @db.Decimal(5, 2)
-  total_working_days                Int                                 @default(0)
-  status                            monthly_attendance_summary_status   @default(DRAFT)
-  finalized_at                      DateTime?
-  finalized_by                      String?                             @db.Uuid
-  locked_at                         DateTime?
-  locked_by                         String?                             @db.Uuid
-  created_at                        DateTime                            @default(now())
-  updated_at                        DateTime
-  employees                         Employee                            @relation(fields: [employee_id], references: [id], onDelete: Cascade)
-  organizations                     Organization                        @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  monthly_attendance_summary_leaves monthly_attendance_summary_leaves[]
-
-  @@unique([organization_id, employee_id, year, month], map: "monthly_attendance_summaries_organization_id_employee_id_year_k")
-  @@index([employee_id, year, month])
-  @@index([organization_id, year, month])
-}
-
-model monthly_attendance_summary_leaves {
-  id                           String                       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  summary_id                   String                       @db.Uuid
-  leave_type_id                String                       @db.Uuid
-  days                         Decimal                      @db.Decimal(5, 2)
-  is_paid                      Boolean                      @default(true)
-  created_at                   DateTime                     @default(now())
-  updated_at                   DateTime
-  leave_types                  LeaveType                    @relation(fields: [leave_type_id], references: [id], onDelete: Cascade)
-  monthly_attendance_summaries monthly_attendance_summaries @relation(fields: [summary_id], references: [id], onDelete: Cascade)
-
-  @@unique([summary_id, leave_type_id])
-}
-
 enum UserRole {
   SUPER_ADMIN
   ORG_ADMIN
@@ -1604,6 +1628,14 @@ enum PayslipStatus {
   @@map("payslip_status")
 }
 
+enum MonthlyAttendanceSummaryStatus {
+  DRAFT
+  FINALIZED
+  LOCKED
+
+  @@map("monthly_attendance_summary_status")
+}
+
 enum PaymentMethod {
   BANK_TRANSFER
   CHECK
@@ -1748,8 +1780,3 @@ enum OfferStatus {
   @@map("offer_status")
 }
 
-enum monthly_attendance_summary_status {
-  DRAFT
-  FINALIZED
-  LOCKED
-}

@@ -7,6 +7,7 @@ import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/layout/AppHeader';
 import shiftService, { Shift } from '../services/shift.service';
 import shiftAssignmentRuleService from '../services/shiftAssignmentRule.service';
+import MonthlyDetailsSidebar from '../components/attendance/MonthlyDetailsSidebar';
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, getDay, addMonths } from 'date-fns';
 
 interface AttendanceRecord {
@@ -95,7 +96,7 @@ function effectiveShift(record: AttendanceRecord, override: ShiftLike): ShiftLik
 /** Grace minutes for shift start from policy (minutes field overrides HH:MM). */
 function getStartGraceMinutes(policy: LateEarlyPolicy): number {
   if (!policy) return 0;
-  if (policy.shiftStartGraceMinutes != null && policy.shiftStartGraceMinutes !== '') {
+  if (policy.shiftStartGraceMinutes != null) {
     const n = Number(policy.shiftStartGraceMinutes);
     return Number.isNaN(n) ? parseHHMMToMinutes(policy.shiftStartGraceTime) : n;
   }
@@ -105,7 +106,7 @@ function getStartGraceMinutes(policy: LateEarlyPolicy): number {
 /** Grace minutes for shift end from policy (minutes field overrides HH:MM). */
 function getEndGraceMinutes(policy: LateEarlyPolicy): number {
   if (!policy) return 0;
-  if (policy.shiftEndGraceMinutes != null && policy.shiftEndGraceMinutes !== '') {
+  if (policy.shiftEndGraceMinutes != null) {
     const n = Number(policy.shiftEndGraceMinutes);
     return Number.isNaN(n) ? parseHHMMToMinutes(policy.shiftEndGraceTime) : n;
   }
@@ -163,7 +164,7 @@ function getMinOTMinutes(policy: LateEarlyPolicy): number {
   return parseHHMMToMinutes(policy.minOTHoursPerDay);
 }
 
-function getExcessStayMinutes(record: AttendanceRecord, shiftOverride: ShiftLike, policy: LateEarlyPolicy): number {
+function getExcessStayMinutes(record: AttendanceRecord, shiftOverride: ShiftLike, _policy: LateEarlyPolicy): number {
   const shift = effectiveShift(record, shiftOverride ?? null);
   if (!record.checkIn || !record.checkOut || !shift?.startTime || !shift?.endTime) return 0;
   const inTime = new Date(record.checkIn);
@@ -311,7 +312,7 @@ interface AttendanceCalendarViewProps {
   lateEarlyPolicy?: LateEarlyPolicy;
 }
 
-const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange, employeeId, organizationId, lateEarlyPolicy }: AttendanceCalendarViewProps) => {
+const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange, employeeId, organizationId, lateEarlyPolicy = null }: AttendanceCalendarViewProps) => {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -558,7 +559,7 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                     const shiftFromRecord = record.shift;
                     const shiftFromList = shiftName ? shifts.find((s) => s.name === shiftName) : null;
                     const hasFullShift = shiftFromRecord && shiftFromRecord.startTime != null && shiftFromRecord.endTime != null;
-                    let effectiveShiftForRecord: ShiftLike = hasFullShift ? shiftFromRecord : (shiftFromList || shiftFromRecord);
+                    let effectiveShiftForRecord: ShiftLike = hasFullShift ? shiftFromRecord : (shiftFromList ?? shiftFromRecord ?? null);
                     // Last resort: if still no start/end (e.g. Shift Master not loaded or name mismatch), use default for common shift names so badges show
                     if ((!effectiveShiftForRecord?.startTime || !effectiveShiftForRecord?.endTime) && shiftName && shiftName !== 'Weekoff' && shiftName !== 'W' && shiftName !== 'Week Off') {
                       effectiveShiftForRecord = { startTime: '09:00', endTime: '18:00' };
@@ -667,7 +668,7 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                               );
                             })() : null}
                             {showOt && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title={`OT: ${formatWorkHoursAsHHMM(record.otMinutes / 60)}`}>OT {formatWorkHoursAsHHMM(record.otMinutes / 60)}</span>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title={`OT: ${formatWorkHoursAsHHMM((record.otMinutes ?? 0) / 60)}`}>OT {formatWorkHoursAsHHMM((record.otMinutes ?? 0) / 60)}</span>
                             )}
                             {showExcessStay && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800" title="Time stayed after OT start threshold">
@@ -799,7 +800,8 @@ const AttendancePage = () => {
   const [manualPunchMessage, setManualPunchMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [manualPunchEmployeeList, setManualPunchEmployeeList] = useState<Employee[]>([]);
   const [lateEarlyPolicy, setLateEarlyPolicy] = useState<LateEarlyPolicy>(null);
-  
+  const [showLeaveAppliedBanner, setShowLeaveAppliedBanner] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   // Check if user is a manager
   const isManager = user?.role === 'MANAGER';
   const isHRManager = user?.role === 'HR_MANAGER';
@@ -944,7 +946,7 @@ const AttendancePage = () => {
 
   // Refetch when returning from Face Attendance punch or Associate Shift Grid so calendar shows new data
   useEffect(() => {
-    const state = location.state as { refreshFromFacePunch?: boolean; refreshFromShiftGrid?: boolean } | null;
+    const state = location.state as { refreshFromFacePunch?: boolean; refreshFromShiftGrid?: boolean; leaveApplied?: boolean } | null;
     const shouldRefetch = (state?.refreshFromFacePunch || state?.refreshFromShiftGrid) && user;
     if (shouldRefetch) {
       const refetch = async () => {
@@ -953,10 +955,21 @@ const AttendancePage = () => {
       };
       refetch();
     }
+    if (state?.leaveApplied) {
+      setShowLeaveAppliedBanner(true);
+      navigate('/attendance', { replace: true, state: {} });
+    }
   }, [location.state, user]);
 
-  // HR-only: fetch employees for searchable dropdown when in team view (scoped to current org so refresh shows correct list)
   const orgId = user?.employee?.organizationId || user?.employee?.organization?.id;
+  // Auto-hide leave-applied success banner after 6 seconds
+  useEffect(() => {
+    if (!showLeaveAppliedBanner) return;
+    const t = setTimeout(() => setShowLeaveAppliedBanner(false), 6000);
+    return () => clearTimeout(t);
+  }, [showLeaveAppliedBanner]);
+
+  // HR-only: fetch employees for searchable dropdown when in team view
   useEffect(() => {
     if (!isHRForCalendar || viewMode !== 'team' || !orgId) return;
     let cancelled = false;
@@ -974,8 +987,6 @@ const AttendancePage = () => {
     return () => { cancelled = true; };
   }, [isHRForCalendar, viewMode, orgId]);
 
-  // Fetch Late & Others policy (grace + consider toggles) for fallback late/early calculations with grace
-  const orgIdForPolicy = user?.employee?.organizationId || user?.employee?.organization?.id;
   // Fetch current attendance policy (Late & Others). Used for read-time shortfall/Late/Early display.
   // Call this after changing policy in UI so calendar reflects the new setting without full page reload.
   const fetchLateEarlyPolicy = useCallback(async () => {
@@ -1435,7 +1446,6 @@ const AttendancePage = () => {
   };
 
   // Refresh policy + records so calendar/table shows according to current Attendance Policy (e.g. after you change "Consider Early Going as Shortfall").
-  const [refreshing, setRefreshing] = useState(false);
   const handleRefreshPolicyAndRecords = async () => {
     setRefreshing(true);
     try {
@@ -1458,6 +1468,16 @@ const AttendancePage = () => {
 
       {/* Main Content */}
       <main className="flex-1 min-h-0 overflow-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        {showLeaveAppliedBanner && (
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            <span>
+              Leave request submitted. After approval it will reflect in the calendar sidebar (Opening, Used, Balance) and in the leave table.
+            </span>
+            <button type="button" onClick={() => setShowLeaveAppliedBanner(false)} className="ml-2 shrink-0 rounded p-1 hover:bg-green-100" aria-label="Dismiss">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        )}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-red-800 text-sm">{error}</p>
@@ -1798,15 +1818,25 @@ const AttendancePage = () => {
           ) : loading || (viewMode === 'my' && loadingMyRecords) ? (
             <div className="p-8 text-center text-gray-500">Loading...</div>
           ) : displayMode === 'calendar' ? (
-            <AttendanceCalendarView
-              records={viewMode === 'my' && myRecords.length > 0 ? myRecords : records}
-              punches={punches}
-              currentMonth={currentMonth}
-              onMonthChange={setCurrentMonth}
-              employeeId={viewMode === 'my' || !canViewTeamAttendance ? user?.employee?.id : (selectedEmployeeId || user?.employee?.id)}
-              organizationId={user?.employee?.organizationId || user?.employee?.organization?.id}
-              lateEarlyPolicy={lateEarlyPolicy}
-            />
+            <div className="flex flex-1 min-h-0">
+              <div className="flex-1 min-w-0 overflow-auto">
+                <AttendanceCalendarView
+                  records={viewMode === 'my' && myRecords.length > 0 ? myRecords : records}
+                  punches={punches}
+                  currentMonth={currentMonth}
+                  onMonthChange={setCurrentMonth}
+                  employeeId={viewMode === 'my' || !canViewTeamAttendance ? user?.employee?.id : (selectedEmployeeId || user?.employee?.id)}
+                  organizationId={user?.employee?.organizationId || user?.employee?.organization?.id}
+                  lateEarlyPolicy={lateEarlyPolicy}
+                />
+              </div>
+              <MonthlyDetailsSidebar
+                organizationId={user?.employee?.organizationId || user?.employee?.organization?.id}
+                employeeId={viewMode === 'my' || !canViewTeamAttendance ? user?.employee?.id : (selectedEmployeeId || user?.employee?.id)}
+                year={currentMonth.getFullYear()}
+                month={currentMonth.getMonth() + 1}
+              />
+            </div>
           ) : (viewMode === 'my' ? myRecords : records).length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               {viewMode === 'my' 
@@ -1895,7 +1925,8 @@ const AttendancePage = () => {
                           const showEarly = ((record.earlyMinutes ?? 0) > 0) || record.isEarly || (earlyM ?? 0) > 0;
                           const showDeviation = !!record.isDeviation || showShortfall;
                           const minOtMins = getMinOTMinutes(lateEarlyPolicy);
-                          const showOt = record.otMinutes != null && record.otMinutes > 0 && record.otMinutes >= minOtMins;
+                          const otMinutes = record.otMinutes ?? 0;
+                          const showOt = otMinutes > 0 && otMinutes >= minOtMins;
                           const showExcessStay = excessStayMins > 0 && lateEarlyPolicy?.excessStayConsideredAsOT !== false;
                           const showEarlyComing = earlyComingMins > 0;
                           const showIndicators = showLate || showEarly || showDeviation || showOt || showExcessStay || showEarlyComing;
@@ -1919,7 +1950,7 @@ const AttendancePage = () => {
                                   : `Shortfall: ${shortfallMinutes} min`}
                               </span>
                             )}
-                            {showOt && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title="Overtime">OT {formatWorkHoursAsHHMM(record.otMinutes / 60)}</span>}
+                            {showOt && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title="Overtime">OT {formatWorkHoursAsHHMM(otMinutes / 60)}</span>}
                             {showExcessStay && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800" title="Time stayed after OT start threshold">Excess Stay {formatWorkHoursAsHHMM(excessStayMins / 60)}</span>}
                             {showEarlyComing && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-cyan-100 text-cyan-800" title="Time arrived before shift start">Early Coming {formatWorkHoursAsHHMM(earlyComingMins / 60)}</span>}
                           </div>

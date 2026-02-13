@@ -1,6 +1,6 @@
 
 import { AppError } from '../middlewares/errorHandler';
-import { AttendanceStatus, CheckInMethod, Prisma } from '@prisma/client';
+import { AttendanceStatus, CheckInMethod, LeaveStatus, Prisma } from '@prisma/client';
 import { prisma } from '../utils/prisma';
 import { shiftService } from './shift.service';
 import { shiftAssignmentRuleService } from './shift-assignment-rule.service';
@@ -1888,6 +1888,376 @@ export class AttendanceService {
     }
 
     return results;
+  }
+
+  /**
+   * Get monthly details for calendar sidebar: short fall, components by category (Leave, Onduty, Permission, Present), late, early going.
+   * Data sourced from attendance_components (event configuration) and leave balances / attendance records.
+   */
+  async getMonthlyDetails(organizationId: string, employeeId: string, year: number, month: number) {
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0);
+    monthEnd.setHours(23, 59, 59, 999);
+
+    const yearStart = new Date(year, 0, 1);
+
+    const [employee, components, leaveTypes, autoCreditSettings, leaveBalances, records, leaveRequests] =
+      await Promise.all([
+        prisma.employee.findUnique({
+          where: { id: employeeId },
+          select: { id: true, employeeCode: true, paygroupId: true, departmentId: true },
+        }),
+      prisma.attendanceComponent.findMany({
+        where: { organizationId },
+        orderBy: [{ eventCategory: 'asc' }, { priority: 'asc' }, { shortName: 'asc' }],
+      }),
+        prisma.leaveType.findMany({
+          where: { organizationId, isActive: true },
+          select: { id: true, name: true, code: true, defaultDaysPerYear: true },
+          orderBy: { name: 'asc' },
+        }),
+        prisma.autoCreditSetting.findMany({
+          where: {
+            organizationId,
+            effectiveDate: { lte: monthEnd },
+            OR: [{ effectiveTo: null }, { effectiveTo: { gte: yearStart } }],
+          },
+          select: {
+            id: true,
+            eventType: true,
+            displayName: true,
+            associate: true,
+            paygroupId: true,
+            departmentId: true,
+            priority: true,
+            autoCreditRule: true,
+          },
+          orderBy: { priority: 'asc' },
+        }),
+      prisma.employeeLeaveBalance.findMany({
+        where: { employeeId, year },
+        include: {
+          leaveType: {
+            select: { id: true, name: true, code: true, defaultDaysPerYear: true },
+          },
+        },
+      }),
+      prisma.attendanceRecord.findMany({
+        where: {
+          employeeId,
+          date: { gte: monthStart, lte: monthEnd },
+        },
+        include: { shift: { select: { startTime: true, endTime: true } } },
+      }),
+      prisma.leaveRequest.findMany({
+        where: {
+          employeeId,
+          status: LeaveStatus.APPROVED,
+          // Any leave that overlaps the year-to-month range
+          startDate: { lte: monthEnd },
+          endDate: { gte: yearStart },
+        },
+        include: {
+          leaveType: {
+            select: { id: true },
+          },
+        },
+      }),
+    ]);
+
+    if (!employee) {
+      throw new AppError('Employee not found', 404);
+    }
+
+    const entitlementFromAutoCreditByLeaveTypeId = new Map<string, number>(); // only settings that match employee's department & paygroup
+
+    const isAutoCreditApplicableToEmployee = (s: (typeof autoCreditSettings)[0]) => {
+      if (s.paygroupId && s.paygroupId !== employee.paygroupId) return false;
+      if (s.departmentId && s.departmentId !== employee.departmentId) return false;
+      if (s.associate) {
+        const a = s.associate.trim();
+        if (a && a !== employee.employeeCode && a !== employee.id) return false;
+      }
+      return true;
+    };
+
+    const readEntitlementDays = (rule: unknown): number | null => {
+      if (!rule || typeof rule !== 'object') return null;
+      const r = rule as Record<string, unknown>;
+      const keys = ['entitlementDays', 'EntitlementDays', 'entitlement_days', 'entitlementdays'];
+      for (const k of keys) {
+        const v = r[k];
+        const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+        if (Number.isFinite(n) && n >= 0) return n;
+      }
+      return null;
+    };
+
+    const nameToEntitlementStrict = new Map<string, number>();
+    const codeToEntitlementStrict = new Map<string, number>();
+    const entitlementByEventNameOrCodeStrict = new Map<string, number>();
+
+    for (const s of autoCreditSettings) {
+      const n = readEntitlementDays(s.autoCreditRule);
+      if (n == null) continue;
+      const applicable = isAutoCreditApplicableToEmployee(s);
+      if (!applicable) continue;
+      if (s.eventType) {
+        const key = s.eventType.toLowerCase().trim();
+        nameToEntitlementStrict.set(key, n);
+        entitlementByEventNameOrCodeStrict.set(key, n);
+      }
+      if (s.displayName) {
+        const key = s.displayName.trim().toUpperCase();
+        codeToEntitlementStrict.set(key, n);
+        entitlementByEventNameOrCodeStrict.set(key, n);
+      }
+    }
+
+    for (const lt of leaveTypes) {
+      const codeKey = lt.code ? lt.code.trim().toUpperCase() : '';
+      const nameKey = lt.name.toLowerCase();
+      const strict = codeKey ? codeToEntitlementStrict.get(codeKey) : undefined;
+      const strictName = nameToEntitlementStrict.get(nameKey);
+      const entitlementStrict = strict ?? strictName;
+      if (entitlementStrict != null) entitlementFromAutoCreditByLeaveTypeId.set(lt.id, entitlementStrict);
+    }
+
+    let excessStayMinutes = 0;
+    let shortfallMinutes = 0;
+    let lateCount = 0;
+    let lateMinutes = 0;
+    let earlyGoingCount = 0;
+    let earlyGoingMinutes = 0;
+
+    for (const r of records) {
+      const ot = r.overtimeHours ? Number(r.overtimeHours) : 0;
+      if (ot > 0) excessStayMinutes += Math.round(ot * 60);
+      if (r.shift?.startTime && r.checkIn) {
+        const [sh, sm] = (r.shift.startTime as string).split(':').map(Number);
+        const shiftStart = new Date(r.date);
+        shiftStart.setHours(sh, sm || 0, 0, 0);
+        if (new Date(r.checkIn) > shiftStart) {
+          lateCount += 1;
+          lateMinutes += Math.round((new Date(r.checkIn).getTime() - shiftStart.getTime()) / 60000);
+        }
+      }
+      if (r.shift?.endTime && r.checkOut) {
+        const [eh, em] = (r.shift.endTime as string).split(':').map(Number);
+        const shiftEnd = new Date(r.date);
+        shiftEnd.setHours(eh, em || 0, 0, 0);
+        if (new Date(r.checkOut) < shiftEnd) {
+          earlyGoingCount += 1;
+          earlyGoingMinutes += Math.round((shiftEnd.getTime() - new Date(r.checkOut).getTime()) / 60000);
+        }
+      }
+    }
+
+    const toHHMM = (totalMinutes: number) => {
+      const m = Math.abs(totalMinutes) % 60;
+      const h = Math.floor(Math.abs(totalMinutes) / 60);
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    const usageBeforeMonth = new Map<string, number>(); // leaveTypeId -> days used before monthStart
+    const usageThisMonth = new Map<string, number>(); // leaveTypeId -> days used in [monthStart, monthEnd]
+
+    for (const lr of leaveRequests) {
+      const leaveTypeId = lr.leaveTypeId;
+      const totalDays = Number(lr.totalDays);
+
+      const start = new Date(lr.startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(lr.endDate);
+      end.setHours(23, 59, 59, 999);
+
+      const totalCalendarDays =
+        Math.max(1, Math.round((end.getTime() - start.getTime()) / oneDayMs) + 1);
+      const perDay = totalDays / totalCalendarDays;
+
+      const prevEnd = new Date(monthStart.getTime() - oneDayMs);
+
+      const overlap = (rangeStart: Date, rangeEnd: Date) => {
+        const s = new Date(Math.max(start.getTime(), rangeStart.getTime()));
+        const e = new Date(Math.min(end.getTime(), rangeEnd.getTime()));
+        if (e < s) return 0;
+        const days = Math.round((e.getTime() - s.getTime()) / oneDayMs) + 1;
+        return days * perDay;
+      };
+
+      // Usage before this month (from yearStart to day before monthStart)
+      if (yearStart < monthStart) {
+        const usedBefore = overlap(yearStart, prevEnd);
+        if (usedBefore > 0) {
+          usageBeforeMonth.set(
+            leaveTypeId,
+            (usageBeforeMonth.get(leaveTypeId) ?? 0) + usedBefore
+          );
+        }
+      }
+
+      // Usage in this month
+      const usedThis = overlap(monthStart, monthEnd);
+      if (usedThis > 0) {
+        usageThisMonth.set(leaveTypeId, (usageThisMonth.get(leaveTypeId) ?? 0) + usedThis);
+      }
+    }
+
+    const shortFall = {
+      excessStay: toHHMM(excessStayMinutes),
+      shortfall: toHHMM(shortfallMinutes),
+      difference: toHHMM(excessStayMinutes - shortfallMinutes),
+    };
+
+    const byCategory = new Map<string, typeof components>();
+    for (const c of components) {
+      const cat = c.eventCategory || 'Other';
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(c);
+    }
+
+    const computeMonthlyLeaveRow = (
+      bal: (typeof leaveBalances)[0],
+      opts?: { yearEntitlementOverride?: number | null }
+    ) => {
+      const leaveTypeId = bal.leaveTypeId;
+      const entitlementFromLeaveType = bal.leaveType.defaultDaysPerYear
+        ? Number(bal.leaveType.defaultDaysPerYear)
+        : null;
+      const entitlementFromAutoCredit =
+        opts?.yearEntitlementOverride ??
+        entitlementFromAutoCreditByLeaveTypeId.get(leaveTypeId) ??
+        null;
+
+      const yearEntitlement =
+        entitlementFromLeaveType ??
+        entitlementFromAutoCredit ??
+        (Number(bal.openingBalance) > 0
+          ? Number(bal.openingBalance) + Number(bal.carriedForward)
+          : Number(bal.available) + Number(bal.used));
+
+      const usedBefore = usageBeforeMonth.get(leaveTypeId) ?? 0;
+      const usedThis = usageThisMonth.get(leaveTypeId) ?? 0;
+
+      const opening = Math.max(0, yearEntitlement - usedBefore);
+      const closing = Math.max(0, opening - usedThis);
+
+      return {
+        name: bal.leaveType.name,
+        opening,
+        credit: 0,
+        used: usedThis,
+        balance: closing,
+      };
+    };
+
+    const leaveRows = (byCategory.get('Leave') || []).map((comp) => {
+      const bal = leaveBalances.find(
+        (b) =>
+          b.leaveType.name.toLowerCase() === comp.eventName?.toLowerCase() ||
+          (b.leaveType.code && b.leaveType.code.toLowerCase() === comp.shortName?.toLowerCase())
+      );
+
+      if (bal) {
+        const base = computeMonthlyLeaveRow(bal);
+        return {
+          ...base,
+          name: comp.eventName || comp.shortName || base.name,
+        };
+      }
+
+      // If balance doesn't exist, try deriving entitlement from auto-credit + leave type mapping.
+      const leaveType =
+        leaveTypes.find(
+          (lt) =>
+            lt.name.toLowerCase() === (comp.eventName || '').toLowerCase() ||
+            (lt.code && lt.code.toLowerCase() === (comp.shortName || '').toLowerCase())
+        ) ?? null;
+
+      if (leaveType) {
+        const yearEntitlement =
+          (leaveType.defaultDaysPerYear ? Number(leaveType.defaultDaysPerYear) : null) ??
+          entitlementFromAutoCreditByLeaveTypeId.get(leaveType.id) ??
+          0;
+        const usedBefore = usageBeforeMonth.get(leaveType.id) ?? 0;
+        const usedThis = usageThisMonth.get(leaveType.id) ?? 0;
+        const opening = Math.max(0, yearEntitlement - usedBefore);
+        const closing = Math.max(0, opening - usedThis);
+        return {
+          name: comp.eventName || comp.shortName,
+          opening,
+          credit: 0,
+          used: usedThis,
+          balance: closing,
+        };
+      }
+
+      const directEntitlement =
+        entitlementByEventNameOrCodeStrict.get((comp.eventName || '').toLowerCase().trim()) ??
+        (comp.shortName ? entitlementByEventNameOrCodeStrict.get(comp.shortName.trim().toUpperCase()) : undefined);
+      if (directEntitlement != null && directEntitlement > 0) {
+        return {
+          name: comp.eventName || comp.shortName,
+          opening: directEntitlement,
+          credit: 0,
+          used: 0,
+          balance: directEntitlement,
+        };
+      }
+
+      return {
+        name: comp.eventName || comp.shortName,
+        opening: 0,
+        credit: 0,
+        used: 0,
+        balance: 0,
+      };
+    });
+
+    const balanceRow = (comp: (typeof components)[0]) => ({
+      name: comp.eventName || comp.shortName,
+      opening: 0,
+      credit: 0,
+      used: 0,
+      balance: 0,
+    });
+
+    const ondutyRows = (byCategory.get('Onduty') || byCategory.get('On Duty') || []).map(balanceRow);
+    const permissionRows = (byCategory.get('Permission') || []).map(balanceRow);
+    const presentRows = (byCategory.get('Present') || []).map(balanceRow);
+
+    return {
+      shortFall,
+      leave:
+        leaveRows.length > 0
+          ? leaveRows
+          : leaveBalances.length > 0
+            ? leaveBalances.map((b) => computeMonthlyLeaveRow(b))
+            : leaveTypes.map((lt) => {
+                const yearEntitlement =
+                  (lt.defaultDaysPerYear ? Number(lt.defaultDaysPerYear) : null) ??
+                  entitlementFromAutoCreditByLeaveTypeId.get(lt.id) ??
+                  0;
+                const usedBefore = usageBeforeMonth.get(lt.id) ?? 0;
+                const usedThis = usageThisMonth.get(lt.id) ?? 0;
+                const opening = Math.max(0, yearEntitlement - usedBefore);
+                const closing = Math.max(0, opening - usedThis);
+                return {
+                  name: lt.name,
+                  opening,
+                  credit: 0,
+                  used: usedThis,
+                  balance: closing,
+                };
+              }),
+      onduty: ondutyRows,
+      permission: permissionRows,
+      present: presentRows,
+      late: { count: lateCount, hours: toHHMM(lateMinutes) },
+      earlyGoing: { count: earlyGoingCount, hours: toHHMM(earlyGoingMinutes) },
+    };
   }
 }
 

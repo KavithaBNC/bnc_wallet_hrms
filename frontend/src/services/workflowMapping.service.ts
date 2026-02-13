@@ -16,8 +16,11 @@ export interface WorkflowMapping {
   organizationId: string;
   displayName: string;
   associate: string | null;
+  associateIds?: string[] | null;
   paygroupId: string | null;
+  paygroupIds?: string[] | null;
   departmentId: string | null;
+  departmentIds?: string[] | null;
   priority: number | null;
   remarks: string | null;
   entryRightsTemplate: string | null;
@@ -51,8 +54,11 @@ export interface CreateWorkflowMappingInput {
   organizationId: string;
   displayName: string;
   associate?: string;
+  associateIds?: string[] | null;
   paygroupId?: string;
+  paygroupIds?: string[] | null;
   departmentId?: string;
+  departmentIds?: string[] | null;
   priority?: number;
   remarks?: string;
   entryRightsTemplate?: string;

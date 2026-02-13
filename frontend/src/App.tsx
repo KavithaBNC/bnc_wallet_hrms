@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import DashboardLayout from './components/layout/DashboardLayout';
 import { useAuthStore } from './store/authStore';
@@ -28,6 +28,7 @@ import AutoCreditSettingFormPage from './pages/AutoCreditSettingFormPage';
 import ApprovalWorkflowPage from './pages/ApprovalWorkflowPage';
 import ApprovalWorkflowFormPage from './pages/ApprovalWorkflowFormPage';
 import AttendancePage from './pages/AttendancePage';
+import ApplyEventPage from './pages/ApplyEventPage';
 import FaceAttendancePage from './pages/FaceAttendancePage';
 import AttendancePolicyPage from './pages/AttendancePolicyPage';
 import LateAndOthersPage from './pages/LateAndOthersPage';
@@ -40,7 +41,6 @@ import ExcessTimeConversionPage from './pages/ExcessTimeConversionPage';
 import ExcessTimeConversionFormPage from './pages/ExcessTimeConversionFormPage';
 import OTUsageRulePage from './pages/OTUsageRulePage';
 import OTUsageRuleFormPage from './pages/OTUsageRuleFormPage';
-import LeavePage from './pages/LeavePage';
 import TimeAttendancePage from './pages/TimeAttendancePage';
 import ShiftMasterPage from './pages/ShiftMasterPage';
 import ShiftMasterFormPage from './pages/ShiftMasterFormPage';
@@ -388,6 +388,16 @@ function App() {
             }
           />
           <Route
+            path="/attendance/apply-event"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ApplyEventPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/attendance/face"
             element={
               <ProtectedRoute>
@@ -557,16 +567,8 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/leave"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <LeavePage />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/leave" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/leave/apply" element={<Navigate to="/dashboard" replace />} />
           <Route
             path="/time-attendance"
             element={

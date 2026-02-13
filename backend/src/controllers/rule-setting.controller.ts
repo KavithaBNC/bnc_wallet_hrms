@@ -12,9 +12,11 @@ export class RuleSettingController {
       }
       const ruleSetting = await ruleSettingService.create({
         organizationId,
+        eventId: req.body.eventId,
         eventType: req.body.eventType,
         displayName: req.body.displayName,
         associate: req.body.associate,
+        associateIds: req.body.associateIds,
         paygroupId: req.body.paygroupId,
         departmentId: req.body.departmentId,
         priority: req.body.priority,
@@ -41,10 +43,12 @@ export class RuleSettingController {
       const page = req.query.page ? Number(req.query.page) : undefined;
       const limit = req.query.limit ? Number(req.query.limit) : undefined;
       const search = req.query.search ? String(req.query.search) : undefined;
+      const eventId = req.query.eventId ? String(req.query.eventId) : undefined;
       const eventType = req.query.eventType ? String(req.query.eventType) : undefined;
 
       const result = await ruleSettingService.getAll({
         organizationId,
+        eventId,
         eventType,
         page: page?.toString(),
         limit: limit?.toString(),
@@ -78,9 +82,11 @@ export class RuleSettingController {
   async update(req: Request, res: Response) {
     try {
       const ruleSetting = await ruleSettingService.update(req.params.id, {
+        eventId: req.body.eventId,
         eventType: req.body.eventType,
         displayName: req.body.displayName,
         associate: req.body.associate,
+        associateIds: req.body.associateIds,
         paygroupId: req.body.paygroupId,
         departmentId: req.body.departmentId,
         priority: req.body.priority,

@@ -6,8 +6,11 @@ export interface AutoCreditSetting {
   eventType: string;
   displayName: string;
   associate: string | null;
+  associateIds?: string[] | null;
   paygroupId: string | null;
+  paygroupIds?: string[] | null;
   departmentId: string | null;
+  departmentIds?: string[] | null;
   condition: string | null;
   effectiveDate: string;
   effectiveTo?: string | null;
