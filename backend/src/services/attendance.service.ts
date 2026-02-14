@@ -2290,20 +2290,26 @@ export class AttendanceService {
       opts?: { yearEntitlementOverride?: number | null }
     ) => {
       const leaveTypeId = bal.leaveTypeId;
-      const entitlementFromLeaveType = bal.leaveType.defaultDaysPerYear
-        ? Number(bal.leaveType.defaultDaysPerYear)
-        : null;
+      const entitlementFromBalance =
+        Number(bal.openingBalance) > 0
+          ? Number(bal.openingBalance) + Number(bal.carriedForward)
+          : Number(bal.available) + Number(bal.used) > 0
+            ? Number(bal.available) + Number(bal.used)
+            : null;
       const entitlementFromAutoCredit =
         opts?.yearEntitlementOverride ??
         entitlementFromAutoCreditByLeaveTypeId.get(leaveTypeId) ??
         null;
+      const entitlementFromLeaveType = bal.leaveType.defaultDaysPerYear
+        ? Number(bal.leaveType.defaultDaysPerYear)
+        : null;
 
+      // Priority: (a) employee_leave_balance, (b) Auto Credit, (c) Leave Type defaultDaysPerYear
       const yearEntitlement =
-        entitlementFromLeaveType ??
+        entitlementFromBalance ??
         entitlementFromAutoCredit ??
-        (Number(bal.openingBalance) > 0
-          ? Number(bal.openingBalance) + Number(bal.carriedForward)
-          : Number(bal.available) + Number(bal.used));
+        entitlementFromLeaveType ??
+        0;
 
       const usedBefore = usageBeforeMonth.get(leaveTypeId) ?? 0;
       const usedThis = usageThisMonth.get(leaveTypeId) ?? 0;
@@ -2317,6 +2323,7 @@ export class AttendanceService {
         credit: 0,
         used: usedThis,
         balance: closing,
+        entitlementConfigured: entitlementFromBalance != null || entitlementFromAutoCredit != null || entitlementFromLeaveType != null,
       };
     };
 
@@ -2344,10 +2351,12 @@ export class AttendanceService {
         ) ?? null;
 
       if (leaveType) {
-        const yearEntitlement =
-          (leaveType.defaultDaysPerYear ? Number(leaveType.defaultDaysPerYear) : null) ??
-          entitlementFromAutoCreditByLeaveTypeId.get(leaveType.id) ??
-          0;
+        // Priority: (b) Auto Credit, (c) Leave Type defaultDaysPerYear – no balance when bal not found
+        const entitlementFromAutoCredit = entitlementFromAutoCreditByLeaveTypeId.get(leaveType.id) ?? null;
+        const entitlementFromLeaveType = leaveType.defaultDaysPerYear ? Number(leaveType.defaultDaysPerYear) : null;
+        const yearEntitlement = entitlementFromAutoCredit ?? entitlementFromLeaveType ?? 0;
+        const entitlementConfigured = entitlementFromAutoCredit != null || entitlementFromLeaveType != null;
+
         const usedBefore = usageBeforeMonth.get(leaveType.id) ?? 0;
         const usedThis = usageThisMonth.get(leaveType.id) ?? 0;
         const opening = Math.max(0, yearEntitlement - usedBefore);
@@ -2358,6 +2367,7 @@ export class AttendanceService {
           credit: 0,
           used: usedThis,
           balance: closing,
+          entitlementConfigured,
         };
       }
 
@@ -2371,6 +2381,7 @@ export class AttendanceService {
           credit: 0,
           used: 0,
           balance: directEntitlement,
+          entitlementConfigured: true,
         };
       }
 
@@ -2380,6 +2391,7 @@ export class AttendanceService {
         credit: 0,
         used: 0,
         balance: 0,
+        entitlementConfigured: false,
       };
     });
 
@@ -2397,7 +2409,7 @@ export class AttendanceService {
 
     // Build final leave rows: start with component-based rows, then append any
     // EmployeeLeaveBalance entries that aren't already matched (e.g. "Comp Off")
-    let finalLeaveRows: typeof leaveRows;
+    let finalLeaveRows: Array<{ name: string; opening: number; credit: number; used: number; balance: number; entitlementConfigured?: boolean }>;
     if (leaveRows.length > 0) {
       // Collect names already present (lowered) to avoid duplicates
       const coveredNames = new Set(leaveRows.map((r) => r.name?.toLowerCase().trim()));
@@ -2409,10 +2421,11 @@ export class AttendanceService {
       finalLeaveRows = leaveBalances.map((b) => computeMonthlyLeaveRow(b));
     } else {
       finalLeaveRows = leaveTypes.map((lt) => {
-        const yearEntitlement =
-          (lt.defaultDaysPerYear ? Number(lt.defaultDaysPerYear) : null) ??
-          entitlementFromAutoCreditByLeaveTypeId.get(lt.id) ??
-          0;
+        const entitlementFromAutoCredit = entitlementFromAutoCreditByLeaveTypeId.get(lt.id) ?? null;
+        const entitlementFromLeaveType = lt.defaultDaysPerYear ? Number(lt.defaultDaysPerYear) : null;
+        const yearEntitlement = entitlementFromAutoCredit ?? entitlementFromLeaveType ?? 0;
+        const entitlementConfigured = entitlementFromAutoCredit != null || entitlementFromLeaveType != null;
+
         const usedBefore = usageBeforeMonth.get(lt.id) ?? 0;
         const usedThis = usageThisMonth.get(lt.id) ?? 0;
         const opening = Math.max(0, yearEntitlement - usedBefore);
@@ -2423,13 +2436,19 @@ export class AttendanceService {
           credit: 0,
           used: usedThis,
           balance: closing,
+          entitlementConfigured,
         };
       });
     }
 
+    const entitlementWarnings = (finalLeaveRows as Array<{ name: string; entitlementConfigured?: boolean }>)
+      .filter((r) => r.entitlementConfigured === false)
+      .map((r) => r.name);
+
     return {
       shortFall,
       leave: finalLeaveRows,
+      entitlementWarnings: entitlementWarnings.length > 0 ? entitlementWarnings : undefined,
       onduty: ondutyRows,
       permission: permissionRows,
       present: presentRows,
