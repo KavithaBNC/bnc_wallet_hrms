@@ -21,6 +21,7 @@ import {
   canPerformAttendanceEventAction,
   resolveRightsAllocationForEmployee,
 } from '../utils/rights-allocation';
+import { readEntitlementDaysForEmployeeYear } from '../utils/auto-credit-entitlement';
 
 export class AttendanceService {
   private static readonly DEFAULT_TIMEZONE = 'Asia/Kolkata';
@@ -2092,7 +2093,7 @@ export class AttendanceService {
       await Promise.all([
         prisma.employee.findUnique({
           where: { id: employeeId },
-          select: { id: true, employeeCode: true, paygroupId: true, departmentId: true },
+          select: { id: true, employeeCode: true, paygroupId: true, departmentId: true, dateOfJoining: true },
         }),
       prisma.attendanceComponent.findMany({
         where: { organizationId },
@@ -2119,7 +2120,7 @@ export class AttendanceService {
             priority: true,
             autoCreditRule: true,
           },
-          orderBy: { priority: 'asc' },
+          orderBy: [{ priority: 'asc' }, { effectiveDate: 'desc' }, { createdAt: 'desc' }],
         }),
       prisma.employeeLeaveBalance.findMany({
         where: { employeeId, year },
@@ -2227,18 +2228,6 @@ export class AttendanceService {
       return true;
     };
 
-    const readEntitlementDays = (rule: unknown): number | null => {
-      if (!rule || typeof rule !== 'object') return null;
-      const r = rule as Record<string, unknown>;
-      const keys = ['entitlementDays', 'EntitlementDays', 'entitlement_days', 'entitlementdays'];
-      for (const k of keys) {
-        const v = r[k];
-        const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
-        if (Number.isFinite(n) && n >= 0) return n;
-      }
-      return null;
-    };
-
     const nameToEntitlementStrict = new Map<string, number>();
     const codeToEntitlementStrict = new Map<string, number>();
     const entitlementByEventNameOrCodeStrict = new Map<string, number>();
@@ -2246,23 +2235,35 @@ export class AttendanceService {
     const normalizeEntitlementKey = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
 
     for (const s of autoCreditSettings) {
-      const n = readEntitlementDays(s.autoCreditRule);
+      const n = readEntitlementDaysForEmployeeYear(
+        s.autoCreditRule,
+        employee.dateOfJoining,
+        year
+      );
       if (n == null) continue;
       const applicable = isAutoCreditApplicableToEmployee(s);
       if (!applicable) continue;
       if (s.eventType) {
         const key = s.eventType.toLowerCase().trim();
-        nameToEntitlementStrict.set(key, n);
-        entitlementByEventNameOrCodeStrict.set(key, n);
+        if (!nameToEntitlementStrict.has(key)) nameToEntitlementStrict.set(key, n);
+        if (!entitlementByEventNameOrCodeStrict.has(key)) {
+          entitlementByEventNameOrCodeStrict.set(key, n);
+        }
         const normalized = normalizeEntitlementKey(key);
-        if (normalized) entitlementByNormalizedKey.set(normalized, n);
+        if (normalized && !entitlementByNormalizedKey.has(normalized)) {
+          entitlementByNormalizedKey.set(normalized, n);
+        }
       }
       if (s.displayName) {
         const key = s.displayName.trim().toUpperCase();
-        codeToEntitlementStrict.set(key, n);
-        entitlementByEventNameOrCodeStrict.set(key, n);
+        if (!codeToEntitlementStrict.has(key)) codeToEntitlementStrict.set(key, n);
+        if (!entitlementByEventNameOrCodeStrict.has(key)) {
+          entitlementByEventNameOrCodeStrict.set(key, n);
+        }
         const normalized = normalizeEntitlementKey(key);
-        if (normalized) entitlementByNormalizedKey.set(normalized, n);
+        if (normalized && !entitlementByNormalizedKey.has(normalized)) {
+          entitlementByNormalizedKey.set(normalized, n);
+        }
       }
     }
 
@@ -2447,8 +2448,21 @@ export class AttendanceService {
       byCategory.get(cat)!.push(c);
     }
 
-    const normalizeKey = (value: string | null | undefined) =>
-      (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalizeKey = (value: string | null | undefined) => {
+      const raw = (value || '').toLowerCase().trim();
+      // Tolerate common admin spelling variants so component-to-leave mapping still works.
+      const typoNormalized = raw.replace(/marraige/g, 'marriage');
+      return typoNormalized.replace(/[^a-z0-9]/g, '');
+    };
+
+    const isCarryForwardEligibleLeaveType = (leaveType: {
+      name?: string | null;
+      code?: string | null;
+    }): boolean => {
+      const code = (leaveType.code || '').trim().toUpperCase();
+      const nameKey = normalizeKey(leaveType.name);
+      return code === 'EL' || code === 'SL' || nameKey === 'earnedleave' || nameKey === 'sickleave';
+    };
 
     const componentMatchesLeaveType = (
       comp: { eventName?: string | null; shortName?: string | null },
@@ -2489,62 +2503,22 @@ export class AttendanceService {
       bal: (typeof leaveBalances)[0],
       opts?: { yearEntitlementOverride?: number | null; source?: LeaveRowSource }
     ) => {
-      const leaveTypeId = bal.leaveTypeId;
-      const carryForward =
-        Number(bal.carriedForward ?? 0) > 0
-          ? Number(bal.carriedForward ?? 0)
-          : Number(previousYearBalanceByLeaveTypeId.get(leaveTypeId) ?? 0);
-      const entitlementFromBalance =
-        Number(bal.openingBalance) > 0
-          ? Number(bal.openingBalance) + Number(bal.carriedForward)
-          : Number(bal.available) + Number(bal.used) > 0
-            ? Number(bal.available) + Number(bal.used)
-            : null;
-      const entitlementFromAutoCredit =
-        opts?.yearEntitlementOverride ??
-        entitlementFromAutoCreditByLeaveTypeId.get(leaveTypeId) ??
-        null;
-      const entitlementFromLeaveType = bal.leaveType.defaultDaysPerYear
-        ? Number(bal.leaveType.defaultDaysPerYear)
-        : null;
-
-      // Priority for sidebar view: prefer employee leave balance values first,
-      // then fall back to configured entitlement (Auto Credit / Leave Type default).
-      // This keeps monthly panel aligned with current employee ledger.
-      const yearEntitlement =
-        entitlementFromBalance ??
-        entitlementFromAutoCredit ??
-        entitlementFromLeaveType ??
-        0;
-
-      const usedThis = usageThisMonth.get(leaveTypeId) ?? 0;
-
-      const opening = Math.max(
-        0,
-        Number(bal.openingBalance ?? 0) > 0
-          ? Number(bal.openingBalance ?? 0)
-          : yearEntitlement
-      );
-      const fallbackCarryFromAutoCredit =
-        Number(bal.openingBalance ?? 0) > 0 &&
-        (entitlementFromAutoCredit ?? 0) > 0 &&
-        Number(entitlementFromAutoCredit ?? 0) < opening
-          ? Number(entitlementFromAutoCredit ?? 0)
-          : 0;
-      const credit = Math.max(
-        0,
-        carryForward > 0 ? carryForward : fallbackCarryFromAutoCredit
-      );
-      const closing = Math.max(0, opening + credit - usedThis);
+      void opts;
+      const opening = Math.max(0, Number(bal.openingBalance ?? 0));
+      const credit = isCarryForwardEligibleLeaveType(bal.leaveType)
+        ? Math.max(0, Number(bal.carriedForward ?? 0))
+        : 0;
+      const used = Math.max(0, Number(bal.used ?? 0));
+      const balance = Math.max(0, Number(bal.available ?? 0));
 
       return {
         name: bal.leaveType.name,
         opening,
         credit,
-        used: usedThis,
-        balance: closing,
-        source: opts?.source ?? 'default_leave_module',
-        entitlementConfigured: entitlementFromBalance != null || entitlementFromAutoCredit != null || entitlementFromLeaveType != null,
+        used,
+        balance,
+        source: 'default_leave_module',
+        entitlementConfigured: true,
       };
     };
 
@@ -2568,13 +2542,31 @@ export class AttendanceService {
     };
 
     const computeMappedRowForComponent = (comp: (typeof components)[0]) => {
-      const bal = leaveBalances.find(
-        (b) =>
-          componentMatchesLeaveType(
-            { eventName: comp.eventName, shortName: comp.shortName },
-            { name: b.leaveType.name, code: b.leaveType.code }
+      const matchedLeaveTypeForBalance =
+        leaveTypes.find(
+          (lt) =>
+            componentMatchesLeaveType(
+              { eventName: comp.eventName, shortName: comp.shortName },
+              { name: lt.name, code: lt.code }
+            )
+        ) ?? null;
+
+      const bal = matchedLeaveTypeForBalance
+        ? leaveBalances.find((b) => b.leaveTypeId === matchedLeaveTypeForBalance.id) ??
+          leaveBalances.find(
+            (b) =>
+              componentMatchesLeaveType(
+                { eventName: comp.eventName, shortName: comp.shortName },
+                { name: b.leaveType.name, code: b.leaveType.code }
+              )
           )
-      );
+        : leaveBalances.find(
+            (b) =>
+              componentMatchesLeaveType(
+                { eventName: comp.eventName, shortName: comp.shortName },
+                { name: b.leaveType.name, code: b.leaveType.code }
+              )
+          );
 
       if (bal) {
         const base = computeMonthlyLeaveRow(bal, { source: 'attendance_component' });
@@ -2585,84 +2577,6 @@ export class AttendanceService {
         };
       }
 
-      // If balance doesn't exist, try deriving entitlement from auto-credit + leave type mapping.
-      const leaveType =
-        leaveTypes.find(
-          (lt) =>
-            componentMatchesLeaveType(
-              { eventName: comp.eventName, shortName: comp.shortName },
-              { name: lt.name, code: lt.code }
-            )
-        ) ?? null;
-
-      if (leaveType) {
-        // Priority: (b) Auto Credit, (c) Leave Type defaultDaysPerYear – no balance when bal not found
-        const entitlementFromAutoCredit = entitlementFromAutoCreditByLeaveTypeId.get(leaveType.id) ?? null;
-        const entitlementFromLeaveType = leaveType.defaultDaysPerYear ? Number(leaveType.defaultDaysPerYear) : null;
-        const yearEntitlement = entitlementFromAutoCredit ?? entitlementFromLeaveType ?? 0;
-        const entitlementConfigured = !comp.hasBalance || entitlementFromAutoCredit != null || entitlementFromLeaveType != null;
-
-        const usedThis = usageThisMonth.get(leaveType.id) ?? 0;
-        const carryFromPrev = Math.max(0, Number(previousYearBalanceByLeaveTypeId.get(leaveType.id) ?? 0));
-        const opening = Math.max(0, yearEntitlement);
-        const credit = carryFromPrev;
-        const closing = Math.max(0, opening + credit - usedThis);
-        return {
-          name: comp.eventName || comp.shortName,
-          opening,
-          credit,
-          used: usedThis,
-          balance: closing,
-          source: 'attendance_component' as const,
-          entitlementConfigured,
-        };
-      }
-
-      const directEntitlement =
-        entitlementByEventNameOrCodeStrict.get((comp.eventName || '').toLowerCase().trim()) ??
-        (comp.shortName ? entitlementByEventNameOrCodeStrict.get(comp.shortName.trim().toUpperCase()) : undefined) ??
-        entitlementByNormalizedKey.get(normalizeEntitlementKey(comp.eventName || '')) ??
-        entitlementByNormalizedKey.get(normalizeEntitlementKey(comp.shortName || ''));
-      if (directEntitlement != null && directEntitlement > 0) {
-        const matchedPreviousYearBalance =
-          previousYearLeaveBalances.find((pb) =>
-            componentMatchesLeaveType(
-              { eventName: comp.eventName, shortName: comp.shortName },
-              { name: pb.leaveType.name, code: pb.leaveType.code }
-            )
-          ) ?? null;
-        const matchedLeaveTypeId = matchedPreviousYearBalance?.leaveTypeId ?? null;
-        const previousCarry = matchedPreviousYearBalance
-          ? Math.max(0, Number(matchedPreviousYearBalance.available ?? 0))
-          : 0;
-        const usedThis = matchedLeaveTypeId ? usageThisMonth.get(matchedLeaveTypeId) ?? 0 : 0;
-        const opening = Math.max(0, Number(directEntitlement));
-        const credit = previousCarry;
-        const balance = Math.max(0, opening + credit - usedThis);
-        return {
-          name: comp.eventName || comp.shortName,
-          opening,
-          credit,
-          used: usedThis,
-          balance,
-          source: 'attendance_component' as const,
-          entitlementConfigured: true,
-        };
-      }
-
-      // Events like LOP (Has balance = NO) should not require entitlement configuration.
-      if (!comp.hasBalance) {
-        return {
-          name: comp.eventName || comp.shortName,
-          opening: 0,
-          credit: 0,
-          used: 0,
-          balance: 0,
-          source: 'attendance_component' as const,
-          entitlementConfigured: true,
-        };
-      }
-
       return {
         name: comp.eventName || comp.shortName,
         opening: 0,
@@ -2670,11 +2584,27 @@ export class AttendanceService {
         used: 0,
         balance: 0,
         source: 'attendance_component' as const,
-        entitlementConfigured: false,
+        entitlementConfigured: true,
       };
     };
 
-    const leaveRows = (byCategory.get('Leave') || []).map((comp) => computeMappedRowForComponent(comp));
+    const leaveComponents = components.filter(
+      (c) => String(c.eventCategory || '').trim().toLowerCase() === 'leave'
+    );
+    const ondutyComponents = components.filter(
+      (c) => String(c.eventCategory || '').trim().toLowerCase() === 'onduty'
+    );
+    const permissionComponents = components.filter(
+      (c) => String(c.eventCategory || '').trim().toLowerCase() === 'permission'
+    );
+    const presentComponents = components.filter(
+      (c) => String(c.eventCategory || '').trim().toLowerCase() === 'present'
+    );
+
+    const leaveRows = leaveComponents.flatMap((comp) => {
+      const row = computeMappedRowForComponent(comp);
+      return row ? [row] : [];
+    });
 
     const balanceRow = (comp: (typeof components)[0]) => ({
       name: comp.eventName || comp.shortName,
@@ -2692,7 +2622,7 @@ export class AttendanceService {
     });
     const normalizeNameKey = (value: string | null | undefined) =>
       normalizeKey(value);
-    const ondutyRows = (byCategory.get('Onduty') || byCategory.get('On Duty') || []).map((comp) => {
+    const ondutyRows = ondutyComponents.map((comp) => {
       const matchedLeaveType =
         leaveTypes.find((lt) =>
           componentMatchesLeaveType(
@@ -2734,7 +2664,7 @@ export class AttendanceService {
       return isPermissionRequest(lr as { leaveTypeId: string; reason: string; status: string });
     });
 
-    const permissionRows = (byCategory.get('Permission') || []).map((comp) => {
+    const permissionRows = permissionComponents.map((comp) => {
       const usedCountThisMonth = permissionRequestsInMonth.length;
       const matchingRule = ruleSettings.find(
         (r) =>
@@ -2758,6 +2688,15 @@ export class AttendanceService {
         };
       }
       const row = computeMappedRowForComponent(comp);
+      if (!row) {
+        return {
+          name: comp.eventName || comp.shortName,
+          opening: 0,
+          credit: 0,
+          used: 0,
+          balance: 0,
+        };
+      }
       return {
         name: row.name,
         opening: row.opening,
@@ -2766,10 +2705,9 @@ export class AttendanceService {
         balance: row.balance,
       };
     });
-    const presentRows = (byCategory.get('Present') || []).map(balanceRow);
+    const presentRows = presentComponents.map(balanceRow);
 
-    // Build final leave rows: start with component-based rows, then append any
-    // EmployeeLeaveBalance entries that aren't already matched (e.g. "Comp Off")
+    // Leave card should be fully driven by Attendance Components mapping.
     let finalLeaveRows: Array<{
       name: string;
       opening: number;
@@ -2779,37 +2717,7 @@ export class AttendanceService {
       source?: LeaveRowSource;
       entitlementConfigured?: boolean;
     }>;
-    if (leaveRows.length > 0) {
-      // Collect names already present (lowered) to avoid duplicates
-      const coveredNames = new Set(leaveRows.map((r) => r.name?.toLowerCase().trim()));
-      const extraRows = leaveBalances
-        .filter((b) => !coveredNames.has(b.leaveType.name.toLowerCase().trim()))
-        .map((b) => computeMonthlyLeaveRow(b));
-      finalLeaveRows = [...leaveRows, ...extraRows];
-    } else if (leaveBalances.length > 0) {
-      finalLeaveRows = leaveBalances.map((b) => computeMonthlyLeaveRow(b));
-    } else {
-      finalLeaveRows = leaveTypes.map((lt) => {
-        const entitlementFromAutoCredit = entitlementFromAutoCreditByLeaveTypeId.get(lt.id) ?? null;
-        const entitlementFromLeaveType = lt.defaultDaysPerYear ? Number(lt.defaultDaysPerYear) : null;
-        const yearEntitlement = entitlementFromAutoCredit ?? entitlementFromLeaveType ?? 0;
-        const entitlementConfigured = entitlementFromAutoCredit != null || entitlementFromLeaveType != null;
-
-        const usedThis = usageThisMonth.get(lt.id) ?? 0;
-        const carryFromPrev = Math.max(0, Number(previousYearBalanceByLeaveTypeId.get(lt.id) ?? 0));
-        const opening = Math.max(0, yearEntitlement);
-        const credit = carryFromPrev;
-        const closing = Math.max(0, opening + credit - usedThis);
-        return {
-          name: lt.name,
-          opening,
-          credit,
-          used: usedThis,
-          balance: closing,
-          entitlementConfigured,
-        };
-      });
-    }
+    finalLeaveRows = leaveRows;
 
     if (rightsAllocation) {
       finalLeaveRows = finalLeaveRows.filter((row) =>

@@ -73,6 +73,7 @@ import EsopListPage from './pages/EsopListPage';
 import EsopPage from './pages/EsopPage';
 import LeaveApprovalPage from './pages/LeaveApprovalPage';
 import EventRequestPage from './pages/EventRequestPage';
+import EventBalanceEntryPage from './pages/EventBalanceEntryPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 function App() {
@@ -607,6 +608,16 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <EventRequestPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/event/balance-entry"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <EventBalanceEntryPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }

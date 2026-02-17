@@ -874,6 +874,8 @@ model EmployeeLeaveBalance {
   employeeId     String    @map("employee_id") @db.Uuid
   leaveTypeId    String    @map("leave_type_id") @db.Uuid
   year           Int
+  fromDate       DateTime? @map("from_date") @db.Date
+  toDate         DateTime? @map("to_date") @db.Date
   openingBalance Decimal   @default(0) @map("opening_balance") @db.Decimal(5, 2)
   accrued        Decimal   @default(0) @db.Decimal(5, 2)
   used           Decimal   @default(0) @db.Decimal(5, 2)

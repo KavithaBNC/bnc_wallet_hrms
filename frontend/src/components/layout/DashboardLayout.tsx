@@ -126,6 +126,11 @@ const ICONS_BY_PATH: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ),
+  '/event/balance-entry': (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V7a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v12a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+  ),
   '/time-attendance': (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -328,6 +333,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         const isEventApply = mod.path === '/attendance/apply-event';
         const isEventRequest = mod.path === '/event/requests';
         const isEventApproval = mod.path === '/leave/approvals';
+        const isEventBalanceEntry = mod.path === '/event/balance-entry';
         const isExcessTimeRequest = mod.path === '/attendance/my-requests/excess-time-request';
         const isExcessTimeApproval = mod.path === '/attendance/excess-time-approval';
         const showTimeAttendance =
@@ -337,6 +343,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         const showEventApply = isEventApply && canAccessEventByRole;
         const showEventRequest = isEventRequest && canAccessEventByRole;
         const showEventApproval = isEventApproval && canAccessEventApprovalByRole;
+        const showEventBalanceEntry = isEventBalanceEntry && isHr;
         const showExcessTimeRequest = isExcessTimeRequest && canAccessEventByRole;
         const showExcessTimeApproval = isExcessTimeApproval && canAccessEventApprovalByRole;
         if (
@@ -346,6 +353,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           showEventApply ||
           showEventRequest ||
           showEventApproval ||
+          showEventBalanceEntry ||
           showExcessTimeRequest ||
           showExcessTimeApproval
         ) {
@@ -354,7 +362,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     }
     return items;
-  }, [isSuperAdmin, hasView, isHrOrOrgAdmin, hasAnyReadPermission, canAccessEventByRole, canAccessEventApprovalByRole]);
+  }, [isSuperAdmin, hasView, isHrOrOrgAdmin, hasAnyReadPermission, canAccessEventByRole, canAccessEventApprovalByRole, isHr]);
 
   // Payroll Master dropdown: open when current path is under its children (e.g. /payroll/employee-separation)
   const payrollMasterDropdownOpen = location.pathname.startsWith('/payroll/');
@@ -439,12 +447,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const isEventApplyPath = currentModule?.path === '/attendance/apply-event';
   const isEventRequestPath = currentModule?.path === '/event/requests';
   const isEventApprovalPath = currentModule?.path === '/leave/approvals';
+  const isEventBalanceEntryPath = currentModule?.path === '/event/balance-entry';
   const isExcessTimeRequestPath = currentModule?.path === '/attendance/my-requests/excess-time-request';
   const isExcessTimeApprovalPath = currentModule?.path === '/attendance/excess-time-approval';
   const hasLeaveAccess = canAccessEventByRole;
   const hasEventApplyAccess = canAccessEventByRole;
   const hasEventRequestAccess = canAccessEventByRole;
   const hasEventApprovalAccess = canAccessEventApprovalByRole;
+  const hasEventBalanceEntryAccess = isHr;
   const hasExcessTimeRequestAccess = canAccessEventByRole;
   const hasExcessTimeApprovalAccess = canAccessEventApprovalByRole;
   const allowed = isDashboardOrProfile
@@ -463,6 +473,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 ? hasEventRequestAccess
               : isEventApprovalPath
                 ? hasEventApprovalAccess
+                : isEventBalanceEntryPath
+                  ? hasEventBalanceEntryAccess
                 : isExcessTimeRequestPath
                   ? hasExcessTimeRequestAccess
                   : isExcessTimeApprovalPath

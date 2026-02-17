@@ -48,6 +48,7 @@ export const APP_MODULES: AppModule[] = [
   { path: '/attendance/apply-event', label: 'Event Apply', resource: 'leaves', visibility: 'all', parentPath: '/leave' },
   { path: '/event/requests', label: 'Event Request', resource: 'leaves', visibility: 'all', parentPath: '/leave' },
   { path: '/leave/approvals', label: 'Event Approval', resource: 'leaves', visibility: 'all', parentPath: '/leave' },
+  { path: '/event/balance-entry', label: 'Event Balance Entry', resource: 'leaves', visibility: 'all', parentPath: '/leave' },
   { path: '/time-attendance', label: 'Time attendance', resource: 'time_attendance', visibility: 'all' },
   { path: '/time-attendance/shift-master', label: 'Shift Master', resource: 'shifts', visibility: 'all', parentPath: '/time-attendance' },
   { path: '/time-attendance/shift-assign', label: 'Shift Assign', resource: 'shifts', visibility: 'all', parentPath: '/time-attendance' },
