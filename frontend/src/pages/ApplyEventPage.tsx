@@ -178,7 +178,6 @@ export default function ApplyEventPage() {
   const [fromTime, setFromTime] = useState('');
   const [toTime, setToTime] = useState('');
   const [reason, setReason] = useState('');
-  const [selectedLeaveTypeId, setSelectedLeaveTypeId] = useState('');
   const [ondutyHourlyEnabled, setOndutyHourlyEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -366,15 +365,6 @@ export default function ApplyEventPage() {
   }, [selectedComponentId, eventComponents]);
 
   useEffect(() => {
-    setSelectedLeaveTypeId('');
-  }, [selectedComponentId]);
-
-  useEffect(() => {
-    if (!typeSelected || isPermissionType || isOndutyType || selectedLeaveTypeId || leaveTypes.length === 0) return;
-    setSelectedLeaveTypeId(leaveTypes[0].id);
-  }, [typeSelected, isPermissionType, isOndutyType, selectedComponent, selectedLeaveTypeId, leaveTypes]);
-
-  useEffect(() => {
     if (!isOndutyType) {
       setOndutyHourlyEnabled(false);
       return;
@@ -466,7 +456,7 @@ export default function ApplyEventPage() {
       : isOndutyType
         // Strict: Onduty must map only to Onduty/WFH leave type; never generic fallback like Comp Off.
         ? fromMapping || fromNameMatch || mappedOndutyFallback || ondutyFallback || leaveTypes[0]?.id
-        : fromMapping || fromNameMatch || (selectedLeaveTypeId || undefined) || leaveTypes[0]?.id;
+        : fromMapping || fromNameMatch;
 
     if (!leaveTypeIdForSubmit) {
       setError(
@@ -474,7 +464,7 @@ export default function ApplyEventPage() {
           ? 'Permission event is not mapped to a Leave Type. Please configure Event Mapping for Permission.'
           : isOndutyType
             ? 'On Duty type is not linked to an On Duty leave type. Map it in Event Configuration.'
-            : 'This event type is not linked to any leave type. Select Leave Type below or map it in Event Configuration.'
+            : 'This event type is not linked to any leave type. Map it in Event Configuration.'
       );
       return;
     }
@@ -643,33 +633,9 @@ export default function ApplyEventPage() {
             </div>
           </div>
 
-          {/* From Date, To Date, Reason, Leave Type – only after Type is selected */}
+          {/* From Date, To Date, Reason – only after Type is selected */}
           {typeSelected && (
             <>
-              {!isPermissionType && !isOndutyType && leaveTypes.length > 0 && (
-                <div className="mb-6">
-                  <label htmlFor="leaveTypeFallback" className="block text-sm font-medium text-gray-700 mb-1">
-                    Leave Type (Fallback)
-                  </label>
-                  <select
-                    id="leaveTypeFallback"
-                    value={selectedLeaveTypeId}
-                    onChange={(e) => setSelectedLeaveTypeId(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white py-2 px-3 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  >
-                    <option value="">Auto resolve</option>
-                    {leaveTypes.map((lt) => (
-                      <option key={lt.id} value={lt.id}>
-                        {lt.name} {lt.code ? `(${lt.code})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Use this only when auto mapping is unavailable.
-                  </p>
-                </div>
-              )}
-
               {isOndutyType && !isPermissionType && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
