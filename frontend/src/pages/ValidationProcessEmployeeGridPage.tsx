@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import AppHeader from '../components/layout/AppHeader';
 import { useAuthStore } from '../store/authStore';
-import attendanceComponentService from '../services/attendanceComponent.service';
+import validationProcessRuleService from '../services/validationProcessRule.service';
 import { attendanceService, type ValidationProcessEmployeeRow } from '../services/attendance.service';
 
 function getValidationTitle(type?: string | null): string {
@@ -22,6 +22,22 @@ function getValidationTitle(type?: string | null): string {
   return `Employee Grid (${label})`;
 }
 
+/** Map grid type (from URL) to validation rule grouping (e.g. late -> Late, earlyGoing -> Early Going) */
+function typeToValidationGrouping(type?: string | null): string | undefined {
+  const map: Record<string, string> = {
+    late: 'Late',
+    earlyGoing: 'Early Going',
+    shortfall: 'Shortfall',
+    absent: 'Absent',
+    approvalPending: 'Approval Pending',
+    noOutPunch: 'No Out Punch',
+    overtime: 'OverTime',
+    shiftChange: 'Shift Change',
+    completed: 'Completed',
+  };
+  return type ? (map[type] ?? type) : undefined;
+}
+
 export default function ValidationProcessEmployeeGridPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
@@ -32,6 +48,8 @@ export default function ValidationProcessEmployeeGridPage() {
   const type = searchParams.get('type') || '';
   const fromDate = searchParams.get('fromDate') || date;
   const toDate = searchParams.get('toDate') || date;
+  const paygroupId = searchParams.get('paygroupId') || undefined;
+  const employeeId = searchParams.get('employeeId') || undefined;
 
   const [rows, setRows] = useState<ValidationProcessEmployeeRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,6 +67,44 @@ export default function ValidationProcessEmployeeGridPage() {
   const [selectedCorrectionId, setSelectedCorrectionId] = useState<string>('AS_PER_RULE');
   const [showCorrectionDropdown, setShowCorrectionDropdown] = useState(false);
   const [correctionSearch, setCorrectionSearch] = useState('');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
+  const [remarks, setRemarks] = useState('');
+  const [gridSearch, setGridSearch] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  /** Row key: employeeId:date for unique identification */
+  const getRowKey = (row: ValidationProcessEmployeeRow) => `${row.employeeId}:${row.date}`;
+
+  const searchLower = gridSearch.trim().toLowerCase();
+  const filteredRows = searchLower
+    ? rows.filter(
+        (r) =>
+          (r.employeeName ?? '').toLowerCase().includes(searchLower) ||
+          (r.employeeCode ?? '').toLowerCase().includes(searchLower)
+      )
+    : rows;
+  const allRowKeys = filteredRows.map(getRowKey);
+  const allSelected = filteredRows.length > 0 && allRowKeys.every((k) => selectedRowKeys.has(k));
+  const someSelected = selectedRowKeys.size > 0;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedRowKeys(new Set());
+    } else {
+      setSelectedRowKeys(new Set(allRowKeys));
+    }
+  };
+
+  const toggleRow = (row: ValidationProcessEmployeeRow) => {
+    const key = getRowKey(row);
+    setSelectedRowKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -86,6 +142,8 @@ export default function ValidationProcessEmployeeGridPage() {
         fromDate: from,
         toDate: to,
         type,
+        paygroupId,
+        employeeId,
       });
       setRows(result.rows ?? []);
     } catch (err) {
@@ -95,7 +153,7 @@ export default function ValidationProcessEmployeeGridPage() {
     } finally {
       setLoading(false);
     }
-  }, [organizationId, type, fromDate, toDate, date]);
+  }, [organizationId, type, fromDate, toDate, date, paygroupId, employeeId]);
 
   useEffect(() => {
     loadEmployeeList();
@@ -106,14 +164,16 @@ export default function ValidationProcessEmployeeGridPage() {
       if (!organizationId) return;
       try {
         setCorrectionLoading(true);
-        const result = await attendanceComponentService.getAll({
+        const effectiveOn = fromDate || toDate || date || undefined;
+        const result = await validationProcessRuleService.getAll({
           organizationId,
           page: 1,
           limit: 100,
+          effectiveOn,
         });
-        const dynamicOptions: CorrectionOption[] = result.components
-          .filter((c) => c.eventName)
-          .map((c) => ({ id: c.id, name: c.eventName }))
+        const dynamicOptions: CorrectionOption[] = (result.rules || [])
+          .filter((r) => r.displayName)
+          .map((r) => ({ id: r.id, name: r.displayName }))
           .sort((a, b) => a.name.localeCompare(b.name));
         setCorrectionOptions((prev) => {
           const base = prev.find((p) => p.id === 'AS_PER_RULE') ?? { id: 'AS_PER_RULE', name: 'As Per Rule' };
@@ -126,7 +186,7 @@ export default function ValidationProcessEmployeeGridPage() {
       }
     };
     loadCorrectionOptions();
-  }, [organizationId]);
+  }, [organizationId, type, fromDate, toDate, date]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-gray-100">
@@ -136,8 +196,8 @@ export default function ValidationProcessEmployeeGridPage() {
         onLogout={handleLogout}
       />
 
-      <main className="flex-1 min-h-0 flex flex-col w-full px-4 sm:px-6 lg:px-8 py-6 bg-gray-50">
-        <div className="flex-1 flex flex-col min-h-0 w-full">
+      <main className="flex-1 overflow-y-auto w-full px-4 sm:px-6 lg:px-8 py-6 bg-gray-50">
+        <div className="w-full">
           {/* Breadcrumbs */}
           <div className="mb-4 flex-shrink-0">
             <nav className="flex items-center text-sm text-gray-600" aria-label="Breadcrumb">
@@ -154,7 +214,7 @@ export default function ValidationProcessEmployeeGridPage() {
           </div>
 
           {/* Card */}
-          <div className="flex-1 flex flex-col min-h-0 bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+          <div className="flex flex-col bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{title}</h2>
@@ -192,7 +252,7 @@ export default function ValidationProcessEmployeeGridPage() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+            <div className="flex flex-col md:flex-row">
               {/* Left panel - Correction form */}
               <div className="w-full md:w-72 border-r border-gray-200 bg-gray-50 p-4 flex-shrink-0">
                 <div className="mb-4">
@@ -251,19 +311,70 @@ export default function ValidationProcessEmployeeGridPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
                   <textarea
                     rows={4}
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-700 bg-white resize-none"
                   />
                 </div>
+                {submitMessage && (
+                  <div
+                    className={`mb-4 p-3 rounded text-sm ${
+                      submitMessage.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'
+                    }`}
+                  >
+                    {submitMessage.text}
+                  </div>
+                )}
                 <button
                   type="button"
-                  className="inline-flex items-center justify-center w-full h-9 px-3 rounded-lg border border-green-600 bg-green-600 text-sm font-medium text-white hover:bg-green-700"
+                  disabled={submitting || !someSelected}
+                  onClick={async () => {
+                    if (!someSelected || !organizationId) return;
+                    setSubmitting(true);
+                    setSubmitMessage(null);
+                    try {
+                      const selectedRows = rows
+                        .filter((r) => selectedRowKeys.has(getRowKey(r)))
+                        .map((r) => ({ employeeId: r.employeeId, date: r.date }));
+                      const ruleId = selectedCorrectionId === 'AS_PER_RULE' ? undefined : selectedCorrectionId;
+                      const correctionType: 'late' | 'earlyGoing' | undefined =
+                        type === 'earlyGoing' ? 'earlyGoing' : type === 'late' ? 'late' : undefined;
+                      const result = await attendanceService.applyValidationCorrection({
+                        organizationId,
+                        ruleId,
+                        type: correctionType,
+                        selectedRows,
+                        remarks: remarks.trim() || undefined,
+                      });
+                      const errText = result.errors.length > 0
+                        ? ` ${result.errors.length} failed: ${result.errors.map((e) => e.message).join('; ')}`
+                        : '';
+                      const skipText = result.skipped && result.skipped.length > 0
+                        ? ` ${result.skipped.length} skipped (already applied).`
+                        : '';
+                      setSubmitMessage({
+                        type: result.applied > 0 ? 'success' : 'error',
+                        text: result.applied > 0
+                          ? `Correction applied for ${result.applied} record(s). Leave deducted as per rule.${skipText}${errText}`
+                          : `No records applied.${skipText}${errText}`,
+                      });
+                      setSelectedRowKeys(new Set());
+                      loadEmployeeList();
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : 'Failed to apply correction';
+                      setSubmitMessage({ type: 'error', text: msg });
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center w-full h-9 px-3 rounded-lg border border-green-600 bg-green-600 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Submit
+                  {submitting ? 'Submitting...' : 'Submit'}
                 </button>
               </div>
 
-              {/* Right panel - Employee grid table (placeholder, to be wired to API) */}
-              <div className="flex-1 min-h-0 flex flex-col p-4 overflow-auto">
+              {/* Right panel - Employee grid table */}
+              <div className="flex-1 flex flex-col p-4 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <span>Show</span>
@@ -277,6 +388,8 @@ export default function ValidationProcessEmployeeGridPage() {
                   <div className="flex items-center gap-2">
                     <input
                       type="search"
+                      value={gridSearch}
+                      onChange={(e) => setGridSearch(e.target.value)}
                       placeholder="Search..."
                       className="h-8 px-3 border border-gray-300 rounded text-sm text-gray-700 w-40"
                     />
@@ -307,12 +420,17 @@ export default function ValidationProcessEmployeeGridPage() {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-auto border border-gray-200 rounded-lg">
+                <div className="overflow-auto border border-gray-200 rounded-lg">
                   <table className="w-full border-collapse text-xs md:text-sm">
                     <thead>
                       <tr>
                         <th className="border border-gray-200 bg-gray-50 px-2 py-2 text-left font-medium text-gray-700">
-                          <input type="checkbox" className="rounded border-gray-300 text-gray-600 focus:ring-gray-500" />
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={toggleSelectAll}
+                            className="rounded border-gray-300 text-gray-600 focus:ring-gray-500"
+                          />
                         </th>
                         <th className="border border-gray-200 bg-gray-50 px-2 py-2 text-left font-medium text-gray-700">Associate Code</th>
                         <th className="border border-gray-200 bg-gray-50 px-2 py-2 text-left font-medium text-gray-700">Associate Name</th>
@@ -343,17 +461,43 @@ export default function ValidationProcessEmployeeGridPage() {
                           </td>
                         </tr>
                       )}
-                      {!loading && !loadError && rows.length === 0 && (type || fromDate || date) && (
+                      {!loading && !loadError && rows.length === 0 && !type && (
                         <tr>
                           <td colSpan={13} className="px-4 py-6 text-center text-sm text-gray-500">
-                            No records to display. Run the Validation Process and select a grouping with count &gt; 0.
+                            No validation type selected. Go back to Validation Process, run Process, then click an action icon (e.g. Late, Early Going) in the Validation Grouping modal.
                           </td>
                         </tr>
                       )}
-                      {!loading && !loadError && rows.length > 0 && rows.map((row, idx) => (
+                      {!loading && !loadError && rows.length === 0 && type && (!fromDate && !toDate && !date) && (
+                        <tr>
+                          <td colSpan={13} className="px-4 py-6 text-center text-sm text-gray-500">
+                            No date range. Go back and select dates in the Validation Grouping modal.
+                          </td>
+                        </tr>
+                      )}
+                      {!loading && !loadError && rows.length === 0 && type && (fromDate || toDate || date) && (
+                        <tr>
+                          <td colSpan={13} className="px-4 py-6 text-center text-sm text-gray-500">
+                            No records for this type and date range. Run the Validation Process first, then try again.
+                          </td>
+                        </tr>
+                      )}
+                      {!loading && !loadError && rows.length > 0 && filteredRows.length === 0 && (
+                        <tr>
+                          <td colSpan={13} className="px-4 py-6 text-center text-sm text-gray-500">
+                            No matching records for &quot;{gridSearch}&quot;
+                          </td>
+                        </tr>
+                      )}
+                      {!loading && !loadError && filteredRows.length > 0 && filteredRows.map((row, idx) => (
                         <tr key={`${row.employeeId}-${row.date}-${idx}`} className="border-b border-gray-200 hover:bg-gray-50">
                           <td className="border border-gray-200 px-2 py-2">
-                            <input type="checkbox" className="rounded border-gray-300 text-gray-600 focus:ring-gray-500" />
+                            <input
+                              type="checkbox"
+                              checked={selectedRowKeys.has(getRowKey(row))}
+                              onChange={() => toggleRow(row)}
+                              className="rounded border-gray-300 text-gray-600 focus:ring-gray-500"
+                            />
                           </td>
                           <td className="border border-gray-200 px-2 py-2 text-gray-900">{row.employeeCode}</td>
                           <td className="border border-gray-200 px-2 py-2 text-gray-900">{row.employeeName}</td>
@@ -376,7 +520,7 @@ export default function ValidationProcessEmployeeGridPage() {
                 </div>
 
                 <div className="flex items-center justify-between mt-3 text-xs md:text-sm text-gray-600">
-                  <span>Showing {rows.length} entries</span>
+                  <span>Showing {filteredRows.length} of {rows.length} entries</span>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"

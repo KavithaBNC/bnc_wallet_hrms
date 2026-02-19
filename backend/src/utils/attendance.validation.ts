@@ -196,7 +196,20 @@ export const queryValidationProcessEmployeeListSchema = z.object({
   fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   type: validationGroupingTypeEnum,
+  paygroupId: z.string().uuid().optional(),
+  employeeId: z.string().uuid().optional(),
 }).refine((d) => d.toDate >= d.fromDate, { message: 'toDate must be on or after fromDate', path: ['toDate'] });
+
+export const applyValidationCorrectionSchema = z.object({
+  organizationId: z.string().uuid('Invalid organization ID'),
+  ruleId: z.string().uuid().optional(),
+  type: z.enum(['late', 'earlyGoing']).optional(),
+  selectedRows: z.array(z.object({
+    employeeId: z.string().uuid('Invalid employee ID'),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+  })).min(1, 'At least one row must be selected'),
+  remarks: z.string().max(500).optional(),
+});
 
 // Types
 export type CheckInInput = z.infer<typeof checkInSchema>;
@@ -217,3 +230,4 @@ export type QueryCompOffRequestDetailsInput = z.infer<typeof queryCompOffRequest
 export type QueryValidationProcessCalendarInput = z.infer<typeof queryValidationProcessCalendarSchema>;
 export type RunValidationProcessInput = z.infer<typeof runValidationProcessSchema>;
 export type QueryValidationProcessEmployeeListInput = z.infer<typeof queryValidationProcessEmployeeListSchema>;
+export type ApplyValidationCorrectionInput = z.infer<typeof applyValidationCorrectionSchema>;

@@ -30,6 +30,7 @@ import {
   queryValidationProcessCalendarSchema,
   runValidationProcessSchema,
   queryValidationProcessEmployeeListSchema,
+  applyValidationCorrectionSchema,
 } from '../utils/attendance.validation';
 
 const router = Router();
@@ -172,6 +173,18 @@ router.get(
   authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
   validateQuery(queryValidationProcessEmployeeListSchema),
   attendanceController.getValidationProcessEmployeeList.bind(attendanceController)
+);
+
+/**
+ * @route   POST /api/v1/attendance/validation-process/apply-correction
+ * @desc    Apply validation correction (leave deduction) for selected employees based on rule
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.post(
+  '/validation-process/apply-correction',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validate(applyValidationCorrectionSchema),
+  attendanceController.applyValidationCorrection.bind(attendanceController)
 );
 
 /**

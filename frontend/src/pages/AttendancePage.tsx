@@ -39,6 +39,7 @@ interface AttendanceRecord {
   deviationReason?: string | null;
   otMinutes?: number | null;
   excessStayMinutes?: number | null;
+  validationAction?: string | null;
 }
 
 interface AttendancePunch {
@@ -961,15 +962,30 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                             Total Net Work Time: {formatWorkHoursAsHHMM(Number(record.workHours))}
                           </div>
                         )}
-                        {isSingleInPunchNoOut ? (
-                          <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
-                            Single Punch
-                          </div>
-                        ) : Number(record.workHours ?? 0) >= 9 && !!lastOut && (
-                          <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
-                            Validation Completed
-                          </div>
-                        )}
+                        {(() => {
+                          if (isSingleInPunchNoOut) {
+                            return (
+                              <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
+                                Single Punch
+                              </div>
+                            );
+                          }
+                          if (record.validationAction) {
+                            return (
+                              <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
+                                Validation Completed
+                              </div>
+                            );
+                          }
+                          if (Number(record.workHours ?? 0) >= 9) {
+                            return (
+                              <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
+                                Validation Completed
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     );
                   })

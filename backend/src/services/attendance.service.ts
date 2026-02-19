@@ -714,6 +714,7 @@ export class AttendanceService {
     });
 
     // Reason pattern: [Permission 09:00-11:00] or [Permission 09:00 - 11:00] (optional spaces around hyphen)
+    // Ignores validation-correction permissions (pattern [Late-correction ...]) which are not real time-range permissions.
     const permissionReasonRegex = /^\[Permission\s+(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\]/i;
     for (const leave of approvedLeaves) {
       if (!leave?.reason) continue;
@@ -721,6 +722,8 @@ export class AttendanceService {
       if (!match) continue;
       const [, , endHHMM] = match;
       const [endHours, endMinutes] = endHHMM.split(':').map(Number);
+      // Sanity: permission end should be during working hours (>= 6 AM); skip if clearly a duration, not a clock time
+      if (endHours < 6) continue;
       const permissionEnd = new Date(dayStartMidnight.getTime());
       permissionEnd.setHours(endHours, endMinutes, 0, 0);
       return permissionEnd;
@@ -1387,6 +1390,7 @@ export class AttendanceService {
               isLate: true,
               lateMinutes: true,
               otMinutes: true,
+              validationAction: true,
               employee: {
                 select: {
                   id: true,
@@ -2916,6 +2920,7 @@ export class AttendanceService {
           otMinutes: true,
           overtimeHours: true,
           shiftId: true,
+          validationAction: true,
           shift: {
             select: { startTime: true, endTime: true, breakDuration: true },
           },
@@ -3056,7 +3061,7 @@ export class AttendanceService {
           }
         }
 
-        const isCompleted =
+        const normalCompleted =
           status === AttendanceStatus.PRESENT &&
           hasCheckIn &&
           hasCheckOut &&
@@ -3065,14 +3070,34 @@ export class AttendanceService {
           !isEarly &&
           !isShortfall;
 
+        const isHolidayOrWeekOff =
+          status === AttendanceStatus.HOLIDAY || status === AttendanceStatus.WEEKEND;
+        let holidayWeekOffCompleted = false;
+        if (isHolidayOrWeekOff && hasCheckIn && hasCheckOut && r.checkIn && r.checkOut) {
+          const workHoursOnOff =
+            (new Date(r.checkOut).getTime() - new Date(r.checkIn).getTime()) / (1000 * 60 * 60) - breakHours;
+          if (workHoursOnOff >= 9) {
+            holidayWeekOffCompleted = true;
+          }
+        }
+
+        const hasCorrectionApplied = !!r.validationAction;
+        const lateCorrectedCompleted = isLate && hasCorrectionApplied;
+        const earlyCorrectedCompleted = isEarly && hasCorrectionApplied;
+
+        const isCompleted = normalCompleted || holidayWeekOffCompleted || lateCorrectedCompleted || earlyCorrectedCompleted;
+
+        const effectiveIsLate = isLate && !hasCorrectionApplied;
+        const effectiveIsEarly = isEarly && !hasCorrectionApplied;
+
         row = {
           organizationId,
           employeeId: r.employeeId,
           date: new Date(dateKey + 'T00:00:00.000Z'),
           isCompleted,
           isApprovalPending: hasPendingReg,
-          isLate,
-          isEarlyGoing: isEarly,
+          isLate: effectiveIsLate,
+          isEarlyGoing: effectiveIsEarly,
           isAbsent,
           isNoOutPunch,
           isShiftChange,
@@ -3085,19 +3110,34 @@ export class AttendanceService {
         const status = (r.status || '') as AttendanceStatus;
         const hasCheckIn = !!r.checkIn;
         const hasCheckOut = !!r.checkOut;
+        const breakHoursFb = r.breakHours != null ? Number(r.breakHours) : 0;
         const isNoOutPunch = status === AttendanceStatus.PRESENT && hasCheckIn && !hasCheckOut;
         const isAbsent = status === AttendanceStatus.ABSENT;
         const otMinutes = Number(r.otMinutes ?? 0);
         const otHours = Number(r.overtimeHours ?? 0);
         const hasOvertime = otMinutes > 0 || otHours > 0;
+
+        const fbIsLate = r.isLate === true;
+        const fbIsHolidayOrWeekOff = status === AttendanceStatus.HOLIDAY || status === AttendanceStatus.WEEKEND;
+        let fbHolidayCompleted = false;
+        if (fbIsHolidayOrWeekOff && hasCheckIn && hasCheckOut && r.checkIn && r.checkOut) {
+          const wh = (new Date(r.checkOut).getTime() - new Date(r.checkIn).getTime()) / (1000 * 60 * 60) - breakHoursFb;
+          if (wh >= 9) fbHolidayCompleted = true;
+        }
+        const fbCorrectionApplied = !!r.validationAction;
+        const fbIsEarly = r.isEarly === true;
+        const fbLateCorrected = fbIsLate && fbCorrectionApplied;
+        const fbEarlyCorrected = fbIsEarly && fbCorrectionApplied;
+        const fbCompleted = fbHolidayCompleted || fbLateCorrected || fbEarlyCorrected;
+
         row = {
           organizationId,
           employeeId: r.employeeId,
           date: new Date(dateKey + 'T00:00:00.000Z'),
-          isCompleted: false,
+          isCompleted: fbCompleted,
           isApprovalPending: hasPendingReg,
-          isLate: r.isLate === true,
-          isEarlyGoing: r.isEarly === true,
+          isLate: fbIsLate && !fbCorrectionApplied,
+          isEarlyGoing: fbIsEarly && !fbCorrectionApplied,
           isAbsent,
           isNoOutPunch,
           isShiftChange: false,
@@ -3183,7 +3223,7 @@ export class AttendanceService {
       ensureDay(dateKey);
       if (row.isCompleted) daily[dateKey].completed += 1;
       if (row.isApprovalPending) daily[dateKey].approvalPending += 1;
-      if (row.isLate) daily[dateKey].late += 1;
+      if (row.isLate && !row.isNoOutPunch) daily[dateKey].late += 1;
       if (row.isEarlyGoing) daily[dateKey].earlyGoing += 1;
       if (row.isAbsent) daily[dateKey].absent += 1;
       if (row.isNoOutPunch) daily[dateKey].noOutPunch += 1;
@@ -3238,6 +3278,8 @@ export class AttendanceService {
     fromDate: string;
     toDate: string;
     type: string;
+    paygroupId?: string;
+    employeeId?: string;
   }): Promise<{
     rows: Array<{
       employeeId: string;
@@ -3255,15 +3297,21 @@ export class AttendanceService {
       leaveSecondHalf: string | null;
     }>;
   }> {
-    const { organizationId, fromDate, toDate, type } = params;
+    const { organizationId, fromDate, toDate, type, paygroupId, employeeId } = params;
     const from = new Date(fromDate + 'T00:00:00.000Z');
     const to = new Date(toDate + 'T23:59:59.999Z');
     const field = this.validationTypeToField(type);
+    // For "late" type, exclude records that are also "No Out Punch" (single punch)
+    const excludeOverlap = type === 'late' ? { isNoOutPunch: { not: true } } : {};
+
     const validationRows = await prisma.attendanceValidationResult.findMany({
       where: {
         organizationId,
         date: { gte: from, lte: to },
         [field]: true,
+        ...excludeOverlap,
+        ...(employeeId && { employeeId }),
+        ...(paygroupId && !employeeId && { employee: { paygroupId } }),
       },
       select: {
         employeeId: true,
@@ -3291,6 +3339,7 @@ export class AttendanceService {
         date: true,
         checkIn: true,
         checkOut: true,
+        validationAction: true,
         shift: { select: { name: true, startTime: true, endTime: true } },
       },
     });
@@ -3299,7 +3348,19 @@ export class AttendanceService {
     );
     const formatTime = (d: Date | null) =>
       d ? new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
-    const rows = validationRows.map((v) => {
+
+    // Filter out rows where:
+    // 1. Correction was already applied (validationAction is set)
+    // 2. For "late" type: no checkout (single punch / no out punch regardless of status)
+    const pendingValidationRows = validationRows.filter((v) => {
+      const key = `${v.employeeId}:${this.toDateKey(v.date)}`;
+      const rec = recordByKey.get(key);
+      if (rec?.validationAction) return false;
+      if (type === 'late' && !rec?.checkOut) return false;
+      return true;
+    });
+
+    const rows = pendingValidationRows.map((v) => {
       const key = `${v.employeeId}:${this.toDateKey(v.date)}`;
       const rec = recordByKey.get(key);
       const parts = [v.employee.firstName, v.employee.middleName, v.employee.lastName].filter(Boolean);
@@ -3393,6 +3454,7 @@ export class AttendanceService {
         employeeId: { in: empIds },
         date: { gte: from, lte: to },
         isLate: true,
+        checkOut: { not: null },
       },
       select: {
         employeeId: true,
@@ -3499,6 +3561,263 @@ export class AttendanceService {
         totalLateMinutes: grandTotalMinutes,
       },
     };
+  }
+
+  /**
+   * Apply validation correction (leave deduction) for selected employees based on rule.
+   * Uses PER-MONTH TOTAL late minutes: groups by employee+month, sums late, applies ONE action per employee per month.
+   * Rule actions: minMinutes/maxMinutes = monthly total ranges (e.g. 0-120 Permission, 120-240 Half day EL, 240+ Full day EL).
+   */
+  async applyValidationCorrection(params: {
+    organizationId: string;
+    ruleId?: string;
+    type?: 'late' | 'earlyGoing';
+    selectedRows: { employeeId: string; date: string }[];
+    remarks?: string;
+    approverUserId?: string;
+  }): Promise<{ applied: number; errors: { employeeId: string; date: string; message: string }[]; skipped?: { employeeId: string; date: string; message: string }[] }> {
+    const { organizationId, ruleId, selectedRows, remarks, approverUserId } = params;
+    const correctionType = params.type || 'late';
+    const isEarlyGoingCorrection = correctionType === 'earlyGoing';
+    const validationGrouping = isEarlyGoingCorrection ? 'Early Going' : 'Late';
+    const typeLabel = isEarlyGoingCorrection ? 'Early Going' : 'Late';
+    const errors: { employeeId: string; date: string; message: string }[] = [];
+    const skipped: { employeeId: string; date: string; message: string }[] = [];
+    let applied = 0;
+
+    const { leaveRequestService } = await import('./leave-request.service');
+    const { getLeaveTypeIdForAttendanceComponent } = await import('../utils/event-config');
+
+    // Group by (employeeId, year-month)
+    const byEmployeeMonth = new Map<string, { employeeId: string; dates: string[] }>();
+    for (const { employeeId, date } of selectedRows) {
+      const [y, m] = date.split('-');
+      const key = `${employeeId}:${y}-${m}`;
+      const entry = byEmployeeMonth.get(key) ?? { employeeId, dates: [] };
+      if (!entry.dates.includes(date)) entry.dates.push(date);
+      byEmployeeMonth.set(key, entry);
+    }
+    for (const entry of byEmployeeMonth.values()) {
+      entry.dates.sort();
+    }
+
+    for (const [key, { employeeId, dates }] of byEmployeeMonth) {
+      const [y, m] = key.split(':')[1].split('-');
+      const monthStart = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
+      const firstDate = dates[0];
+
+      try {
+        const records = await prisma.attendanceRecord.findMany({
+          where: {
+            employeeId,
+            date: { in: dates.map((d) => new Date(d + 'T00:00:00.000Z')) },
+            ...(isEarlyGoingCorrection ? { isEarly: true } : { isLate: true }),
+            checkOut: { not: null },
+          },
+          select: { id: true, date: true, lateMinutes: true, earlyMinutes: true },
+        });
+
+        const totalMinutes = records.reduce((sum, r) => {
+          const mins = isEarlyGoingCorrection ? r.earlyMinutes : r.lateMinutes;
+          return sum + (mins ? Number(mins) : 0);
+        }, 0);
+        if (records.length === 0 || totalMinutes <= 0) {
+          errors.push({ employeeId, date: firstDate, message: `No ${typeLabel.toLowerCase()} records found for selected dates` });
+          continue;
+        }
+
+        let rule: Awaited<ReturnType<ValidationProcessRuleService['getApplicableRule']>>;
+        if (ruleId) {
+          const r = await prisma.validationProcessRule.findUnique({
+            where: { id: ruleId, organizationId },
+            include: { limits: true, actions: true },
+          });
+          rule = r;
+        } else {
+          const emp = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { paygroupId: true, departmentId: true, shiftId: true },
+          });
+          const ruleParams = {
+            organizationId,
+            employeeId,
+            paygroupId: emp?.paygroupId ?? undefined,
+            departmentId: emp?.departmentId ?? undefined,
+            shiftId: emp?.shiftId ?? undefined,
+            attendanceDate: monthStart,
+          };
+          rule = await validationProcessRuleService.getApplicableRule({
+            ...ruleParams,
+            validationGrouping,
+          });
+          if (!rule && validationGrouping !== 'Late') {
+            rule = await validationProcessRuleService.getApplicableRule({
+              ...ruleParams,
+              validationGrouping: 'Late',
+            });
+          }
+        }
+
+        if (!rule) {
+          errors.push({ employeeId, date: firstDate, message: `No applicable ${typeLabel.toLowerCase()} validation rule found` });
+          continue;
+        }
+
+        const action = validationProcessRuleService.getActionForLateMinutes(rule as any, totalMinutes);
+        if (!action) {
+          errors.push({ employeeId, date: firstDate, message: 'No action defined for this rule' });
+          continue;
+        }
+
+        const totalDays = this.computeDeductionDays(action.daysValue, totalMinutes);
+        if (totalDays <= 0) {
+          errors.push({ employeeId, date: firstDate, message: 'Deduction days is 0 for this action' });
+          continue;
+        }
+
+        const minuteField = isEarlyGoingCorrection ? 'earlyMinutes' : 'lateMinutes';
+        const dateDetails = records
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          .map((r) => {
+            const d = new Date(r.date);
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            const mmm = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+            return `${dd}-${mmm}(${(r as any)[minuteField] ?? 0}min)`;
+          })
+          .join(', ');
+        const totalH = Math.floor(totalMinutes / 60);
+        const totalM = String(totalMinutes % 60).padStart(2, '0');
+        const reason = `[Validation correction - ${typeLabel}] ${records.length} days ${typeLabel.toLowerCase()}: ${dateDetails}. Total: ${totalH}h ${totalM}m. Action: ${action.name} (${totalDays} day${totalDays !== 1 ? 's' : ''}). ${remarks || ''}`.trim();
+
+        if (action.correctionMethod === 'Permission') {
+          const permLeaveType = await prisma.leaveType.findFirst({
+            where: {
+              organizationId,
+              isActive: true,
+              OR: [
+                { name: { contains: 'Permission', mode: 'insensitive' } },
+                { code: { equals: 'PERM', mode: 'insensitive' } },
+              ],
+            },
+          });
+          if (!permLeaveType) {
+            errors.push({ employeeId, date: firstDate, message: 'Permission leave type not configured' });
+            continue;
+          }
+          const durH = Math.floor(totalMinutes / 60);
+          const durM = String(totalMinutes % 60).padStart(2, '0');
+          const permReason = `[${typeLabel}-correction ${durH}h${durM}m permission] ${reason}`;
+
+          const lr = await leaveRequestService.create(employeeId, {
+            leaveTypeId: permLeaveType.id,
+            startDate: firstDate,
+            endDate: firstDate,
+            totalDays: Math.min(totalDays, 1),
+            reason: permReason,
+          });
+          if (approverUserId && lr.status === 'PENDING') {
+            try {
+              await leaveRequestService.approve(lr.id, approverUserId, undefined, 'HR_MANAGER');
+            } catch {
+              // Leave created; approval may require workflow
+            }
+          }
+          for (const rec of records) {
+            await prisma.attendanceRecord.update({
+              where: { id: rec.id },
+              data: { validationAction: action.name },
+            });
+          }
+          applied++;
+        } else if (action.correctionMethod === 'Apply Event' || action.correctionMethod === 'Leave') {
+          if (!action.attendanceComponentId) {
+            errors.push({ employeeId, date: firstDate, message: 'Leave/Apply Event action has no attendance component configured in rule' });
+            continue;
+          }
+          const compId = String(action.attendanceComponentId);
+          const comp = await prisma.attendanceComponent.findUnique({
+            where: { id: compId },
+            select: { eventName: true, shortName: true },
+          });
+          const leaveTypeId = comp
+            ? await getLeaveTypeIdForAttendanceComponent(organizationId, comp)
+            : null;
+          if (!leaveTypeId) {
+            errors.push({ employeeId, date: firstDate, message: 'Leave type not linked to attendance component' });
+            continue;
+          }
+          const lr = await leaveRequestService.create(employeeId, {
+            leaveTypeId,
+            startDate: firstDate,
+            endDate: firstDate,
+            totalDays,
+            reason,
+          });
+          if (approverUserId && lr.status === 'PENDING') {
+            try {
+              await leaveRequestService.approve(lr.id, approverUserId, undefined, 'HR_MANAGER');
+            } catch {
+              // Leave created; approval may require workflow
+            }
+          }
+          for (const rec of records) {
+            await prisma.attendanceRecord.update({
+              where: { id: rec.id },
+              data: { validationAction: action.name },
+            });
+          }
+          applied++;
+        } else if (action.correctionMethod === 'LOP') {
+          const lopLeaveType = await prisma.leaveType.findFirst({
+            where: {
+              organizationId,
+              isActive: true,
+              OR: [
+                { name: { contains: 'LOP', mode: 'insensitive' } },
+                { name: { contains: 'Loss of Pay', mode: 'insensitive' } },
+                { code: { equals: 'LOP', mode: 'insensitive' } },
+              ],
+            },
+          });
+          if (!lopLeaveType) {
+            errors.push({ employeeId, date: firstDate, message: 'LOP leave type not configured' });
+            continue;
+          }
+          const lr = await leaveRequestService.create(employeeId, {
+            leaveTypeId: lopLeaveType.id,
+            startDate: firstDate,
+            endDate: firstDate,
+            totalDays,
+            reason,
+          });
+          if (approverUserId && lr.status === 'PENDING') {
+            try {
+              await leaveRequestService.approve(lr.id, approverUserId, undefined, 'HR_MANAGER');
+            } catch {
+              // Leave created; approval may require workflow
+            }
+          }
+          for (const rec of records) {
+            await prisma.attendanceRecord.update({
+              where: { id: rec.id },
+              data: { validationAction: action.name },
+            });
+          }
+          applied++;
+        } else {
+          errors.push({ employeeId, date: firstDate, message: `Unsupported correction method: ${action.correctionMethod}` });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        if (/already have.*(approved|pending) leave request|overlap|conflicting/i.test(msg)) {
+          skipped.push({ employeeId, date: firstDate, message: 'Already applied for this month' });
+        } else {
+          errors.push({ employeeId, date: firstDate, message: msg });
+        }
+      }
+    }
+
+    return { applied, errors, skipped: skipped.length > 0 ? skipped : undefined };
   }
 }
 

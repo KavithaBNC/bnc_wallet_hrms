@@ -284,23 +284,23 @@ export class ValidationProcessRuleService {
   }
 
   /**
-   * Find the best matching Validation Process Rule for a **Late** scenario.
-   * This is read-only and designed to fail soft (returns null on any Prisma error)
-   * so that attendance flow is never broken even if validation tables are missing.
+   * Find the best matching Validation Process Rule for a given grouping (Late, Early Going, etc.).
+   * Fails soft (returns null) so attendance flow is never broken.
    */
-  async getApplicableRuleForLate(params: {
+  async getApplicableRule(params: {
     organizationId: string;
     employeeId: string;
     paygroupId?: string | null;
     departmentId?: string | null;
     shiftId?: string | null;
     attendanceDate: Date;
+    validationGrouping: string;
   }) {
     try {
       const baseRules = await prisma.validationProcessRule.findMany({
         where: {
           organizationId: params.organizationId,
-          validationGrouping: 'Late',
+          validationGrouping: params.validationGrouping,
           effectiveDate: { lte: params.attendanceDate },
         },
         orderBy: [{ priority: 'asc' }, { effectiveDate: 'desc' }],
@@ -339,7 +339,6 @@ export class ValidationProcessRuleService {
           } else if (shiftIds && params.shiftId && shiftIds.includes(params.shiftId)) {
             score = 1;
           } else if (!employeeIds && !paygroupIds && !departmentIds && !shiftIds) {
-            // Organization-wide fallback
             score = 0;
           }
 
@@ -358,9 +357,22 @@ export class ValidationProcessRuleService {
 
       return scored[0].rule;
     } catch {
-      // Table might not exist on some environments; never break attendance flow.
       return null;
     }
+  }
+
+  /**
+   * Backward-compatible wrapper: find the best matching rule for **Late**.
+   */
+  async getApplicableRuleForLate(params: {
+    organizationId: string;
+    employeeId: string;
+    paygroupId?: string | null;
+    departmentId?: string | null;
+    shiftId?: string | null;
+    attendanceDate: Date;
+  }) {
+    return this.getApplicableRule({ ...params, validationGrouping: 'Late' });
   }
 
   /**

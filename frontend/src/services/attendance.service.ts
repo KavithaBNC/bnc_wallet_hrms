@@ -299,11 +299,27 @@ export const attendanceService = {
     fromDate: string;
     toDate: string;
     type: string;
+    paygroupId?: string;
+    employeeId?: string;
   }): Promise<{ rows: ValidationProcessEmployeeRow[] }> => {
     const { data } = await api.get<{ data: { rows: ValidationProcessEmployeeRow[] } }>(
       '/attendance/validation-process/employee-list',
       { params }
     );
+    return data.data;
+  },
+
+  /** Apply validation correction (leave deduction) for selected employees based on rule. */
+  applyValidationCorrection: async (params: {
+    organizationId: string;
+    ruleId?: string;
+    type?: 'late' | 'earlyGoing';
+    selectedRows: { employeeId: string; date: string }[];
+    remarks?: string;
+  }): Promise<{ applied: number; errors: { employeeId: string; date: string; message: string }[]; skipped?: { employeeId: string; date: string; message: string }[] }> => {
+    const { data } = await api.post<{
+      data: { applied: number; errors: { employeeId: string; date: string; message: string }[]; skipped?: { employeeId: string; date: string; message: string }[] };
+    }>('/attendance/validation-process/apply-correction', params);
     return data.data;
   },
 };

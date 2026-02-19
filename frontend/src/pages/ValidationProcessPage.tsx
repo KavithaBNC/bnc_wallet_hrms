@@ -400,8 +400,8 @@ export default function ValidationProcessPage() {
         onLogout={handleLogout}
       />
 
-      <main className="flex-1 min-h-0 flex flex-col w-full px-4 sm:px-6 lg:px-8 py-6 bg-gray-50">
-        <div className="flex-1 flex flex-col min-h-0 w-full">
+      <main className="flex-1 overflow-y-auto w-full px-4 sm:px-6 lg:px-8 py-6 bg-gray-50">
+        <div className="w-full">
           {/* Breadcrumbs - Employee module style */}
           <div className="mb-4 flex-shrink-0">
             <nav className="flex items-center text-sm text-gray-600" aria-label="Breadcrumb">
@@ -413,8 +413,8 @@ export default function ValidationProcessPage() {
             </nav>
           </div>
 
-          {/* Card - full width and height */}
-          <div className="flex-1 flex flex-col min-h-0 bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+          {/* Card - full width */}
+          <div className="flex flex-col bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
             <div className="p-6 border-b border-gray-200 flex-shrink-0">
               <h2 className="text-2xl font-bold text-gray-900">Validation Process</h2>
               <p className="text-gray-600 mt-1">Filter by Pay Group and Associate, then view Process or Status</p>
@@ -536,8 +536,8 @@ export default function ValidationProcessPage() {
               </div>
             </div>
 
-            {/* Content area - fills remaining space */}
-            <div className="flex-1 min-h-0 overflow-auto p-6 flex flex-col">
+            {/* Content area */}
+            <div className="p-6 flex flex-col">
               {activeTab === 'process' && (
                 <>
                   {/* Process tab: extra filters */}
@@ -659,7 +659,7 @@ export default function ValidationProcessPage() {
                   </div>
 
                   {/* Calendar */}
-                  <div className="flex-1 min-h-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white">
+                  <div className="flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0">
                       <h3 className="text-lg font-semibold text-gray-900">{getMonthYearLabel(calendarMonth)}</h3>
                       <div className="flex items-center gap-2">
@@ -692,7 +692,7 @@ export default function ValidationProcessPage() {
                         </button>
                       </div>
                     </div>
-                    <div className="flex-1 min-h-0 overflow-auto p-4">
+                    <div className="p-4">
                       <table className="w-full border-collapse text-sm">
                         <thead>
                           <tr>
@@ -886,6 +886,8 @@ export default function ValidationProcessPage() {
                                               params.fromDate = dateFrom;
                                               params.toDate = dateTo;
                                             }
+                                            if (paygroupFilter && paygroupFilter !== 'ALL') params.paygroupId = paygroupFilter;
+                                            if (associateFilter && associateFilter !== 'ALL') params.employeeId = associateFilter;
                                             const search = new URLSearchParams(params).toString();
                                             setSelectedDateForModal(null);
                                             navigate(`/hr-activities/validation-process/employees?${search}`);

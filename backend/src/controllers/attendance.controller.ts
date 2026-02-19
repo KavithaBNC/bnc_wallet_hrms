@@ -902,17 +902,49 @@ export class AttendanceController {
    */
   async getValidationProcessEmployeeList(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, fromDate, toDate, type } = req.query as {
+      const { organizationId, fromDate, toDate, type, paygroupId, employeeId } = req.query as {
         organizationId: string;
         fromDate: string;
         toDate: string;
         type: string;
+        paygroupId?: string;
+        employeeId?: string;
       };
       const result = await attendanceService.getValidationProcessEmployeeList({
         organizationId,
         fromDate,
         toDate,
         type,
+        paygroupId: paygroupId || undefined,
+        employeeId: employeeId || undefined,
+      });
+      return res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Apply validation correction (leave deduction) for selected employees.
+   * POST /api/v1/attendance/validation-process/apply-correction
+   */
+  async applyValidationCorrection(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, ruleId, type, selectedRows, remarks } = req.body as {
+        organizationId: string;
+        ruleId?: string;
+        type?: 'late' | 'earlyGoing';
+        selectedRows: { employeeId: string; date: string }[];
+        remarks?: string;
+      };
+      const approverUserId = (req as any).user?.userId as string | undefined;
+      const result = await attendanceService.applyValidationCorrection({
+        organizationId,
+        ruleId,
+        type: type || 'late',
+        selectedRows,
+        remarks,
+        approverUserId,
       });
       return res.status(200).json({ status: 'success', data: result });
     } catch (error) {

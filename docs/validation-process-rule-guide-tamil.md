@@ -139,6 +139,18 @@ System output:
   Mani      │ 8          │ 24 hr    │ Leave          │ 3.0
 ```
 
+### Employee Grid (Late) – Monthly Total Logic
+
+> **Employee Grid** tab-ல் HR employees select பண்ணி rule apply பண்ணும்போது, **மாத total late minutes** use பண்ணப்படும் (per-day அல்ல).
+
+| மாத Total Late | Action |
+|----------------|--------|
+| ≤ 2 hr (120 min) | Permission |
+| 2–4 hr (120–240 min) | Half day EL |
+| > 4 hr (240+ min) | Full day EL |
+
+**எடுத்துக்காட்டு:** Lisha Feb-ல் 3 நாட்கள் late (50+60+55 = 165 min total) → ஒரு Half day EL மட்டும் apply ஆகும் (per-day அல்ல).
+
 ---
 
 ## 📋 பொதுவான புலங்கள் (Basic Fields)
