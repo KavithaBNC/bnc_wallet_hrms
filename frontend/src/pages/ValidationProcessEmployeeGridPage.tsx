@@ -3,19 +3,21 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import AppHeader from '../components/layout/AppHeader';
 import { useAuthStore } from '../store/authStore';
 import validationProcessRuleService from '../services/validationProcessRule.service';
+import attendanceComponentService from '../services/attendanceComponent.service';
 import { attendanceService, type ValidationProcessEmployeeRow } from '../services/attendance.service';
 
 function getValidationTitle(type?: string | null): string {
   const labelMap: Record<string, string> = {
     absent: 'Absent',
-    approvalPending: 'Approval Pending',
-    earlyGoing: 'Early Going',
+    approvalpending: 'Approval Pending',
+    earlygoing: 'Early Going',
     late: 'Late',
-    noOutPunch: 'No Out Punch',
+    nooutpunch: 'No Out Punch',
     overtime: 'OverTime',
-    shiftChange: 'Shift Change',
+    shiftchange: 'Shift Change',
     shortfall: 'Shortfall',
     completed: 'Completed',
+    validationonhold: 'Validation on Hold',
   };
   const key = (type || '').toLowerCase();
   const label = labelMap[key] ?? 'Validation';
@@ -26,16 +28,17 @@ function getValidationTitle(type?: string | null): string {
 function typeToValidationGrouping(type?: string | null): string | undefined {
   const map: Record<string, string> = {
     late: 'Late',
-    earlyGoing: 'Early Going',
+    earlygoing: 'Early Going',
     shortfall: 'Shortfall',
     absent: 'Absent',
-    approvalPending: 'Approval Pending',
-    noOutPunch: 'No Out Punch',
+    approvalpending: 'Approval Pending',
+    nooutpunch: 'No Out Punch',
     overtime: 'OverTime',
-    shiftChange: 'Shift Change',
+    shiftchange: 'Shift Change',
     completed: 'Completed',
+    validationonhold: 'Validation on Hold',
   };
-  return type ? (map[type] ?? type) : undefined;
+  return type ? (map[type.toLowerCase()] ?? type) : undefined;
 }
 
 export default function ValidationProcessEmployeeGridPage() {
@@ -58,10 +61,14 @@ export default function ValidationProcessEmployeeGridPage() {
   interface CorrectionOption {
     id: string;
     name: string;
+    group?: string;
+    directComponentId?: string;
+    shortName?: string;
   }
 
   const [correctionOptions, setCorrectionOptions] = useState<CorrectionOption[]>([
-    { id: 'AS_PER_RULE', name: 'As Per Rule' },
+    { id: 'AS_PER_RULE', name: 'As Per Rule', group: 'Rule' },
+    { id: 'NO_CORRECTION', name: 'No Correction', group: 'Rule' },
   ]);
   const [correctionLoading, setCorrectionLoading] = useState(false);
   const [selectedCorrectionId, setSelectedCorrectionId] = useState<string>('AS_PER_RULE');
@@ -159,39 +166,77 @@ export default function ValidationProcessEmployeeGridPage() {
     loadEmployeeList();
   }, [loadEmployeeList]);
 
+  const isOnHoldType = type.toLowerCase() === 'validationonhold';
+
   useEffect(() => {
+    if (isOnHoldType) {
+      setCorrectionOptions([{ id: 'RELEASE', name: 'Release', group: 'Action' }]);
+      setSelectedCorrectionId('RELEASE');
+      return;
+    }
     const loadCorrectionOptions = async () => {
       if (!organizationId) return;
       try {
         setCorrectionLoading(true);
         const effectiveOn = fromDate || toDate || date || undefined;
-        const result = await validationProcessRuleService.getAll({
-          organizationId,
-          page: 1,
-          limit: 100,
-          effectiveOn,
-        });
-        const dynamicOptions: CorrectionOption[] = (result.rules || [])
-          .filter((r) => r.displayName)
-          .map((r) => ({ id: r.id, name: r.displayName }))
+
+        const [rulesResult, componentsResult] = await Promise.allSettled([
+          validationProcessRuleService.getAll({ organizationId, page: 1, limit: 100, effectiveOn }),
+          attendanceComponentService.getAll({ organizationId, page: 1, limit: 200 }),
+        ]);
+
+        const rules = rulesResult.status === 'fulfilled' ? (rulesResult.value.rules || []) : [];
+        const components = componentsResult.status === 'fulfilled' ? (componentsResult.value.components || []) : [];
+
+        const ruleOptions: CorrectionOption[] = [
+          { id: 'AS_PER_RULE', name: 'As Per Rule', group: 'Rule' },
+          { id: 'NO_CORRECTION', name: 'No Correction', group: 'Rule' },
+        ];
+
+        const baseKeys = new Set(['as per rule', 'no correction']);
+        const namedRuleOptions: CorrectionOption[] = rules
+          .filter((r) => r.displayName && !baseKeys.has(r.displayName.trim().toLowerCase()))
+          .map((r) => ({ id: r.id, name: r.displayName, group: 'Validation Rule' }))
           .sort((a, b) => a.name.localeCompare(b.name));
-        setCorrectionOptions((prev) => {
-          const base = prev.find((p) => p.id === 'AS_PER_RULE') ?? { id: 'AS_PER_RULE', name: 'As Per Rule' };
-          // Avoid duplicate labels like "As Per Rule" vs "As per rule".
-          const baseKey = base.name.trim().toLowerCase();
-          const uniqueDynamic = dynamicOptions.filter(
-            (opt) => opt.name.trim().toLowerCase() !== baseKey
-          );
-          return [base, ...uniqueDynamic];
-        });
+
+        const categoryOrder = ['Leave', 'Permission', 'Onduty', 'On Duty', 'WFH'];
+        const grouped = new Map<string, CorrectionOption[]>();
+        for (const comp of components) {
+          const cat = comp.eventCategory || 'Other';
+          const label = `${comp.eventName}${comp.shortName ? ' (' + comp.shortName + ')' : ''}`;
+          const opt: CorrectionOption = {
+            id: `COMPONENT:${comp.id}`,
+            name: label,
+            group: cat,
+            directComponentId: comp.id,
+            shortName: comp.shortName,
+          };
+          const arr = grouped.get(cat) ?? [];
+          arr.push(opt);
+          grouped.set(cat, arr);
+        }
+
+        const sortedCategories = [
+          ...categoryOrder.filter((c) => grouped.has(c)),
+          ...[...grouped.keys()].filter((c) => !categoryOrder.includes(c)).sort(),
+        ];
+
+        const componentOptions: CorrectionOption[] = sortedCategories.flatMap((cat) =>
+          (grouped.get(cat) ?? []).sort((a, b) => a.name.localeCompare(b.name))
+        );
+
+        setCorrectionOptions([...ruleOptions, ...namedRuleOptions, ...componentOptions]);
       } catch {
-        // Keep default As Per Rule only on error.
+        setCorrectionOptions([
+          { id: 'AS_PER_RULE', name: 'As Per Rule', group: 'Rule' },
+          { id: 'NO_CORRECTION', name: 'No Correction', group: 'Rule' },
+        ]);
       } finally {
         setCorrectionLoading(false);
       }
     };
     loadCorrectionOptions();
-  }, [organizationId, type, fromDate, toDate, date]);
+  }, [organizationId, type, fromDate, toDate, date, isOnHoldType]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-gray-100">
@@ -285,28 +330,61 @@ export default function ValidationProcessEmployeeGridPage() {
                             onChange={(e) => setCorrectionSearch(e.target.value)}
                             placeholder="Search..."
                             className="flex-1 h-7 px-2 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            autoFocus
                           />
                         </div>
-                        <div className="max-h-56 overflow-auto py-1 text-sm">
-                          {correctionOptions
-                            .filter((opt) =>
-                              opt.name.toLowerCase().includes(correctionSearch.trim().toLowerCase())
-                            )
-                            .map((opt) => (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCorrectionId(opt.id);
-                                  setShowCorrectionDropdown(false);
-                                }}
-                                className={`w-full text-left px-3 py-1.5 hover:bg-blue-50 ${
-                                  opt.id === selectedCorrectionId ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
-                                }`}
-                              >
-                                {opt.name}
-                              </button>
-                            ))}
+                        <div className="max-h-72 overflow-auto py-1 text-sm">
+                          {(() => {
+                            const searchKey = correctionSearch.trim().toLowerCase();
+                            const filtered = correctionOptions.filter((opt) =>
+                              opt.name.toLowerCase().includes(searchKey) ||
+                              (opt.shortName ?? '').toLowerCase().includes(searchKey) ||
+                              (opt.group ?? '').toLowerCase().includes(searchKey)
+                            );
+                            // Render grouped
+                            const rendered: React.ReactNode[] = [];
+                            let lastGroup = '';
+                            for (const opt of filtered) {
+                              const grp = opt.group ?? '';
+                              if (grp !== lastGroup) {
+                                rendered.push(
+                                  <div key={`grp-${grp}`} className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wide bg-gray-50 border-t border-gray-100 mt-1 first:mt-0">
+                                    {grp || 'Other'}
+                                  </div>
+                                );
+                                lastGroup = grp;
+                              }
+                              rendered.push(
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCorrectionId(opt.id);
+                                    setShowCorrectionDropdown(false);
+                                    setCorrectionSearch('');
+                                  }}
+                                  className={`w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2 ${
+                                    opt.id === selectedCorrectionId ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                                  }`}
+                                >
+                                  <span className="flex-1 truncate">{opt.name}</span>
+                                  {opt.shortName && (
+                                    <span className="shrink-0 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">
+                                      {opt.shortName}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            }
+                            if (rendered.length === 0) {
+                              return (
+                                <div className="px-3 py-4 text-center text-xs text-gray-400">
+                                  No options found
+                                </div>
+                              );
+                            }
+                            return rendered;
+                          })()}
                         </div>
                       </div>
                     )}
@@ -341,18 +419,41 @@ export default function ValidationProcessEmployeeGridPage() {
                       const selectedRows = rows
                         .filter((r) => selectedRowKeys.has(getRowKey(r)))
                         .map((r) => ({ employeeId: r.employeeId, date: r.date }));
-                      const ruleId = selectedCorrectionId === 'AS_PER_RULE' ? undefined : selectedCorrectionId;
-                      const correctionType: 'late' | 'earlyGoing' | 'noOutPunch' | undefined =
-                        type === 'earlyGoing'
-                          ? 'earlyGoing'
-                          : type === 'late'
-                            ? 'late'
-                            : type === 'noOutPunch'
-                              ? 'noOutPunch'
-                              : undefined;
+
+                      if (isOnHoldType && selectedCorrectionId === 'RELEASE') {
+                        const result = await attendanceService.releaseHold({ organizationId, selectedRows });
+                        const errText = result.errors.length > 0
+                          ? ` ${result.errors.length} failed: ${result.errors.map((e) => e.message).join('; ')}`
+                          : '';
+                        setSubmitMessage({
+                          type: result.released > 0 ? 'success' : 'error',
+                          text: result.released > 0
+                            ? `Released ${result.released} record(s) from hold.${errText}`
+                            : `No records released.${errText}`,
+                        });
+                        setSelectedRowKeys(new Set());
+                        loadEmployeeList();
+                        return;
+                      }
+
+                      const selectedOption = correctionOptions.find((o) => o.id === selectedCorrectionId);
+                      const isDirectComponent = !!selectedOption?.directComponentId;
+                      const isNoCorrection = selectedCorrectionId === 'NO_CORRECTION' || (selectedOption?.name ?? '').trim().toLowerCase() === 'no correction';
+                      const isAsPerRule = selectedCorrectionId === 'AS_PER_RULE';
+
+                      const directComponentId = isDirectComponent ? selectedOption!.directComponentId : undefined;
+                      const ruleId = (!isAsPerRule && !isNoCorrection && !isDirectComponent) ? selectedCorrectionId : undefined;
+
+                      const validTypes = ['late', 'earlyGoing', 'noOutPunch', 'shortfall', 'absent', 'approvalPending', 'overtime', 'shiftChange'] as const;
+                      type ValidCorrectionType = typeof validTypes[number];
+                      const correctionType: ValidCorrectionType | undefined = validTypes.includes(type as ValidCorrectionType)
+                        ? (type as ValidCorrectionType)
+                        : undefined;
+
                       const result = await attendanceService.applyValidationCorrection({
                         organizationId,
                         ruleId,
+                        directComponentId,
                         type: correctionType,
                         selectedRows,
                         remarks: remarks.trim() || undefined,
@@ -363,13 +464,10 @@ export default function ValidationProcessEmployeeGridPage() {
                       const skipText = result.skipped && result.skipped.length > 0
                         ? ` ${result.skipped.length} skipped (already applied).`
                         : '';
-                      const selectedCorrectionName =
-                        (selectedCorrection?.name || '').trim().toLowerCase();
-                      const isNoCorrectionMode =
-                        selectedCorrectionName === 'no correction' ||
-                        correctionType === 'noOutPunch';
-                      const successSuffix = isNoCorrectionMode
+                      const successSuffix = isNoCorrection
                         ? 'No leave deduction.'
+                        : isDirectComponent
+                        ? `Applied: ${selectedOption?.name ?? 'component'}.`
                         : 'Leave deducted as per rule.';
                       setSubmitMessage({
                         type: result.applied > 0 ? 'success' : 'error',

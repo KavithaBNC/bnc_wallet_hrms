@@ -31,6 +31,12 @@ import {
   runValidationProcessSchema,
   queryValidationProcessEmployeeListSchema,
   applyValidationCorrectionSchema,
+  revertValidationCorrectionSchema,
+  queryValidationRevertHistorySchema,
+  queryCompletedListSchema,
+  revertByRowsSchema,
+  onHoldSchema,
+  releaseHoldSchema,
 } from '../utils/attendance.validation';
 
 const router = Router();
@@ -185,6 +191,78 @@ router.post(
   authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
   validate(applyValidationCorrectionSchema),
   attendanceController.applyValidationCorrection.bind(attendanceController)
+);
+
+/**
+ * @route   POST /api/v1/attendance/validation-process/revert
+ * @desc    Revert HR validation corrections for a date range (removes HR-created leaves, restores balances)
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.post(
+  '/validation-process/revert',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validate(revertValidationCorrectionSchema),
+  attendanceController.revertValidationCorrection.bind(attendanceController)
+);
+
+/**
+ * @route   GET /api/v1/attendance/validation-process/revert-history
+ * @desc    Get validation revert history (audit log)
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.get(
+  '/validation-process/revert-history',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validateQuery(queryValidationRevertHistorySchema),
+  attendanceController.getValidationRevertHistory.bind(attendanceController)
+);
+
+/**
+ * @route   GET /api/v1/attendance/validation-process/completed-list
+ * @desc    Get completed/on-hold validation rows for Revert Process page grid
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.get(
+  '/validation-process/completed-list',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validateQuery(queryCompletedListSchema),
+  attendanceController.getCompletedList.bind(attendanceController)
+);
+
+/**
+ * @route   POST /api/v1/attendance/validation-process/revert-rows
+ * @desc    Revert specific employee+date rows (per-row revert)
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.post(
+  '/validation-process/revert-rows',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validate(revertByRowsSchema),
+  attendanceController.revertByRows.bind(attendanceController)
+);
+
+/**
+ * @route   POST /api/v1/attendance/validation-process/on-hold
+ * @desc    Put selected validation rows on hold
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.post(
+  '/validation-process/on-hold',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validate(onHoldSchema),
+  attendanceController.putOnHold.bind(attendanceController)
+);
+
+/**
+ * @route   POST /api/v1/attendance/validation-process/release-hold
+ * @desc    Release selected validation rows from hold
+ * @access  Private (SUPER_ADMIN, ORG_ADMIN, HR_MANAGER)
+ */
+router.post(
+  '/validation-process/release-hold',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  validate(releaseHoldSchema),
+  attendanceController.releaseHold.bind(attendanceController)
 );
 
 /**

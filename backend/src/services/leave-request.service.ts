@@ -773,6 +773,34 @@ export class LeaveRequestService {
     // Past-date apply is allowed.
     // Keep only date-format/order validation (handled by schema + parseDateOnly).
 
+    // Block event application if validation is already completed for any date in range
+    const allDatesInRange: Date[] = [];
+    const dateCursor = new Date(startDate);
+    while (dateCursor <= endDate) {
+      allDatesInRange.push(new Date(dateCursor));
+      dateCursor.setUTCDate(dateCursor.getUTCDate() + 1);
+    }
+
+    const validationCompletedDates = await prisma.attendanceValidationResult.findMany({
+      where: {
+        organizationId: employee.organizationId,
+        employeeId,
+        date: { in: allDatesInRange },
+        isCompleted: true,
+      },
+      select: { date: true },
+    });
+
+    if (validationCompletedDates.length > 0) {
+      const completedDateStrings = validationCompletedDates
+        .map(v => v.date.toISOString().split('T')[0])
+        .join(', ');
+      throw new AppError(
+        `Validation already completed for date(s): ${completedDateStrings}. Cannot apply event.`,
+        400
+      );
+    }
+
     // Check eligibility based on leave policy
     const eligibility = await leavePolicyService.checkEligibility(employeeId, data.leaveTypeId);
     if (!eligibility.eligible) {

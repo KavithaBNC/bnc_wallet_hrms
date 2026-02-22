@@ -930,10 +930,11 @@ export class AttendanceController {
    */
   async applyValidationCorrection(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, ruleId, type, selectedRows, remarks } = req.body as {
+      const { organizationId, ruleId, directComponentId, type, selectedRows, remarks } = req.body as {
         organizationId: string;
         ruleId?: string;
-        type?: 'late' | 'earlyGoing';
+        directComponentId?: string;
+        type?: 'late' | 'earlyGoing' | 'noOutPunch' | 'shortfall' | 'absent' | 'approvalPending' | 'overtime' | 'shiftChange';
         selectedRows: { employeeId: string; date: string }[];
         remarks?: string;
       };
@@ -941,11 +942,163 @@ export class AttendanceController {
       const result = await attendanceService.applyValidationCorrection({
         organizationId,
         ruleId,
+        directComponentId,
         type: type || 'late',
         selectedRows,
         remarks,
         approverUserId,
       });
+      return res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Revert validation correction for a date range.
+   * POST /api/v1/attendance/validation-process/revert
+   */
+  async revertValidationCorrection(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, paygroupId, employeeId, fromDate, toDate, remarks } = req.body as {
+        organizationId: string;
+        paygroupId?: string | null;
+        employeeId?: string | null;
+        fromDate: string;
+        toDate: string;
+        remarks?: string;
+      };
+      const revertedByUserId = (req as any).user?.userId as string | undefined;
+      const result = await attendanceService.revertValidationCorrection({
+        organizationId,
+        paygroupId,
+        employeeId,
+        fromDate,
+        toDate,
+        remarks,
+        revertedByUserId,
+      });
+      return res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Get validation revert history.
+   * GET /api/v1/attendance/validation-process/revert-history
+   */
+  async getValidationRevertHistory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, page, limit } = req.query as {
+        organizationId: string;
+        page?: string;
+        limit?: string;
+      };
+      const result = await attendanceService.getValidationRevertHistory({
+        organizationId,
+        page: page ? parseInt(page, 10) : 1,
+        limit: limit ? parseInt(limit, 10) : 20,
+      });
+      return res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Get completed validation list for the Revert Process page.
+   * GET /api/v1/attendance/validation-process/completed-list
+   */
+  async getCompletedList(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, fromDate, toDate, paygroupId, search, page, limit } = req.query as {
+        organizationId: string;
+        fromDate: string;
+        toDate: string;
+        paygroupId?: string;
+        search?: string;
+        page?: string;
+        limit?: string;
+      };
+      const result = await attendanceService.getCompletedList({
+        organizationId,
+        fromDate,
+        toDate,
+        paygroupId,
+        search,
+        page: page ? parseInt(page, 10) : 1,
+        limit: limit ? parseInt(limit, 10) : 50,
+      });
+      return res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Revert validation corrections for specific rows.
+   * POST /api/v1/attendance/validation-process/revert-rows
+   */
+  async revertByRows(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, selectedRows, remarks } = req.body as {
+        organizationId: string;
+        selectedRows: { employeeId: string; date: string }[];
+        remarks?: string;
+      };
+      const revertedByUserId = (req as any).user?.userId as string | undefined;
+      const result = await attendanceService.revertByRows({
+        organizationId,
+        selectedRows,
+        remarks,
+        revertedByUserId,
+      });
+      return res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Put selected validation rows on hold.
+   * POST /api/v1/attendance/validation-process/on-hold
+   */
+  async putOnHold(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, selectedRows, holdAssociateCanModify, holdManagerCanModify, revertRegularization, reason } = req.body as {
+        organizationId: string;
+        selectedRows: { employeeId: string; date: string }[];
+        holdAssociateCanModify?: boolean;
+        holdManagerCanModify?: boolean;
+        revertRegularization?: boolean;
+        reason?: string;
+      };
+      const result = await attendanceService.putOnHold({
+        organizationId,
+        selectedRows,
+        holdAssociateCanModify,
+        holdManagerCanModify,
+        revertRegularization,
+        reason,
+      });
+      return res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Release selected rows from hold.
+   * POST /api/v1/attendance/validation-process/release-hold
+   */
+  async releaseHold(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, selectedRows } = req.body as {
+        organizationId: string;
+        selectedRows: { employeeId: string; date: string }[];
+      };
+      const result = await attendanceService.releaseHold({ organizationId, selectedRows });
       return res.status(200).json({ status: 'success', data: result });
     } catch (error) {
       return next(error);

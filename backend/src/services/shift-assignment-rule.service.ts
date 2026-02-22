@@ -285,12 +285,13 @@ export class ShiftAssignmentRuleService {
     if (!employee) return null;
 
     const normDateStr = dateStr.slice(0, 10); // YYYY-MM-DD
-    const dateForQuery = new Date(normDateStr + 'T12:00:00.000Z');
 
+    // For holiday rules we do NOT filter by effectiveDate <= date because
+    // the rule is created on (or after) the holiday dates it contains.
+    // Instead we check each holiday's own date field inside the JSON.
     const rules = await prisma.shiftAssignmentRule.findMany({
       where: {
         organizationId,
-        effectiveDate: { lte: dateForQuery },
         remarks: { contains: '__HOLIDAY_DATA__' },
       },
       orderBy: [

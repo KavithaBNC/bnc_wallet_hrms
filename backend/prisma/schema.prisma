@@ -70,6 +70,7 @@ model Organization {
   validationProcessRules       ValidationProcessRule[]
   workflowMappings             WorkflowMapping[]
   attendanceValidationResults  AttendanceValidationResult[]
+  validationRevertHistory      ValidationRevertHistory[]
 
   @@map("organizations")
 }
@@ -543,11 +544,15 @@ model AttendanceValidationResult {
   isNoOutPunch       Boolean      @map("is_no_out_punch")
   isShiftChange      Boolean      @map("is_shift_change")
   isOvertime         Boolean      @map("is_overtime")
-  isShortfall        Boolean      @map("is_shortfall")
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee           Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  isShortfall              Boolean      @map("is_shortfall")
+  isOnHold                 Boolean      @default(false) @map("is_on_hold")
+  holdAssociateCanModify   Boolean      @default(false) @map("hold_associate_can_modify")
+  holdManagerCanModify     Boolean      @default(false) @map("hold_manager_can_modify")
+  holdReason               String?      @map("hold_reason") @db.VarChar(500)
+  createdAt                DateTime     @default(now()) @map("created_at")
+  updatedAt                DateTime     @updatedAt @map("updated_at")
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee                 Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, employeeId, date])
   @@index([organizationId, date])
@@ -1865,6 +1870,25 @@ model ValidationProcessAction {
   attendanceComponent   AttendanceComponent? @relation(fields: [attendanceComponentId], references: [id], onDelete: SetNull)
 
   @@map("validation_process_actions")
+}
+
+model ValidationRevertHistory {
+  id               String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId   String       @map("organization_id") @db.Uuid
+  revertedByUserId String       @map("reverted_by_user_id") @db.Uuid
+  fromDate         DateTime     @map("from_date") @db.Date
+  toDate           DateTime     @map("to_date") @db.Date
+  employeeCount    Int          @map("employee_count")
+  dayCount         Int          @map("day_count")
+  leaveRequestsDeleted Int      @map("leave_requests_deleted")
+  balancesRestored Int          @map("balances_restored")
+  remarks          String?      @db.VarChar(500)
+  revertDetails    Json?        @map("revert_details")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("validation_revert_history")
 }
 
 enum OfferStatus {

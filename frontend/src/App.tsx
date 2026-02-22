@@ -18,6 +18,7 @@ import ValidationProcessPage from './pages/ValidationProcessPage';
 import ValidationProcessEmployeeGridPage from './pages/ValidationProcessEmployeeGridPage';
 import ValidationProcessRulePage from './pages/ValidationProcessRulePage';
 import ValidationProcessRuleFormPage from './pages/ValidationProcessRuleFormPage';
+import RevertProcessPage from './pages/RevertProcessPage';
 import AttendanceLockPage from './pages/AttendanceLockPage';
 import PostToPayrollPage from './pages/PostToPayrollPage';
 import AttendanceComponentsPage from './pages/AttendanceComponentsPage';
@@ -196,6 +197,16 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <ValidationProcessEmployeeGridPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/hr-activities/validation-process/revert"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <RevertProcessPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }

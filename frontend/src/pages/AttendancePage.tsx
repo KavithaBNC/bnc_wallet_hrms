@@ -629,6 +629,8 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
           const isCurrentDay = isToday(day);
           const dayNumber = format(day, 'd');
           const shiftName = shiftAssignments.get(dateStr) || 'General Shift'; // Default to "General Shift"
+          const isWeekOffDay = shiftName === 'Weekoff' || shiftName === 'W' || shiftName === 'Week Off';
+          const isFutureDay = day > new Date(new Date().toDateString());
 
           return (
             <div
@@ -662,7 +664,13 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                 {/* Leave badges (pending/approved/rejected/cancelled) */}
                 {(leaveByDate.get(dateStr) || []).map((lr) => {
                   const status = (lr.status || '').toUpperCase();
-                  const leaveTypeName = lr.leaveType?.name || 'Leave';
+                  // Extract component name from reason if leaveType is missing (e.g. "[Direct correction - BEREAVEMENT LEAVE]")
+                  const directCorrectionName = (() => {
+                    if (lr.leaveType?.name) return null;
+                    const m = (lr.reason || '').match(/\[Direct correction\s*-\s*([^\]]+)\]/i);
+                    return m ? m[1].trim() : null;
+                  })();
+                  const leaveTypeName = lr.leaveType?.name || directCorrectionName || 'Leave';
                   const ondutyReasonLabel = parseOndutyLabelFromReason(lr.reason ?? undefined);
                   const displayLeaveTypeName = ondutyReasonLabel || leaveTypeName;
                   const isPermission = leaveTypeName.toLowerCase().includes('permission');
@@ -812,8 +820,17 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                               })())) {
                                 return 'Present (with deviation)';
                               }
-                              if (statusText === 'LEAVE' && primaryApprovedLeave?.leaveType) {
-                                return primaryApprovedLeave.leaveType.code || primaryApprovedLeave.leaveType.name || 'LEAVE';
+                              if (statusText === 'LEAVE') {
+                                if (primaryApprovedLeave?.leaveType) {
+                                  return primaryApprovedLeave.leaveType.code || primaryApprovedLeave.leaveType.name || 'LEAVE';
+                                }
+                                // Fallback: extract name from reason for direct-correction leaves with null leaveType
+                                if (primaryApprovedLeave?.reason) {
+                                  const m = primaryApprovedLeave.reason.match(/\[Direct correction\s*-\s*([^\]]+)\]/i);
+                                  if (m) return m[1].trim();
+                                }
+                                // Fallback: use validationAction from attendance record
+                                if (record.validationAction) return record.validationAction;
                               }
                               return statusText;
                             })()}
@@ -990,13 +1007,23 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                     );
                   })
                 ) : (
-                  <div className="text-xs text-gray-400 text-center py-2">
-                    {/* When a specific employee is selected and a shift is shown for this day but there is
-                        no attendance record yet, treat it as "shift assigned – no punch yet" instead of
-                        a blank "No records" message so the calendar feels prefilled by default. */}
-                    {employeeId && shiftName && shiftName !== 'Weekoff' && shiftName !== 'W' && shiftName !== 'Week Off'
-                      ? 'Shift assigned – no punch yet'
-                      : 'No records'}
+                  isWeekOffDay && !isFutureDay ? (
+                    <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
+                      Validation Completed
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-400 text-center py-2">
+                      {employeeId && shiftName && !isWeekOffDay
+                        ? 'Shift assigned – no punch yet'
+                        : 'No records'}
+                    </div>
+                  )
+                )}
+
+                {/* Week-off past/current days always show Validation Completed (even if records exist) */}
+                {isWeekOffDay && !isFutureDay && dayRecords.length > 0 && (
+                  <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
+                    Validation Completed
                   </div>
                 )}
 
@@ -1112,6 +1139,8 @@ const AttendancePage = () => {
   const [manualPunchSubmitting, setManualPunchSubmitting] = useState(false);
   const [manualPunchMessage, setManualPunchMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [manualPunchEmployeeList, setManualPunchEmployeeList] = useState<Employee[]>([]);
+  const [manualPunchEmpSearch, setManualPunchEmpSearch] = useState('');
+  const [manualPunchEmpDropdownOpen, setManualPunchEmpDropdownOpen] = useState(false);
   const [lateEarlyPolicy, setLateEarlyPolicy] = useState<LateEarlyPolicy>(null);
   const [showLeaveAppliedBanner, setShowLeaveAppliedBanner] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1183,6 +1212,20 @@ const AttendancePage = () => {
   const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const employeeDropdownRef = useRef<HTMLDivElement>(null);
+  const manualPunchEmpDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close manual punch employee dropdown on outside click
+  useEffect(() => {
+    if (!manualPunchEmpDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (manualPunchEmpDropdownRef.current && !manualPunchEmpDropdownRef.current.contains(e.target as Node)) {
+        setManualPunchEmpDropdownOpen(false);
+        setManualPunchEmpSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [manualPunchEmpDropdownOpen]);
 
   // Load user data if not available
   useEffect(() => {
@@ -1794,18 +1837,93 @@ const AttendancePage = () => {
                 />
               </div>
               {canManualPunch && manualPunchEmployeeList.length > 0 && (
-                <div className="min-w-[200px]">
+                <div className="min-w-[220px] relative" ref={manualPunchEmpDropdownRef}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Employee</label>
-                  <select
-                    value={manualPunchEmployeeId || user?.employee?.id || ''}
-                    onChange={(e) => setManualPunchEmployeeId(e.target.value === (user?.employee?.id || '') ? null : e.target.value || null)}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                  <button
+                    type="button"
+                    onClick={() => setManualPunchEmpDropdownOpen((v) => !v)}
+                    className="w-full flex items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 text-left"
                   >
-                    <option value={user?.employee?.id || ''}>Myself</option>
-                    {manualPunchEmployeeList.map((emp) => (
-                      <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName} ({emp.employeeCode})</option>
-                    ))}
-                  </select>
+                    <span className="truncate">
+                      {manualPunchEmployeeId
+                        ? (() => {
+                            const emp = manualPunchEmployeeList.find((e) => e.id === manualPunchEmployeeId);
+                            return emp ? `${emp.firstName} ${emp.lastName} (${emp.employeeCode})` : 'Select employee';
+                          })()
+                        : `Myself (${user?.employee?.employeeCode ?? ''})`}
+                    </span>
+                    <svg className="w-4 h-4 text-gray-400 ml-2 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {manualPunchEmpDropdownOpen && (
+                    <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
+                      {/* Search box */}
+                      <div className="p-2 border-b border-gray-100">
+                        <div className="flex items-center gap-2 px-2 py-1 border border-gray-200 rounded-md bg-gray-50">
+                          <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m0 0A7 7 0 1110.65 5.65a7 7 0 006 11z" />
+                          </svg>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={manualPunchEmpSearch}
+                            onChange={(e) => setManualPunchEmpSearch(e.target.value)}
+                            placeholder="Search by name or code..."
+                            className="flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
+                          />
+                          {manualPunchEmpSearch && (
+                            <button type="button" onClick={() => setManualPunchEmpSearch('')} className="text-gray-400 hover:text-gray-600">✕</button>
+                          )}
+                        </div>
+                      </div>
+                      {/* Options list */}
+                      <div className="max-h-56 overflow-auto py-1">
+                        {/* Myself option */}
+                        {('myself'.includes(manualPunchEmpSearch.toLowerCase()) ||
+                          (user?.employee?.employeeCode ?? '').toLowerCase().includes(manualPunchEmpSearch.toLowerCase()) ||
+                          !manualPunchEmpSearch) && (
+                          <button
+                            type="button"
+                            onClick={() => { setManualPunchEmployeeId(null); setManualPunchEmpDropdownOpen(false); setManualPunchEmpSearch(''); }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${!manualPunchEmployeeId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-900'}`}
+                          >
+                            Myself ({user?.employee?.employeeCode ?? ''})
+                          </button>
+                        )}
+                        {/* Employee list filtered by search */}
+                        {manualPunchEmployeeList
+                          .filter((emp) => {
+                            if (!manualPunchEmpSearch) return true;
+                            const q = manualPunchEmpSearch.toLowerCase();
+                            return (
+                              emp.firstName?.toLowerCase().includes(q) ||
+                              emp.lastName?.toLowerCase().includes(q) ||
+                              emp.employeeCode?.toLowerCase().includes(q) ||
+                              `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(q)
+                            );
+                          })
+                          .map((emp) => (
+                            <button
+                              key={emp.id}
+                              type="button"
+                              onClick={() => { setManualPunchEmployeeId(emp.id); setManualPunchEmpDropdownOpen(false); setManualPunchEmpSearch(''); }}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${manualPunchEmployeeId === emp.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-900'}`}
+                            >
+                              {emp.firstName} {emp.lastName}
+                              <span className="ml-1 text-xs text-gray-400">({emp.employeeCode})</span>
+                            </button>
+                          ))}
+                        {/* No results */}
+                        {manualPunchEmpSearch && !manualPunchEmployeeList.some((emp) => {
+                          const q = manualPunchEmpSearch.toLowerCase();
+                          return emp.firstName?.toLowerCase().includes(q) || emp.lastName?.toLowerCase().includes(q) || emp.employeeCode?.toLowerCase().includes(q);
+                        }) && (
+                          <div className="px-3 py-4 text-center text-xs text-gray-400">No employees found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               <button

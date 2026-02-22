@@ -2258,7 +2258,7 @@ export class AttendanceService {
         },
         include: {
           leaveType: {
-            select: { id: true },
+            select: { id: true, name: true, code: true },
           },
         },
       }),
@@ -2467,6 +2467,7 @@ export class AttendanceService {
     const oneDayMs = 24 * 60 * 60 * 1000;
 
     const usageThisMonth = new Map<string, number>(); // leaveTypeId -> days used in [monthStart, monthEnd]
+    const usageBeforeThisMonth = new Map<string, number>(); // leaveTypeId -> days used before monthStart (year-to-date)
 
     const ondutyReasonRegex = /^\[Onduty(?:\s+([^\]]+))?\]/i;
     const parseOndutyReasonLabel = (reason: string | null | undefined): string | null => {
@@ -2482,7 +2483,32 @@ export class AttendanceService {
         continue;
       }
 
-      const leaveTypeId = lr.leaveTypeId;
+      // Resolve leaveTypeId — for old direct-correction records it may be null.
+      // Try to extract component name from reason "[Direct correction - BEREAVEMENT LEAVE]"
+      // and fuzzy-match against known leaveTypes.
+      let leaveTypeId = lr.leaveTypeId;
+      if (!leaveTypeId) {
+        if (lr.leaveType?.id) {
+          leaveTypeId = lr.leaveType.id;
+        } else if (lr.reason) {
+          const m = lr.reason.match(/\[Direct correction\s*-\s*([^\]]+)\]/i);
+          if (m) {
+            const compName = m[1].trim();
+            const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const compNorm = norm(compName);
+            const matched = leaveTypes.find((lt) => {
+              const n = norm(lt.name);
+              const c = norm(lt.code ?? '');
+              return n === compNorm || c === compNorm || n.includes(compNorm) || compNorm.includes(n);
+            });
+            if (matched) leaveTypeId = matched.id;
+          }
+        }
+      }
+
+      // Still null — no matching leave type, skip
+      if (!leaveTypeId) continue;
+
       const totalDays = Number(lr.totalDays);
 
       const start = new Date(lr.startDate);
@@ -2502,10 +2528,31 @@ export class AttendanceService {
         return days * perDay;
       };
 
-      // Usage in this month
+      // Usage in this month only
       const usedThis = overlap(monthStart, monthEnd);
       if (usedThis > 0) {
         usageThisMonth.set(leaveTypeId, (usageThisMonth.get(leaveTypeId) ?? 0) + usedThis);
+      }
+
+      // Usage before this month (from year start to day before month start)
+      const prevMonthEnd = new Date(monthStart.getTime() - 1); // end of previous month
+      const usedBefore = overlap(yearStart, prevMonthEnd);
+      if (usedBefore > 0) {
+        usageBeforeThisMonth.set(leaveTypeId, (usageBeforeThisMonth.get(leaveTypeId) ?? 0) + usedBefore);
+      }
+    }
+
+    // Fallback: count LEAVE status records by validationAction (component name)
+    // Covers cases where leaveRequest was never created (leaveTypeId was null at apply time)
+    const normAct = (s: string | null | undefined) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const usageFromRecordsByAction = new Map<string, number>(); // normalized(validationAction) -> count
+    for (const rec of records) {
+      if ((rec as Record<string, unknown>).status === 'LEAVE' && (rec as Record<string, unknown>).validationMethod === 'DIRECT_COMPONENT') {
+        const action = ((rec as Record<string, unknown>).validationAction as string | null | undefined);
+        if (action) {
+          const key = normAct(action);
+          usageFromRecordsByAction.set(key, (usageFromRecordsByAction.get(key) ?? 0) + 1);
+        }
       }
     }
 
@@ -2535,7 +2582,7 @@ export class AttendanceService {
     }): boolean => {
       const code = (leaveType.code || '').trim().toUpperCase();
       const nameKey = normalizeKey(leaveType.name);
-      return code === 'EL' || code === 'SL' || nameKey === 'earnedleave' || nameKey === 'sickleave';
+      return code === 'EL' || nameKey === 'earnedleave';
     };
 
     const componentMatchesLeaveType = (
@@ -2578,12 +2625,54 @@ export class AttendanceService {
       opts?: { yearEntitlementOverride?: number | null; source?: LeaveRowSource }
     ) => {
       void opts;
-      const opening = Math.max(0, Number(bal.openingBalance ?? 0));
-      const credit = isCarryForwardEligibleLeaveType(bal.leaveType)
+      // Only EL is carry-forward eligible — SL and others start fresh each year
+      const isCarryForward = isCarryForwardEligibleLeaveType(bal.leaveType);
+
+      // Full annual entitlement stored in DB (already prorated for mid-year joiners)
+      const annualCredit = Math.max(0, Number(bal.accrued ?? 0));
+
+      // Used before this month (Jan 1 to last day of prev month)
+      const usedBefore = usageBeforeThisMonth.get(bal.leaveTypeId) ?? 0;
+
+      // Used this month only
+      const usedThisMonth = usageThisMonth.get(bal.leaveTypeId) ?? 0;
+      const used = Math.max(0, usedThisMonth);
+
+      let opening: number;
+      let credit: number;
+      let balance: number;
+
+      // carriedForward = actual previous year unused balance (EL only)
+      // openingBalance = annual entitlement for this year (same as accrued for auto-credit)
+      // annualCredit   = annual entitlement (= bal.accrued)
+      const carriedForward = isCarryForward
         ? Math.max(0, Number(bal.carriedForward ?? 0))
         : 0;
-      const used = Math.max(0, Number(bal.used ?? 0));
-      const balance = Math.max(0, Number(bal.available ?? 0));
+
+      // Total available for the full year = annual entitlement + prev year carry
+      const totalYearAvailable = annualCredit + carriedForward;
+
+      if (month === 1) {
+        // ── JANUARY ──
+        // Opening = previous year carry forward only (EL: what carried over, SL: 0)
+        opening = carriedForward;
+
+        // Credit = full annual entitlement (shown once in January)
+        credit = annualCredit;
+
+        // Balance = opening + credit − used this month
+        balance = Math.max(0, opening + credit - used);
+      } else {
+        // ── FEBRUARY onwards ──
+        // Opening = total year available − used in all previous months
+        opening = Math.max(0, totalYearAvailable - usedBefore);
+
+        // Credit = 0 (already credited in January)
+        credit = 0;
+
+        // Balance = opening − used this month
+        balance = Math.max(0, opening - used);
+      }
 
       return {
         name: bal.leaveType.name,
@@ -2651,11 +2740,32 @@ export class AttendanceService {
         };
       }
 
+      // No leaveBalance record — try usageThisMonth first (resolved via leaveTypeId)
+      // then fall back to attendance records with matching validationAction (DIRECT_COMPONENT)
+      const usedFromLeaveMap = matchedLeaveTypeForBalance
+        ? (usageThisMonth.get(matchedLeaveTypeForBalance.id) ?? 0)
+        : 0;
+
+      // Fallback: count LEAVE records whose validationAction matches component name/shortName
+      const compNameNorm = normAct(comp.eventName);
+      const compShortNorm = normAct(comp.shortName);
+      let usedFromRecords = 0;
+      for (const [actionKey, count] of usageFromRecordsByAction) {
+        if (
+          (compNameNorm && (actionKey === compNameNorm || actionKey.includes(compNameNorm) || compNameNorm.includes(actionKey))) ||
+          (compShortNorm && (actionKey === compShortNorm || actionKey.includes(compShortNorm) || compShortNorm.includes(actionKey)))
+        ) {
+          usedFromRecords = Math.max(usedFromRecords, count);
+        }
+      }
+
+      const used = Math.max(usedFromLeaveMap, usedFromRecords);
+
       return {
         name: comp.eventName || comp.shortName,
         opening: 0,
         credit: 0,
-        used: 0,
+        used,
         balance: 0,
         source: 'attendance_component' as const,
         entitlementConfigured: true,
@@ -2978,6 +3088,29 @@ export class AttendanceService {
     ]);
 
     const holidayDateSet = new Set(holidays.map((h) => this.toDateKey(h.date)));
+
+    // Also load holidays stored in ShiftAssignmentRule remarks with __HOLIDAY_DATA__ marker.
+    // No effectiveDate filter here — the rule may be created on/after the holiday dates inside it.
+    const holidayAssignRules = await prisma.shiftAssignmentRule.findMany({
+      where: { organizationId, remarks: { contains: '__HOLIDAY_DATA__' } },
+      select: { remarks: true },
+    });
+    for (const rule of holidayAssignRules) {
+      const markerIdx = (rule.remarks || '').indexOf('__HOLIDAY_DATA__');
+      if (markerIdx === -1) continue;
+      try {
+        const parsed = JSON.parse(rule.remarks!.slice(markerIdx + '__HOLIDAY_DATA__'.length)) as {
+          holidayDetails?: Array<{ date: string; type: string; name: string }>;
+        };
+        for (const hd of parsed.holidayDetails ?? []) {
+          if (!hd.date) continue;
+          const hdDate = new Date(hd.date + 'T00:00:00.000Z');
+          if (hdDate >= from && hdDate <= to) {
+            holidayDateSet.add(hd.date);
+          }
+        }
+      } catch { /* ignore */ }
+    }
     const leaveAppliedSet = new Set<string>();
     const leavePendingSet = new Set<string>();
     for (const lr of leaveRequests) {
@@ -2995,6 +3128,74 @@ export class AttendanceService {
         }
       }
     }
+
+    // Fetch configured week-off rules for this org (once, reused for all employees/dates)
+    const employeeMetaForWeekOff = await prisma.employee.findMany({
+      where: { id: { in: employeeIds } },
+      select: { id: true, paygroupId: true, departmentId: true },
+    });
+    const empMetaMap = new Map(employeeMetaForWeekOff.map((e) => [e.id, e]));
+    const weekOffRules = await prisma.shiftAssignmentRule.findMany({
+      where: {
+        organizationId,
+        effectiveDate: { lte: to },
+        remarks: { contains: '__WEEK_OFF_DATA__' },
+      },
+      orderBy: [{ priority: 'desc' }, { effectiveDate: 'desc' }],
+      select: { id: true, employeeIds: true, paygroupId: true, departmentId: true, remarks: true, effectiveDate: true },
+    });
+
+    /**
+     * Returns true if the given date is a configured week-off for the employee.
+     * Uses __WEEK_OFF_DATA__ rules including alternate Saturday logic.
+     * Falls back to Sunday-only if no rule is configured.
+     */
+    const isConfiguredWeekOff = (empId: string, date: Date): boolean => {
+      const empMeta = empMetaMap.get(empId);
+      const dateLocal = new Date(date);
+      for (const rule of weekOffRules) {
+        if (rule.effectiveDate > date) continue;
+        const ruleEmpIds = Array.isArray(rule.employeeIds) ? (rule.employeeIds as string[]) : [];
+        let matches = false;
+        if (ruleEmpIds.length > 0) {
+          matches = ruleEmpIds.includes(empId);
+        } else if (rule.paygroupId && rule.departmentId) {
+          matches = rule.paygroupId === empMeta?.paygroupId && rule.departmentId === empMeta?.departmentId;
+        } else if (rule.paygroupId && !rule.departmentId) {
+          matches = rule.paygroupId === empMeta?.paygroupId;
+        } else if (!rule.paygroupId && rule.departmentId) {
+          matches = rule.departmentId === empMeta?.departmentId;
+        } else {
+          matches = true; // org-wide
+        }
+        if (!matches || !rule.remarks) continue;
+
+        const markerIdx = rule.remarks.indexOf('__WEEK_OFF_DATA__');
+        if (markerIdx === -1) continue;
+        try {
+          const jsonStr = rule.remarks.slice(markerIdx + '__WEEK_OFF_DATA__'.length);
+          const parsed = JSON.parse(jsonStr) as { weekOffDetails?: boolean[][]; alternateSaturdayOff?: string };
+          let weekOffDetails = parsed?.weekOffDetails;
+          if (!weekOffDetails || !Array.isArray(weekOffDetails)) continue;
+          const altSat = (parsed?.alternateSaturdayOff || '').toUpperCase();
+          if ((altSat.includes('1ST') && altSat.includes('3RD')) || (altSat.includes('2ND') && altSat.includes('4TH'))) {
+            weekOffDetails = weekOffDetails.map((week) => {
+              const row = [...week];
+              if (row[0] !== undefined) row[0] = false;
+              return row;
+            });
+          }
+          const dayOfMonth = dateLocal.getUTCDate();
+          const weekIndex = Math.min(5, Math.max(0, Math.ceil(dayOfMonth / 7) - 1));
+          const dayIndex = dateLocal.getUTCDay(); // 0=Sun, 6=Sat
+          if (weekOffDetails[weekIndex]?.[dayIndex] === true) return true;
+        } catch {
+          // ignore parse error
+        }
+      }
+      // Sunday is always a week-off for all employees regardless of configured rules
+      return date.getUTCDay() === 0;
+    };
 
     const logPrefix = '[ValidationProcess]';
     console.log(`${logPrefix} run: fromDate=${fromDate} toDate=${toDate} employeeIds=${employeeIds.length} records=${records.length}`);
@@ -3017,9 +3218,38 @@ export class AttendanceService {
       });
     }
 
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(23, 59, 59, 999); // treat "today" as fully included, skip strictly future
+
     const rows: Prisma.AttendanceValidationResultCreateManyInput[] = [];
     for (const r of records) {
       const dateKey = this.toDateKey(r.date);
+      const recordDate = new Date(dateKey + 'T00:00:00.000Z');
+
+      // Skip future dates (beyond today)
+      if (recordDate > todayUTC) continue;
+
+      // Week-offs and holidays are auto-completed — insert as isCompleted: true
+      const isWeekOffDay = isConfiguredWeekOff(r.employeeId, recordDate);
+      const isHolidayDay = holidayDateSet.has(dateKey);
+      if (isWeekOffDay || isHolidayDay) {
+        rows.push({
+          organizationId,
+          employeeId: r.employeeId,
+          date: recordDate,
+          isCompleted: true,
+          isApprovalPending: false,
+          isLate: false,
+          isEarlyGoing: false,
+          isAbsent: false,
+          isNoOutPunch: false,
+          isShiftChange: false,
+          isOvertime: false,
+          isShortfall: false,
+        });
+        continue;
+      }
+
       let row: Prisma.AttendanceValidationResultCreateManyInput;
       try {
         const employeeDateKey = `${r.employeeId}-${dateKey}`;
@@ -3035,7 +3265,7 @@ export class AttendanceService {
         const isShiftChange =
           defaultShiftId != null && recordShiftId != null && defaultShiftId !== recordShiftId;
         const isHolidayByCalendar = holidayDateSet.has(dateKey);
-        const isWeekOffByCalendar = this.isWeekend(new Date(dateKey + 'T00:00:00.000Z'));
+        const isWeekOffByCalendar = isConfiguredWeekOff(r.employeeId, new Date(dateKey + 'T00:00:00.000Z'));
         const hasLeaveApplied = leaveAppliedSet.has(employeeDateKey);
         const isAbsentByNoPunchRule =
           !hasCheckIn &&
@@ -3219,7 +3449,13 @@ export class AttendanceService {
         const lateCorrectedCompleted = isLate && hasCorrectionApplied && !isSinglePunchNoCorrection;
         const earlyCorrectedCompleted = isEarly && hasCorrectionApplied && !isSinglePunchNoCorrection;
 
-        const isCompleted = normalCompleted || holidayWeekOffCompleted || lateCorrectedCompleted || earlyCorrectedCompleted;
+        const leaveCompleted = hasLeaveApplied && !hasPendingLeave;
+        const isCompleted =
+          normalCompleted ||
+          holidayWeekOffCompleted ||
+          lateCorrectedCompleted ||
+          earlyCorrectedCompleted ||
+          leaveCompleted;
 
         // Single punch must appear first in "No Out Punch"; after No Correction from that bucket,
         // re-classify into Late/Early for follow-up.
@@ -3263,7 +3499,7 @@ export class AttendanceService {
         const hasCheckOut = !!r.checkOut;
         const breakHoursFb = r.breakHours != null ? Number(r.breakHours) : 0;
         const isHolidayByCalendar = holidayDateSet.has(dateKey);
-        const isWeekOffByCalendar = this.isWeekend(new Date(dateKey + 'T00:00:00.000Z'));
+        const isWeekOffByCalendar = isConfiguredWeekOff(r.employeeId, new Date(dateKey + 'T00:00:00.000Z'));
         const hasLeaveApplied = leaveAppliedSet.has(employeeDateKey);
         const isAbsentByNoPunchRule =
           !hasCheckIn &&
@@ -3301,7 +3537,8 @@ export class AttendanceService {
         const fbIsEarly = r.isEarly === true;
         const fbLateCorrected = fbIsLate && fbCorrectionApplied && !fbIsSinglePunchNoCorrection;
         const fbEarlyCorrected = fbIsEarly && fbCorrectionApplied && !fbIsSinglePunchNoCorrection;
-        const fbCompleted = fbHolidayCompleted || fbLateCorrected || fbEarlyCorrected;
+        const fbLeaveCompleted = hasLeaveApplied && !hasPendingLeave;
+        const fbCompleted = fbHolidayCompleted || fbLateCorrected || fbEarlyCorrected || fbLeaveCompleted;
 
         row = {
           organizationId,
@@ -3335,11 +3572,33 @@ export class AttendanceService {
     for (const employeeId of employeeIds) {
       for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
         const dateKey = this.toDateKey(d);
+        const loopDate = new Date(dateKey + 'T00:00:00.000Z');
+
+        // Skip future dates
+        if (loopDate > todayUTC) continue;
+
         const rowKey = `${employeeId}-${dateKey}`;
         if (existingRowKeys.has(rowKey)) continue;
 
-        const isHolidayByCalendar = holidayDateSet.has(dateKey);
-        const isWeekOffByCalendar = this.isWeekend(new Date(dateKey + 'T00:00:00.000Z'));
+        // Week-offs and holidays are auto-completed
+        if (isConfiguredWeekOff(employeeId, loopDate) || holidayDateSet.has(dateKey)) {
+          rows.push({
+            organizationId,
+            employeeId,
+            date: loopDate,
+            isCompleted: true,
+            isApprovalPending: false,
+            isLate: false,
+            isEarlyGoing: false,
+            isAbsent: false,
+            isNoOutPunch: false,
+            isShiftChange: false,
+            isOvertime: false,
+            isShortfall: false,
+          });
+          continue;
+        }
+
         const hasLeaveApplied = leaveAppliedSet.has(rowKey);
         const hasPendingApproval = pendingSet.has(rowKey) || leavePendingSet.has(rowKey);
         const dayPunch = punchDayMap.get(rowKey);
@@ -3348,15 +3607,14 @@ export class AttendanceService {
         const isAbsent =
           !hasPendingApproval &&
           !hasSinglePunch &&
-          !hasLeaveApplied &&
-          !isHolidayByCalendar &&
-          !isWeekOffByCalendar;
+          !hasLeaveApplied;
 
+        const leaveCompleted = hasLeaveApplied && !hasPendingApproval;
         rows.push({
           organizationId,
           employeeId,
-          date: new Date(dateKey + 'T00:00:00.000Z'),
-          isCompleted: false,
+          date: loopDate,
+          isCompleted: leaveCompleted,
           isApprovalPending: hasPendingApproval,
           isLate: false,
           isEarlyGoing: false,
@@ -3432,6 +3690,7 @@ export class AttendanceService {
         isShiftChange: true,
         isOvertime: true,
         isShortfall: true,
+        isOnHold: true,
       },
     });
 
@@ -3442,6 +3701,7 @@ export class AttendanceService {
     for (const row of stored) {
       const dateKey = this.toDateKey(row.date);
       ensureDay(dateKey);
+      if (row.isOnHold) { daily[dateKey].onHold += 1; continue; }
       if (row.isCompleted) daily[dateKey].completed += 1;
       if (row.isApprovalPending) daily[dateKey].approvalPending += 1;
       if (row.isLate && !row.isNoOutPunch) daily[dateKey].late += 1;
@@ -3486,6 +3746,7 @@ export class AttendanceService {
       shiftChange: 'isShiftChange',
       overtime: 'isOvertime',
       shortfall: 'isShortfall',
+      validationOnHold: 'isOnHold',
     };
     return (map[type] ?? 'isCompleted') as keyof Pick<Prisma.AttendanceValidationResultWhereInput, 'isCompleted' | 'isApprovalPending' | 'isLate' | 'isEarlyGoing' | 'isAbsent' | 'isNoOutPunch' | 'isShiftChange' | 'isOvertime' | 'isShortfall'>;
   }
@@ -3571,9 +3832,121 @@ export class AttendanceService {
     const formatTime = (d: Date | null) =>
       d ? new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
 
+    // For absent type: build exclusion sets (holidays, week-off rules, approved leaves) within the selected range
+    let absentHolidaySet = new Set<string>();
+    let absentLeaveAppliedSet = new Set<string>();
+    let absentWeekOffRules: Array<{ employeeIds: unknown; paygroupId: string | null; departmentId: string | null; remarks: string | null; effectiveDate: Date }> = [];
+    let absentEmpMetaMap = new Map<string, { paygroupId: string | null; departmentId: string | null }>();
+    if (type === 'absent') {
+      const [absentHolidays, absentLeaveRequests, absentShiftRules, absentEmpMeta] = await Promise.all([
+        prisma.holiday.findMany({
+          where: { organizationId, date: { gte: from, lte: to } },
+          select: { date: true },
+        }),
+        prisma.leaveRequest.findMany({
+          where: {
+            employeeId: { in: employeeIds },
+            startDate: { lte: to },
+            endDate: { gte: from },
+            status: 'APPROVED',
+          },
+          select: { employeeId: true, startDate: true, endDate: true },
+        }),
+        prisma.shiftAssignmentRule.findMany({
+          where: {
+            organizationId,
+            // No effectiveDate filter — holiday rules may be created after the holiday dates they contain.
+            // Week-off rules will still be filtered by effectiveDate inside isConfiguredWeekOffForList.
+            remarks: { contains: '__DATA__' },
+          },
+          orderBy: [{ priority: 'desc' }, { effectiveDate: 'desc' }],
+          select: { employeeIds: true, paygroupId: true, departmentId: true, remarks: true, effectiveDate: true },
+        }),
+        prisma.employee.findMany({
+          where: { id: { in: employeeIds } },
+          select: { id: true, paygroupId: true, departmentId: true },
+        }),
+      ]);
+
+      // Holidays from the holidays table
+      absentHolidaySet = new Set(absentHolidays.map((h) => this.toDateKey(h.date)));
+
+      // Also extract holidays stored in ShiftAssignmentRule remarks with __HOLIDAY_DATA__ marker
+      const holidayRules = absentShiftRules.filter((r) => r.remarks?.includes('__HOLIDAY_DATA__'));
+      for (const rule of holidayRules) {
+        const markerIdx = (rule.remarks || '').indexOf('__HOLIDAY_DATA__');
+        if (markerIdx === -1) continue;
+        try {
+          const parsed = JSON.parse(rule.remarks!.slice(markerIdx + '__HOLIDAY_DATA__'.length)) as {
+            holidayDetails?: Array<{ date: string; type: string; name: string }>;
+          };
+          for (const hd of parsed.holidayDetails ?? []) {
+            if (!hd.date) continue;
+            const hdDate = new Date(hd.date + 'T00:00:00.000Z');
+            if (hdDate >= from && hdDate <= to) {
+              absentHolidaySet.add(hd.date);
+            }
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
+      absentWeekOffRules = absentShiftRules.filter((r) => r.remarks?.includes('__WEEK_OFF_DATA__'));
+      absentEmpMetaMap = new Map(absentEmpMeta.map((e) => [e.id, e]));
+      for (const lr of absentLeaveRequests) {
+        const start = new Date(lr.startDate); start.setUTCHours(0, 0, 0, 0);
+        const end = new Date(lr.endDate); end.setUTCHours(0, 0, 0, 0);
+        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+          if (d < from || d > to) continue;
+          absentLeaveAppliedSet.add(`${lr.employeeId}-${this.toDateKey(d)}`);
+        }
+      }
+    }
+
+    const isConfiguredWeekOffForList = (empId: string, date: Date): boolean => {
+      const empMeta = absentEmpMetaMap.get(empId);
+      for (const rule of absentWeekOffRules) {
+        if (rule.effectiveDate > date) continue;
+        const ruleEmpIds = Array.isArray(rule.employeeIds) ? (rule.employeeIds as string[]) : [];
+        let matches = false;
+        if (ruleEmpIds.length > 0) {
+          matches = ruleEmpIds.includes(empId);
+        } else if (rule.paygroupId && rule.departmentId) {
+          matches = rule.paygroupId === empMeta?.paygroupId && rule.departmentId === empMeta?.departmentId;
+        } else if (rule.paygroupId && !rule.departmentId) {
+          matches = rule.paygroupId === empMeta?.paygroupId;
+        } else if (!rule.paygroupId && rule.departmentId) {
+          matches = rule.departmentId === empMeta?.departmentId;
+        } else {
+          matches = true;
+        }
+        if (!matches || !rule.remarks) continue;
+        const markerIdx = rule.remarks.indexOf('__WEEK_OFF_DATA__');
+        if (markerIdx === -1) continue;
+        try {
+          const jsonStr = rule.remarks.slice(markerIdx + '__WEEK_OFF_DATA__'.length);
+          const parsed = JSON.parse(jsonStr) as { weekOffDetails?: boolean[][]; alternateSaturdayOff?: string };
+          let weekOffDetails = parsed?.weekOffDetails;
+          if (!weekOffDetails || !Array.isArray(weekOffDetails)) continue;
+          const altSat = (parsed?.alternateSaturdayOff || '').toUpperCase();
+          if ((altSat.includes('1ST') && altSat.includes('3RD')) || (altSat.includes('2ND') && altSat.includes('4TH'))) {
+            weekOffDetails = weekOffDetails.map((week) => {
+              const row = [...week]; if (row[0] !== undefined) row[0] = false; return row;
+            });
+          }
+          const dayOfMonth = date.getUTCDate();
+          const weekIndex = Math.min(5, Math.max(0, Math.ceil(dayOfMonth / 7) - 1));
+          const dayIndex = date.getUTCDay();
+          if (weekOffDetails[weekIndex]?.[dayIndex] === true) return true;
+        } catch { /* ignore */ }
+      }
+      // Sunday is always a week-off for all employees regardless of configured rules
+      return date.getUTCDay() === 0;
+    };
+
     // Filter out rows where:
     // 1. Correction was already applied (except No Correction rows that are intentionally rerouted into Late/Early)
     // 2. For "late" type: no checkout (single punch / no out punch regardless of status)
+    // 3. For "absent" type: exclude holidays, configured week-offs, and days with approved leave (within selected range only)
     const pendingValidationRows = validationRows.filter((v) => {
       const key = `${v.employeeId}:${this.toDateKey(v.date)}`;
       const rec = recordByKey.get(key);
@@ -3588,6 +3961,14 @@ export class AttendanceService {
         if (!allowRerouteNoCorrection) return false;
       }
       if (type === 'late' && !rec?.checkOut) return false;
+      if (type === 'absent') {
+        const dateKey = this.toDateKey(v.date);
+        if (absentHolidaySet.has(dateKey)) return false;
+        if (isConfiguredWeekOffForList(v.employeeId, new Date(dateKey + 'T00:00:00.000Z'))) return false;
+        if (absentLeaveAppliedSet.has(`${v.employeeId}-${dateKey}`)) return false;
+        // Also exclude if there is any punch (single punch = no-out-punch, not absent)
+        if (rec?.checkIn) return false;
+      }
       return true;
     });
 
@@ -3626,6 +4007,7 @@ export class AttendanceService {
       absent: 0,
       shortfall: 0,
       overtime: 0,
+      onHold: 0,
     };
   }
 
@@ -3802,27 +4184,252 @@ export class AttendanceService {
   async applyValidationCorrection(params: {
     organizationId: string;
     ruleId?: string;
-    type?: 'late' | 'earlyGoing' | 'noOutPunch';
+    directComponentId?: string;
+    type?: 'late' | 'earlyGoing' | 'noOutPunch' | 'shortfall' | 'absent' | 'approvalPending' | 'overtime' | 'shiftChange';
     selectedRows: { employeeId: string; date: string }[];
     remarks?: string;
     approverUserId?: string;
   }): Promise<{ applied: number; errors: { employeeId: string; date: string; message: string }[]; skipped?: { employeeId: string; date: string; message: string }[] }> {
-    const { organizationId, ruleId, selectedRows, remarks, approverUserId } = params;
+    const { organizationId, ruleId, directComponentId, selectedRows, remarks, approverUserId } = params;
+
+    // --- Direct component apply (EL, SL, LOP, WFH, Permission, etc.) ---
+    if (directComponentId) {
+      const { getLeaveTypeIdForAttendanceComponent } = await import('../utils/event-config');
+      const { Prisma: PrismaClient } = await import('@prisma/client');
+
+      // Fetch full component details including hasBalance flag
+      const component = await prisma.attendanceComponent.findUnique({
+        where: { id: directComponentId },
+        select: { id: true, eventName: true, shortName: true, eventCategory: true, hasBalance: true },
+      });
+      if (!component) {
+        return { applied: 0, errors: [{ employeeId: '', date: '', message: 'Attendance component not found' }] };
+      }
+
+      const errors: { employeeId: string; date: string; message: string }[] = [];
+      const skipped: { employeeId: string; date: string; message: string }[] = [];
+      let applied = 0;
+
+      const cat = (component.eventCategory ?? '').toLowerCase().trim();
+      const isOnduty = cat === 'onduty' || cat === 'on duty';
+      const isWFH = cat === 'wfh' ||
+        (component.shortName ?? '').toUpperCase().includes('WFH') ||
+        (component.eventName ?? '').toUpperCase().includes('WFH');
+
+      // Determine attendance status to set
+      const newAttendanceStatus = isOnduty || isWFH ? AttendanceStatus.PRESENT : AttendanceStatus.LEAVE;
+
+      // Try to resolve a matching leave type for ALL categories (needed for leave request + balance)
+      const leaveTypeId = await getLeaveTypeIdForAttendanceComponent(organizationId, component);
+      const hasBalance = component.hasBalance ?? false;
+
+      if (!leaveTypeId && (component.eventCategory ?? '').toLowerCase() === 'leave') {
+        console.warn(`[DirectComponent] No matching LeaveType found for component "${component.eventName}" (${component.shortName}). Leave request will NOT be created. Check LeaveType names in DB.`);
+      }
+
+      // Group rows by employee
+      const byEmployee = new Map<string, string[]>();
+      for (const { employeeId, date } of selectedRows) {
+        const arr = byEmployee.get(employeeId) ?? [];
+        arr.push(date);
+        byEmployee.set(employeeId, arr);
+      }
+
+      for (const [employeeId, dates] of byEmployee) {
+        const sortedDates = [...dates].sort();
+        const startDateStr = sortedDates[0];
+        const endDateStr = sortedDates[sortedDates.length - 1];
+        const totalDays = sortedDates.length;
+
+        try {
+          const startDateObj = new Date(startDateStr + 'T00:00:00.000Z');
+          const endDateObj = new Date(endDateStr + 'T00:00:00.000Z');
+          const componentLabel = component.eventName ?? component.shortName ?? 'Direct Correction';
+          const reason = `[Direct correction - ${componentLabel}] ${remarks || ''}`.trim();
+
+          // Create a leave request (APPROVED) whenever a matching leave type exists.
+          // This covers EL, SL, LOP, CL, Permission, Onduty, WFH — any component
+          // that maps to a leave type will get a proper leave record.
+          if (leaveTypeId) {
+            // For components with hasBalance=true (EL, SL, Comp Off etc.),
+            // check available balance before applying. Throw error if insufficient.
+            if (hasBalance) {
+              const year = startDateObj.getUTCFullYear();
+              const balanceCheck = await prisma.employeeLeaveBalance.findUnique({
+                where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
+              });
+              const availableDays = balanceCheck ? parseFloat(balanceCheck.available.toString()) : 0;
+              if (availableDays < totalDays) {
+                throw new AppError(
+                  `Insufficient ${componentLabel} balance. Available: ${availableDays} day(s), Requested: ${totalDays} day(s).`,
+                  400
+                );
+              }
+            }
+
+            await prisma.leaveRequest.create({
+              data: {
+                employee: { connect: { id: employeeId } },
+                leaveType: { connect: { id: leaveTypeId } },
+                startDate: startDateObj,
+                endDate: endDateObj,
+                totalDays: new PrismaClient.Decimal(totalDays),
+                reason,
+                status: 'APPROVED' as any,
+                reviewedBy: approverUserId ?? null,
+                reviewedAt: approverUserId ? new Date() : null,
+                reviewComments: 'Auto-approved by validation correction',
+              },
+            });
+
+            // Always update used count for the leave balance record.
+            // For hasBalance=true (EL, SL, CL...) → also deduct from available.
+            // For hasBalance=false (LOP, Permission...) → only increment used (no available deduction).
+            const year = startDateObj.getUTCFullYear();
+            const balance = await prisma.employeeLeaveBalance.findUnique({
+              where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
+            });
+            if (balance) {
+              const usedDays = parseFloat(balance.used.toString()) + totalDays;
+              const updateData: Record<string, unknown> = {
+                used: new PrismaClient.Decimal(usedDays),
+              };
+              if (hasBalance) {
+                const availableDays = parseFloat(balance.available.toString()) - totalDays;
+                updateData.available = new PrismaClient.Decimal(Math.max(0, availableDays));
+              }
+              await prisma.employeeLeaveBalance.update({
+                where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
+                data: updateData,
+              });
+            } else {
+              // No balance record yet — create one with just used count (for LOP etc.)
+              await prisma.employeeLeaveBalance.create({
+                data: {
+                  employeeId,
+                  leaveTypeId,
+                  year,
+                  openingBalance: new PrismaClient.Decimal(0),
+                  accrued: new PrismaClient.Decimal(0),
+                  used: new PrismaClient.Decimal(totalDays),
+                  available: new PrismaClient.Decimal(0),
+                  carriedForward: new PrismaClient.Decimal(0),
+                },
+              });
+            }
+          }
+
+          // Upsert attendance record status and validation result for each selected date
+          for (const dateStr of sortedDates) {
+            const dayDate = new Date(dateStr + 'T00:00:00.000Z');
+
+            // Check if an attendance record already exists
+            const existingRecord = await prisma.attendanceRecord.findFirst({
+              where: { employeeId, date: dayDate },
+              select: { id: true },
+            });
+
+            if (existingRecord) {
+              await prisma.attendanceRecord.updateMany({
+                where: { employeeId, date: dayDate },
+                data: {
+                  status: newAttendanceStatus,
+                  validationAction: componentLabel,
+                  validationMethod: 'DIRECT_COMPONENT',
+                  ...(isWFH ? { notes: `WFH${remarks ? ': ' + remarks : ''}` } : {}),
+                },
+              });
+            } else {
+              // No attendance record exists (absent day - no punch) → create one
+              await prisma.attendanceRecord.create({
+                data: {
+                  employeeId,
+                  date: dayDate,
+                  status: newAttendanceStatus,
+                  validationAction: componentLabel,
+                  validationMethod: 'DIRECT_COMPONENT',
+                  ...(isWFH ? { notes: `WFH${remarks ? ': ' + remarks : ''}` } : {}),
+                },
+              });
+            }
+
+            // Upsert validation result
+            const existingValidation = await prisma.attendanceValidationResult.findFirst({
+              where: { organizationId, employeeId, date: dayDate },
+              select: { id: true },
+            });
+
+            if (existingValidation) {
+              await prisma.attendanceValidationResult.updateMany({
+                where: { organizationId, employeeId, date: dayDate },
+                data: {
+                  isCompleted: true,
+                  isLate: false,
+                  isEarlyGoing: false,
+                  isNoOutPunch: false,
+                  isShortfall: false,
+                  isAbsent: false,
+                },
+              });
+            } else {
+              await prisma.attendanceValidationResult.create({
+                data: {
+                  organizationId,
+                  employeeId,
+                  date: dayDate,
+                  isCompleted: true,
+                  isLate: false,
+                  isEarlyGoing: false,
+                  isNoOutPunch: false,
+                  isShortfall: false,
+                  isAbsent: false,
+                  isApprovalPending: false,
+                  isShiftChange: false,
+                  isOvertime: false,
+                },
+              });
+            }
+          }
+
+          applied++;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Unknown error';
+          errors.push({ employeeId, date: sortedDates[0] ?? '', message: msg });
+        }
+      }
+
+      return { applied, errors, skipped };
+    }
+    // --- End direct component apply ---
     const correctionType = params.type || 'late';
     const isNoOutPunchCorrection = correctionType === 'noOutPunch';
+    const isShortfallCorrection = correctionType === 'shortfall';
     const isEarlyGoingCorrection = correctionType === 'earlyGoing' || isNoOutPunchCorrection;
     const isFinalNoCorrectionStage =
-      correctionType === 'earlyGoing' || correctionType === 'late';
-    const validationGrouping = isNoOutPunchCorrection
-      ? 'No Out Punch'
-      : isEarlyGoingCorrection
-        ? 'Early Going'
-        : 'Late';
-    const typeLabel = isNoOutPunchCorrection
-      ? 'No Out Punch'
-      : isEarlyGoingCorrection
-        ? 'Early Going'
-        : 'Late';
+      correctionType === 'earlyGoing' || correctionType === 'late' || correctionType === 'shortfall';
+
+    const validationGroupingMap: Record<string, string> = {
+      late: 'Late',
+      earlyGoing: 'Early Going',
+      noOutPunch: 'No Out Punch',
+      shortfall: 'Shortfall',
+      absent: 'Absent',
+      approvalPending: 'Approval Pending',
+      overtime: 'OverTime',
+      shiftChange: 'Shift Change',
+    };
+    const typeLabelMap: Record<string, string> = {
+      late: 'Late',
+      earlyGoing: 'Early Going',
+      noOutPunch: 'No Out Punch',
+      shortfall: 'Shortfall',
+      absent: 'Absent',
+      approvalPending: 'Approval Pending',
+      overtime: 'OverTime',
+      shiftChange: 'Shift Change',
+    };
+    const validationGrouping = validationGroupingMap[correctionType] ?? 'Late';
+    const typeLabel = typeLabelMap[correctionType] ?? 'Late';
     const errors: { employeeId: string; date: string; message: string }[] = [];
     const skipped: { employeeId: string; date: string; message: string }[] = [];
     let applied = 0;
@@ -3872,6 +4479,7 @@ export class AttendanceService {
             earlyMinutes: true,
             isLate: true,
             isEarly: true,
+            isDeviation: true,
             checkIn: true,
             checkOut: true,
             shift: { select: { startTime: true } },
@@ -3882,6 +4490,7 @@ export class AttendanceService {
           if (!selectedDateKeys.has(recDateKey)) return false;
           const hasSinglePunch = !!r.checkIn && !r.checkOut;
           if (isNoOutPunchCorrection) return hasSinglePunch;
+          if (isShortfallCorrection) return r.isDeviation === true || !!r.checkIn;
           if (isEarlyGoingCorrection) return r.isEarly === true || hasSinglePunch;
           return r.isLate === true || hasSinglePunch;
         });
@@ -3970,6 +4579,7 @@ export class AttendanceService {
                 earlyMinutes: true,
                 isLate: true,
                 isEarly: true,
+                isDeviation: true,
                 checkIn: true,
                 checkOut: true,
                 shift: { select: { startTime: true } },
@@ -3985,7 +4595,10 @@ export class AttendanceService {
         }
 
         const totalMinutes = records.reduce((sum, r) => {
-          const mins = isEarlyGoingCorrection ? r.earlyMinutes : r.lateMinutes;
+          let mins: number | null | undefined;
+          if (isEarlyGoingCorrection) mins = r.earlyMinutes;
+          else if (isShortfallCorrection) mins = (r as any).shortfallMinutes ?? r.lateMinutes;
+          else mins = r.lateMinutes;
           return sum + (mins ? Number(mins) : 0);
         }, 0);
         // Some single-punch/edge rows can legitimately have 0 stored minutes.
@@ -4174,35 +4787,98 @@ export class AttendanceService {
           const durM = String(totalMinutes % 60).padStart(2, '0');
           const permReason = `[${typeLabel}-correction ${durH}h${durM}m permission] ${reason}`;
 
-          const lr = await leaveRequestService.create(employeeId, {
-            leaveTypeId: permLeaveType.id,
-            startDate: firstDate,
-            endDate: firstDate,
-            totalDays: Math.min(totalDays, 1),
-            reason: permReason,
-          });
-          if (approverUserId && lr.status === 'PENDING') {
-            try {
-              await leaveRequestService.approve(lr.id, approverUserId, undefined, 'HR_MANAGER');
-            } catch {
-              // Leave created; approval may require workflow
+          let permissionApplied = false;
+          try {
+            const lr = await leaveRequestService.create(employeeId, {
+              leaveTypeId: permLeaveType.id,
+              startDate: firstDate,
+              endDate: firstDate,
+              totalDays: Math.min(totalDays, 1),
+              reason: permReason,
+            });
+            if (approverUserId && lr.status === 'PENDING') {
+              try {
+                await leaveRequestService.approve(lr.id, approverUserId, undefined, 'HR_MANAGER');
+              } catch {
+                // Leave created; approval may require workflow
+              }
             }
-          }
-          for (const rec of records) {
-            await prisma.attendanceRecord.update({
-              where: { id: rec.id },
-              data: { validationAction: action.name },
+            permissionApplied = true;
+          } catch (permErr: unknown) {
+            // Permission limit exhausted — fall back to the next action in the rule (e.g. Half Day Leave)
+            const errMsg = permErr instanceof Error ? permErr.message : String(permErr);
+            const isLimitError = errMsg.toLowerCase().includes('permission') && errMsg.toLowerCase().includes('limit');
+            if (!isLimitError) {
+              errors.push({ employeeId, date: firstDate, message: errMsg });
+              continue;
+            }
+            // Find the fallback action: next action after Permission in sorted order
+            const sortedActions = [...(rule?.actions ?? [])].sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+            const permIdx = sortedActions.findIndex((a: any) => a.correctionMethod === 'Permission');
+            const fallbackAction = sortedActions.slice(permIdx + 1).find(
+              (a: any) => a.correctionMethod !== 'Permission' && a.correctionMethod !== 'No Correction'
+            );
+            if (!fallbackAction) {
+              errors.push({ employeeId, date: firstDate, message: `Permission limit reached and no fallback leave action configured in rule. ${errMsg}` });
+              continue;
+            }
+            // Apply fallback leave action
+            const fallbackDays = this.computeDeductionDays((fallbackAction as any).daysValue, effectiveTotalMinutes);
+            const fallbackCompId = (fallbackAction as any).attendanceComponentId ? String((fallbackAction as any).attendanceComponentId) : null;
+            const fallbackComp = fallbackCompId
+              ? await prisma.attendanceComponent.findUnique({ where: { id: fallbackCompId }, select: { eventName: true, shortName: true } })
+              : null;
+            const fallbackLeaveTypeId = fallbackComp
+              ? await getLeaveTypeIdForAttendanceComponent(organizationId, fallbackComp)
+              : null;
+            if (!fallbackLeaveTypeId) {
+              errors.push({ employeeId, date: firstDate, message: `Permission limit reached. Fallback action "${(fallbackAction as any).name}" has no leave type configured.` });
+              continue;
+            }
+            const fallbackReason = `[Permission limit reached — fallback to ${(fallbackAction as any).name}] ${reason}`;
+            const flr = await leaveRequestService.create(employeeId, {
+              leaveTypeId: fallbackLeaveTypeId,
+              startDate: firstDate,
+              endDate: firstDate,
+              totalDays: fallbackDays,
+              reason: fallbackReason,
             });
-            await prisma.attendanceValidationResult.updateMany({
-              where: {
-                organizationId,
-                employeeId,
-                date: new Date(this.toDateKey(rec.date) + 'T00:00:00.000Z'),
-              },
-              data: completedValidationUpdate,
-            });
+            if (approverUserId && flr.status === 'PENDING') {
+              try {
+                await leaveRequestService.approve(flr.id, approverUserId, undefined, 'HR_MANAGER');
+              } catch { /* workflow pending */ }
+            }
+            for (const rec of records) {
+              await prisma.attendanceRecord.update({
+                where: { id: rec.id },
+                data: { validationAction: (fallbackAction as any).name },
+              });
+              await prisma.attendanceValidationResult.updateMany({
+                where: { organizationId, employeeId, date: new Date(this.toDateKey(rec.date) + 'T00:00:00.000Z') },
+                data: completedValidationUpdate,
+              });
+            }
+            applied++;
+            continue;
           }
-          applied++;
+
+          if (permissionApplied) {
+            for (const rec of records) {
+              await prisma.attendanceRecord.update({
+                where: { id: rec.id },
+                data: { validationAction: action.name },
+              });
+              await prisma.attendanceValidationResult.updateMany({
+                where: {
+                  organizationId,
+                  employeeId,
+                  date: new Date(this.toDateKey(rec.date) + 'T00:00:00.000Z'),
+                },
+                data: completedValidationUpdate,
+              });
+            }
+            applied++;
+          }
         } else if (action.correctionMethod === 'Apply Event' || action.correctionMethod === 'Leave') {
           if (!action.attendanceComponentId) {
             errors.push({ employeeId, date: firstDate, message: 'Leave/Apply Event action has no attendance component configured in rule' });
@@ -4333,6 +5009,517 @@ export class AttendanceService {
 
     return { applied, errors, skipped: skipped.length > 0 ? skipped : undefined };
   }
+
+  /**
+   * Revert validation correction for selected employees and date range.
+   * Only reverts HR-created corrections (validationMethod = DIRECT_COMPONENT / NO_CORRECTION / NO_CORRECTION_FINAL).
+   * Employee-applied leaves are never touched.
+   * Records the action in validation_revert_history for audit.
+   */
+  async revertValidationCorrection(params: {
+    organizationId: string;
+    paygroupId?: string | null;
+    employeeId?: string | null;
+    fromDate: string;
+    toDate: string;
+    remarks?: string;
+    revertedByUserId?: string;
+  }): Promise<{
+    reverted: number;
+    leaveRequestsDeleted: number;
+    balancesRestored: number;
+    errors: { employeeId: string; date: string; message: string }[];
+  }> {
+    const { organizationId, paygroupId, employeeId, fromDate, toDate, remarks, revertedByUserId } = params;
+    const from = new Date(fromDate + 'T00:00:00.000Z');
+    const to = new Date(toDate + 'T23:59:59.999Z');
+
+    // Resolve which employees to revert
+    const employeeWhere: Prisma.EmployeeWhereInput = { organizationId, deletedAt: null };
+    if (employeeId) {
+      employeeWhere.id = employeeId;
+    } else if (paygroupId) {
+      employeeWhere.paygroupId = paygroupId;
+    }
+    const employees = await prisma.employee.findMany({ where: employeeWhere, select: { id: true } });
+    const employeeIds = employees.map((e) => e.id);
+    if (employeeIds.length === 0) return { reverted: 0, leaveRequestsDeleted: 0, balancesRestored: 0, errors: [] };
+
+    // Find validation records that were HR-corrected (have a validationMethod set by HR)
+    const hrCorrectionMethods = ['DIRECT_COMPONENT', 'NO_CORRECTION', 'NO_CORRECTION_FINAL'];
+    const correctedRecords = await prisma.attendanceRecord.findMany({
+      where: {
+        employeeId: { in: employeeIds },
+        date: { gte: from, lte: to },
+        validationMethod: { in: hrCorrectionMethods },
+      },
+      select: { id: true, employeeId: true, date: true, validationAction: true, validationMethod: true, status: true },
+    });
+
+    if (correctedRecords.length === 0) {
+      return { reverted: 0, leaveRequestsDeleted: 0, balancesRestored: 0, errors: [] };
+    }
+
+    const errors: { employeeId: string; date: string; message: string }[] = [];
+    let reverted = 0;
+    let leaveRequestsDeleted = 0;
+    let balancesRestored = 0;
+
+    // Group corrected records by employee
+    const byEmployee = new Map<string, typeof correctedRecords>();
+    for (const rec of correctedRecords) {
+      const arr = byEmployee.get(rec.employeeId) ?? [];
+      arr.push(rec);
+      byEmployee.set(rec.employeeId, arr);
+    }
+
+    const { Prisma: PrismaClient } = await import('@prisma/client');
+
+    for (const [empId, recs] of byEmployee) {
+      try {
+        // Find HR-created leave requests for this employee in the date range
+        // Identified by: reviewComments = 'Auto-approved by validation correction'
+        // OR reason starts with '[Direct correction' or '[Validation correction'
+        const hrLeaveRequests = await prisma.leaveRequest.findMany({
+          where: {
+            employeeId: empId,
+            startDate: { lte: to },
+            endDate: { gte: from },
+            OR: [
+              { reviewComments: 'Auto-approved by validation correction' },
+              { reason: { startsWith: '[Direct correction' } },
+              { reason: { startsWith: '[Validation correction' } },
+            ],
+          },
+          select: {
+            id: true,
+            leaveTypeId: true,
+            totalDays: true,
+            startDate: true,
+            endDate: true,
+          },
+        });
+
+        await prisma.$transaction(async (tx) => {
+          // 1. Clear validationAction and validationMethod on attendance records
+          for (const rec of recs) {
+            await tx.attendanceRecord.update({
+              where: { id: rec.id },
+              data: {
+                validationAction: null,
+                validationMethod: null,
+              },
+            });
+          }
+
+          // 2. Delete HR-created leave requests and restore balances
+          for (const lr of hrLeaveRequests) {
+            const days = parseFloat(lr.totalDays.toString());
+            const year = new Date(lr.startDate).getUTCFullYear();
+
+            // Restore leave balance
+            const balance = await tx.employeeLeaveBalance.findUnique({
+              where: { employeeId_leaveTypeId_year: { employeeId: empId, leaveTypeId: lr.leaveTypeId, year } },
+            });
+            if (balance) {
+              const usedNow = parseFloat(balance.used.toString());
+              const restoredUsed = Math.max(0, usedNow - days);
+              const availableNow = parseFloat(balance.available.toString());
+              const hasPositiveOpening = parseFloat(balance.openingBalance.toString()) > 0 || parseFloat(balance.accrued.toString()) > 0;
+              const updateData: Record<string, unknown> = {
+                used: new PrismaClient.Decimal(restoredUsed),
+              };
+              if (hasPositiveOpening) {
+                updateData.available = new PrismaClient.Decimal(availableNow + days);
+              }
+              await tx.employeeLeaveBalance.update({
+                where: { employeeId_leaveTypeId_year: { employeeId: empId, leaveTypeId: lr.leaveTypeId, year } },
+                data: updateData,
+              });
+              balancesRestored++;
+            }
+
+            // Delete the leave request
+            await tx.leaveRequest.delete({ where: { id: lr.id } });
+            leaveRequestsDeleted++;
+          }
+
+          // 3. Reset validation results: isCompleted=false, restore anomaly flags by re-running mini-check
+          const dateKeys = recs.map((r) => this.toDateKey(r.date));
+          for (const dateKey of dateKeys) {
+            const dayDate = new Date(dateKey + 'T00:00:00.000Z');
+            await tx.attendanceValidationResult.updateMany({
+              where: { organizationId, employeeId: empId, date: dayDate },
+              data: { isCompleted: false },
+            });
+          }
+        });
+
+        reverted += recs.length;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        errors.push({ employeeId: empId, date: fromDate, message: msg });
+      }
+    }
+
+    // 4. Save revert history record
+    const uniqueDays = new Set(correctedRecords.map((r) => this.toDateKey(r.date)));
+    const uniqueEmployees = new Set(correctedRecords.map((r) => r.employeeId));
+    try {
+      await prisma.validationRevertHistory.create({
+        data: {
+          organizationId,
+          revertedByUserId: revertedByUserId ?? '',
+          fromDate: from,
+          toDate: to,
+          employeeCount: uniqueEmployees.size,
+          dayCount: uniqueDays.size,
+          leaveRequestsDeleted,
+          balancesRestored,
+          remarks: remarks ?? null,
+          revertDetails: {
+            paygroupId: paygroupId ?? null,
+            employeeId: employeeId ?? null,
+            revertedRecordCount: reverted,
+            errors: errors.length > 0 ? errors : undefined,
+          },
+        },
+      });
+    } catch (histErr) {
+      console.error('[revertValidationCorrection] Failed to save history:', histErr);
+    }
+
+    return { reverted, leaveRequestsDeleted, balancesRestored, errors };
+  }
+
+  /**
+   * Get validation revert history for an organization (most recent first).
+   */
+  async getValidationRevertHistory(params: {
+    organizationId: string;
+    limit?: number;
+    page?: number;
+  }): Promise<{
+    history: Array<{
+      id: string;
+      fromDate: string;
+      toDate: string;
+      employeeCount: number;
+      dayCount: number;
+      leaveRequestsDeleted: number;
+      balancesRestored: number;
+      remarks: string | null;
+      revertedByUserId: string;
+      revertDetails: unknown;
+      createdAt: string;
+    }>;
+    total: number;
+  }> {
+    const { organizationId, limit = 20, page = 1 } = params;
+    const skip = (page - 1) * limit;
+
+    const [rows, total] = await Promise.all([
+      prisma.validationRevertHistory.findMany({
+        where: { organizationId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.validationRevertHistory.count({ where: { organizationId } }),
+    ]);
+
+    return {
+      history: rows.map((r) => ({
+        id: r.id,
+        fromDate: this.toDateKey(r.fromDate),
+        toDate: this.toDateKey(r.toDate),
+        employeeCount: r.employeeCount,
+        dayCount: r.dayCount,
+        leaveRequestsDeleted: r.leaveRequestsDeleted,
+        balancesRestored: r.balancesRestored,
+        remarks: r.remarks,
+        revertedByUserId: r.revertedByUserId,
+        revertDetails: r.revertDetails,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      total,
+    };
+  }
+
+  /**
+   * Get completed validation rows for the Revert Process page grid.
+   * Returns all employee+date rows where isCompleted=true (or isOnHold=true).
+   */
+  async getCompletedList(params: {
+    organizationId: string;
+    fromDate: string;
+    toDate: string;
+    paygroupId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    rows: Array<{
+      employeeId: string;
+      employeeCode: string;
+      employeeName: string;
+      date: string;
+      isCompleted: boolean;
+      isOnHold: boolean;
+      holdReason: string | null;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const { organizationId, fromDate, toDate, paygroupId, search, page = 1, limit = 50 } = params;
+    const from = new Date(fromDate + 'T00:00:00.000Z');
+    const to = new Date(toDate + 'T23:59:59.999Z');
+
+    const where: Prisma.AttendanceValidationResultWhereInput = {
+      organizationId,
+      date: { gte: from, lte: to },
+      OR: [{ isCompleted: true }, { isOnHold: true }],
+    };
+    if (paygroupId) {
+      where.employee = { paygroupId };
+    }
+    if (search) {
+      where.employee = {
+        ...((where.employee as Prisma.EmployeeWhereInput) || {}),
+        OR: [
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+          { employeeCode: { contains: search, mode: 'insensitive' } },
+        ],
+      };
+    }
+
+    const [rows, total] = await Promise.all([
+      prisma.attendanceValidationResult.findMany({
+        where,
+        select: {
+          employeeId: true,
+          date: true,
+          isCompleted: true,
+          isOnHold: true,
+          holdReason: true,
+          employee: {
+            select: { employeeCode: true, firstName: true, middleName: true, lastName: true },
+          },
+        },
+        orderBy: [{ date: 'asc' }, { employee: { firstName: 'asc' } }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.attendanceValidationResult.count({ where }),
+    ]);
+
+    return {
+      rows: rows.map((r) => ({
+        employeeId: r.employeeId,
+        employeeCode: r.employee.employeeCode,
+        employeeName: [r.employee.firstName, r.employee.middleName, r.employee.lastName].filter(Boolean).join(' '),
+        date: this.toDateKey(r.date),
+        isCompleted: r.isCompleted,
+        isOnHold: r.isOnHold,
+        holdReason: r.holdReason,
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /**
+   * Revert validation corrections for specific employee+date rows.
+   */
+  async revertByRows(params: {
+    organizationId: string;
+    selectedRows: { employeeId: string; date: string }[];
+    remarks?: string;
+    revertedByUserId?: string;
+  }): Promise<{
+    reverted: number;
+    leaveRequestsDeleted: number;
+    balancesRestored: number;
+    errors: { employeeId: string; date: string; message: string }[];
+  }> {
+    const { organizationId, selectedRows, remarks, revertedByUserId } = params;
+    const errors: { employeeId: string; date: string; message: string }[] = [];
+    let reverted = 0;
+    let leaveRequestsDeleted = 0;
+    let balancesRestored = 0;
+
+    const hrCorrectionMethods = ['DIRECT_COMPONENT', 'NO_CORRECTION', 'NO_CORRECTION_FINAL'];
+    const { Prisma: PrismaClient } = await import('@prisma/client');
+
+    for (const row of selectedRows) {
+      try {
+        const dayDate = new Date(row.date + 'T00:00:00.000Z');
+        const dayEnd = new Date(row.date + 'T23:59:59.999Z');
+
+        const correctedRecords = await prisma.attendanceRecord.findMany({
+          where: {
+            employeeId: row.employeeId,
+            date: { gte: dayDate, lte: dayEnd },
+            validationMethod: { in: hrCorrectionMethods },
+          },
+          select: { id: true, employeeId: true, date: true, validationAction: true, validationMethod: true },
+        });
+
+        const hrLeaveRequests = await prisma.leaveRequest.findMany({
+          where: {
+            employeeId: row.employeeId,
+            startDate: { lte: dayEnd },
+            endDate: { gte: dayDate },
+            OR: [
+              { reviewComments: 'Auto-approved by validation correction' },
+              { reason: { startsWith: '[Direct correction' } },
+              { reason: { startsWith: '[Validation correction' } },
+            ],
+          },
+          select: { id: true, leaveTypeId: true, totalDays: true, startDate: true },
+        });
+
+        await prisma.$transaction(async (tx) => {
+          for (const rec of correctedRecords) {
+            await tx.attendanceRecord.update({
+              where: { id: rec.id },
+              data: { validationAction: null, validationMethod: null },
+            });
+          }
+
+          for (const lr of hrLeaveRequests) {
+            const days = parseFloat(lr.totalDays.toString());
+            const year = new Date(lr.startDate).getUTCFullYear();
+            const balance = await tx.employeeLeaveBalance.findUnique({
+              where: { employeeId_leaveTypeId_year: { employeeId: row.employeeId, leaveTypeId: lr.leaveTypeId, year } },
+            });
+            if (balance) {
+              const usedNow = parseFloat(balance.used.toString());
+              const restoredUsed = Math.max(0, usedNow - days);
+              const availableNow = parseFloat(balance.available.toString());
+              const hasPositiveOpening = parseFloat(balance.openingBalance.toString()) > 0 || parseFloat(balance.accrued.toString()) > 0;
+              const updateData: Record<string, unknown> = { used: new PrismaClient.Decimal(restoredUsed) };
+              if (hasPositiveOpening) {
+                updateData.available = new PrismaClient.Decimal(availableNow + days);
+              }
+              await tx.employeeLeaveBalance.update({
+                where: { employeeId_leaveTypeId_year: { employeeId: row.employeeId, leaveTypeId: lr.leaveTypeId, year } },
+                data: updateData,
+              });
+              balancesRestored++;
+            }
+            await tx.leaveRequest.delete({ where: { id: lr.id } });
+            leaveRequestsDeleted++;
+          }
+
+          await tx.attendanceValidationResult.updateMany({
+            where: { organizationId, employeeId: row.employeeId, date: dayDate },
+            data: { isCompleted: false, isOnHold: false },
+          });
+        });
+
+        reverted++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        errors.push({ employeeId: row.employeeId, date: row.date, message: msg });
+      }
+    }
+
+    try {
+      await prisma.validationRevertHistory.create({
+        data: {
+          organizationId,
+          revertedByUserId: revertedByUserId ?? '',
+          fromDate: new Date(selectedRows[0].date + 'T00:00:00.000Z'),
+          toDate: new Date(selectedRows[selectedRows.length - 1].date + 'T00:00:00.000Z'),
+          employeeCount: new Set(selectedRows.map((r) => r.employeeId)).size,
+          dayCount: new Set(selectedRows.map((r) => r.date)).size,
+          leaveRequestsDeleted,
+          balancesRestored,
+          remarks: remarks ?? null,
+          revertDetails: { rows: selectedRows, revertedCount: reverted, errors: errors.length > 0 ? errors : undefined },
+        },
+      });
+    } catch (histErr) {
+      console.error('[revertByRows] Failed to save history:', histErr);
+    }
+
+    return { reverted, leaveRequestsDeleted, balancesRestored, errors };
+  }
+
+  /**
+   * Put selected employee+date rows on hold.
+   */
+  async putOnHold(params: {
+    organizationId: string;
+    selectedRows: { employeeId: string; date: string }[];
+    holdAssociateCanModify?: boolean;
+    holdManagerCanModify?: boolean;
+    revertRegularization?: boolean;
+    reason?: string;
+  }): Promise<{ updated: number; errors: { employeeId: string; date: string; message: string }[] }> {
+    const { organizationId, selectedRows, holdAssociateCanModify = false, holdManagerCanModify = false, reason } = params;
+    const errors: { employeeId: string; date: string; message: string }[] = [];
+    let updated = 0;
+
+    for (const row of selectedRows) {
+      try {
+        const dayDate = new Date(row.date + 'T00:00:00.000Z');
+        await prisma.attendanceValidationResult.updateMany({
+          where: { organizationId, employeeId: row.employeeId, date: dayDate },
+          data: {
+            isOnHold: true,
+            isCompleted: false,
+            holdAssociateCanModify,
+            holdManagerCanModify,
+            holdReason: reason ?? null,
+          },
+        });
+        updated++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        errors.push({ employeeId: row.employeeId, date: row.date, message: msg });
+      }
+    }
+
+    return { updated, errors };
+  }
+
+  /**
+   * Release selected rows from hold - goes back to pending state.
+   */
+  async releaseHold(params: {
+    organizationId: string;
+    selectedRows: { employeeId: string; date: string }[];
+  }): Promise<{ released: number; errors: { employeeId: string; date: string; message: string }[] }> {
+    const { organizationId, selectedRows } = params;
+    const errors: { employeeId: string; date: string; message: string }[] = [];
+    let released = 0;
+
+    for (const row of selectedRows) {
+      try {
+        const dayDate = new Date(row.date + 'T00:00:00.000Z');
+        await prisma.attendanceValidationResult.updateMany({
+          where: { organizationId, employeeId: row.employeeId, date: dayDate, isOnHold: true },
+          data: {
+            isOnHold: false,
+            holdAssociateCanModify: false,
+            holdManagerCanModify: false,
+            holdReason: null,
+          },
+        });
+        released++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        errors.push({ employeeId: row.employeeId, date: row.date, message: msg });
+      }
+    }
+
+    return { released, errors };
+  }
 }
 
 export type ValidationDaySummary = {
@@ -4345,6 +5532,7 @@ export type ValidationDaySummary = {
   absent: number;
   shortfall: number;
   overtime: number;
+  onHold: number;
 };
 
 export interface LateDeductionEmployee {
