@@ -20,7 +20,30 @@ export interface PostToPayrollRowInput {
   showInList?: boolean;
 }
 
+export interface ColumnOption {
+  key: string;
+  label: string;
+  format: string;
+}
+
 const postToPayrollService = {
+  /** Get column options from MonthlyAttendanceSummary fields */
+  getColumnOptions: async (): Promise<ColumnOption[]> => {
+    const response = await api.get<{ data: { options: ColumnOption[] } }>(
+      '/post-to-payroll/columns'
+    );
+    return response.data.data?.options ?? [];
+  },
+
+  /** Get salary element names from Salary Structure components */
+  getSalaryElementNames: async (organizationId: string): Promise<string[]> => {
+    const response = await api.get<{ data: { names: string[] } }>(
+      '/post-to-payroll/salary-element-names',
+      { params: { organizationId } }
+    );
+    return response.data.data?.names ?? [];
+  },
+
   getList: async (
     organizationId: string,
     showAll: boolean = true
@@ -41,6 +64,52 @@ const postToPayrollService = {
       { organizationId, rows }
     );
     return response.data.data?.list ?? [];
+  },
+
+  // HR Activities: Preview, Post, Unpost
+  getPreview: async (
+    organizationId: string,
+    year: number,
+    month: number,
+    associate?: string,
+    showAll: boolean = true
+  ) => {
+    const params: Record<string, string | number | boolean> = {
+      organizationId,
+      year,
+      month,
+      showAll,
+    };
+    if (associate?.trim()) params.associate = associate.trim();
+    const response = await api.get<{ data: { rows: Record<string, unknown>[]; mappings: PostToPayrollMapping[] } }>(
+      '/post-to-payroll/preview',
+      { params }
+    );
+    return response.data.data ?? { rows: [], mappings: [] };
+  },
+
+  getPostStatus: async (organizationId: string, year: number, month: number) => {
+    const response = await api.get<{ data: { posted: boolean; status: string | null; cycleId: string | null } }>(
+      '/post-to-payroll/post-status',
+      { params: { organizationId, year, month } }
+    );
+    return response.data.data ?? { posted: false, status: null, cycleId: null };
+  },
+
+  postMonth: async (organizationId: string, year: number, month: number) => {
+    const response = await api.post<{ data: { cycle: { id: string; status: string } } }>(
+      '/post-to-payroll/post-month',
+      { organizationId, year, month }
+    );
+    return response.data.data?.cycle;
+  },
+
+  unpostMonth: async (organizationId: string, year: number, month: number) => {
+    const response = await api.delete<{ data: { deleted: boolean; id: string } }>(
+      '/post-to-payroll/unpost-month',
+      { params: { organizationId, year, month } }
+    );
+    return response.data.data;
   },
 };
 

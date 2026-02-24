@@ -324,6 +324,13 @@ export class PayrollService {
       // Get tax regime from input or organization settings (default to NEW)
       const taxRegime = data.taxRegime || (payrollCycle.organization as any).settings?.taxRegime || 'NEW';
 
+      // Get post_to_payroll_mappings for dynamic component names (OT, LOP, etc.)
+      const attendanceMappings = await prisma.postToPayrollMapping.findMany({
+        where: { organizationId: payrollCycle.organizationId },
+        select: { columnKey: true, elementMapping: true },
+        orderBy: { orderIndex: 'asc' },
+      });
+
       // Process each employee
       const payslips = [];
       let totalGross = 0;
@@ -384,7 +391,8 @@ export class PayrollService {
           salaryStructureComponents,
           periodData,
           taxRegime as 'OLD' | 'NEW',
-          payrollCycle.organizationId
+          payrollCycle.organizationId,
+          attendanceMappings
         );
 
         // Calculate YTD totals for this employee

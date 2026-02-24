@@ -850,11 +850,6 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                             permissionEndTime != null &&
                             firstPunchTime != null &&
                             firstPunchTime >= permissionEndTime;
-                          const permissionOnDay = leavesForDay.some((lr) => {
-                            if ((lr.status || '').toUpperCase() !== 'APPROVED' || !lr.reason?.trim()) return false;
-                            return /^\[Permission\s+\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\]/i.test(lr.reason);
-                          });
-
                           const lateMin = getLateMinutesFallback(record, effectiveShiftForRecord, lateEarlyPolicy);
                           const earlyMinRaw = getEarlyMinutes(record, effectiveShiftForRecord, lateEarlyPolicy);
                           const earlyMin = hasApprovedHalfDayLeave ? 0 : earlyMinRaw;
@@ -871,7 +866,6 @@ const AttendanceCalendarView = ({ records, punches, currentMonth, onMonthChange,
                             earlyMin,
                             adjustedBreakExcessM
                           );
-                          const lateMinsForDisplay = permissionCoversLate ? 0 : (record.lateMinutes ?? lateMin ?? 0);
                           const shortfallFromLate = permissionCoversLate ? 0 : (record.lateMinutes ?? lateMin ?? 0);
                           const shortfallMinsForDisplay = Math.max(0, shortfallMinutes - (permissionCoversLate ? shortfallFromLate : 0));
                           const minShortfallMins = lateEarlyPolicy?.minShortfallHoursAsDeviation
@@ -1728,10 +1722,6 @@ const AttendancePage = () => {
     }
   });
 
-  const showingSelectedEmployeeSummary =
-    canChooseEmployeeCompOffSummary && viewMode === 'team' && !!selectedEmployeeId;
-  const isOwnCompOffSummary = !showingSelectedEmployeeSummary || selectedEmployeeId === user?.employee?.id;
-
   const handleOpenCompOffModal = () => {
     setCompOffMessage(null);
     setCompOffReason('');
@@ -2038,6 +2028,16 @@ const AttendancePage = () => {
                         Select one employee below to view attendance
                       </span>
                     )}
+                    {viewMode === 'my' && (
+                      <button
+                        type="button"
+                        onClick={handleOpenCompOffModal}
+                        disabled={loadingCompOffSummary || (compOffSummary?.eligibleCompOffDays ?? 0) <= 0}
+                        className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loadingCompOffSummary ? 'Loading...' : 'Convert to Comp Off'}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -2313,6 +2313,11 @@ const AttendancePage = () => {
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Convert to Comp Off</h3>
               <div className="space-y-4">
+                {compOffMessage && (
+                  <div className={`rounded-lg px-3 py-2 text-sm ${compOffMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                    {compOffMessage.text}
+                  </div>
+                )}
                 <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
                   <p>You have {compOffSummary?.availableExcessMinutesForRequest ?? 0} minutes.</p>
                   <p>Eligible: {compOffSummary?.eligibleCompOffDays ?? 0} day(s).</p>

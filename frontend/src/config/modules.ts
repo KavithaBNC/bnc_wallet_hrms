@@ -44,7 +44,7 @@ export const APP_MODULES: AppModule[] = [
   { path: '/others-configuration', label: 'Others Configuration', resource: 'others_configuration', visibility: 'all' },
   { path: '/others-configuration/validation-process-rule', label: 'Validation Process Rule', resource: 'validation_process_rule', visibility: 'all', parentPath: '/others-configuration' },
   { path: '/others-configuration/attendance-lock', label: 'Attendance Lock', resource: 'others_configuration', visibility: 'all', parentPath: '/others-configuration' },
-  { path: '/others-configuration/post-to-payroll', label: 'Post to Payroll', resource: 'others_configuration', visibility: 'all', parentPath: '/others-configuration' },
+  { path: '/others-configuration/post-to-payroll', label: 'Post to Payroll Setup', resource: 'others_configuration', visibility: 'all', parentPath: '/others-configuration' },
   { path: '/attendance', label: 'Attendance', resource: 'attendance', visibility: 'all' },
   { path: '/attendance/my-requests/excess-time-request', label: 'Excess Time Request', resource: 'attendance', visibility: 'all', parentPath: '/leave' },
   { path: '/attendance/excess-time-approval', label: 'Excess Time Approval', resource: 'attendance', visibility: 'all', parentPath: '/leave' },

@@ -10,6 +10,14 @@ router.use(authenticate);
 router.use(enforceOrganizationAccess);
 
 router.get('/', controller.getAll.bind(controller));
+router.get('/columns', controller.getColumnOptions.bind(controller));
+router.get('/salary-element-names', controller.getSalaryElementNames.bind(controller));
+
+// HR Activities: Preview, Post, Unpost
+router.get('/preview', controller.getPreview.bind(controller));
+router.get('/post-status', controller.getPostStatus.bind(controller));
+router.post('/post-month', authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'), controller.postMonth.bind(controller));
+router.delete('/unpost-month', authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'), controller.unpostMonth.bind(controller));
 
 router.post(
   '/save',

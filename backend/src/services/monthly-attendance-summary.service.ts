@@ -161,7 +161,8 @@ export class MonthlyAttendanceSummaryService {
       leaves,
       attendance.totalWorkingDays
     );
-    const lopDays = attendance.absentDays + leaves.unpaidLeaveDays;
+    // LOP = full absent + unpaid leave + half days (each half day = 0.5 LOP, same as payroll)
+    const lopDays = attendance.absentDays + leaves.unpaidLeaveDays + attendance.halfDays * 0.5;
 
     // Leave breakdown for payroll integration (by leave type)
     const leaveRequests = await prisma.leaveRequest.findMany({
@@ -441,6 +442,32 @@ export class MonthlyAttendanceSummaryService {
     return prisma.monthlyAttendanceLock.findUnique({
       where: { organizationId_year_month: { organizationId, year, month } },
     });
+  }
+
+  /**
+   * Unlock a month for the organization. Reverts LOCKED summaries back to FINALIZED.
+   */
+  async unlockMonth(organizationId: string, year: number, month: number, _remarks?: string) {
+    const existing = await prisma.monthlyAttendanceLock.findUnique({
+      where: { organizationId_year_month: { organizationId, year, month } },
+    });
+    if (!existing) throw new AppError('This month is not locked', 400);
+
+    await prisma.$transaction([
+      prisma.monthlyAttendanceLock.delete({
+        where: { organizationId_year_month: { organizationId, year, month } },
+      }),
+      prisma.monthlyAttendanceSummary.updateMany({
+        where: { organizationId, year, month, status: MonthlyAttendanceSummaryStatus.LOCKED },
+        data: {
+          status: MonthlyAttendanceSummaryStatus.FINALIZED,
+          lockedAt: null,
+          lockedBy: null,
+        },
+      }),
+    ]);
+
+    return null;
   }
 }
 

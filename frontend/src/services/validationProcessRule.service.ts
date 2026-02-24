@@ -23,6 +23,8 @@ export interface ValidationProcessAction {
   dayType: string;
   days: string;
   daysValue: string | number | null;
+  minMinutes?: number | null;
+  maxMinutes?: number | null;
   attendanceComponent?: { id: string; eventName: string; shortName: string } | null;
 }
 

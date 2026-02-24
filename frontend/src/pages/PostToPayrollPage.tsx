@@ -5,25 +5,13 @@ import AppHeader from '../components/layout/AppHeader';
 import postToPayrollService, {
   type PostToPayrollMapping,
   type PostToPayrollRowInput,
+  type ColumnOption,
 } from '../services/postToPayroll.service';
 
-const COLUMN_OPTIONS = [
-  { value: 'Post To Payroll.Over Time', label: 'Post To Payroll.Over Time' },
-  { value: 'Post To Payroll.LOP Current Month Used', label: 'Post To Payroll.LOP Current Mon...' },
-  { value: 'Post To Payroll.NFH', label: 'Post To Payroll.NFH' },
-  { value: 'Post To Payroll.WO', label: 'Post To Payroll.WO' },
-];
-
-const ELEMENT_MAPPING_OPTIONS = [
-  { value: 'OT Hours', label: 'OT Hours' },
-  { value: 'Loss of Pay', label: 'Loss of Pay' },
-  { value: 'NFH', label: 'NFH' },
-  { value: 'WeekOff', label: 'WeekOff' },
-];
-
 const FORMAT_OPTIONS = [
-  { value: '00:00', label: '00:00' },
+  { value: 'HH:MM', label: 'HH:MM' },
   { value: '0.00', label: '0.00' },
+  { value: '0', label: '0' },
 ];
 
 type RowState = {
@@ -34,7 +22,7 @@ type RowState = {
   elementMapping: string;
 };
 
-function toRowState(m: PostToPayrollMapping, index: number): RowState {
+function toRowState(m: PostToPayrollMapping): RowState {
   return {
     localId: m.id,
     columnKey: m.columnKey,
@@ -55,6 +43,28 @@ export default function PostToPayrollPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [columnOptions, setColumnOptions] = useState<ColumnOption[]>([]);
+  const [elementMappingOptions, setElementMappingOptions] = useState<string[]>([]);
+
+  const fetchColumnOptions = async () => {
+    try {
+      const opts = await postToPayrollService.getColumnOptions();
+      setColumnOptions(opts);
+    } catch {
+      setColumnOptions([]);
+    }
+  };
+
+  const fetchElementMappingOptions = async () => {
+    if (!organizationId) return;
+    try {
+      const names = await postToPayrollService.getSalaryElementNames(organizationId);
+      setElementMappingOptions(names);
+    } catch {
+      setElementMappingOptions([]);
+    }
+  };
 
   const fetchList = async () => {
     if (!organizationId) {
@@ -65,7 +75,7 @@ export default function PostToPayrollPage() {
     setError(null);
     try {
       const list = await postToPayrollService.getList(organizationId, showAll);
-      setRows(list.map((m, i) => toRowState(m, i)));
+      setRows(list.map((m) => toRowState(m)));
     } catch (err: unknown) {
       const msg =
         err && typeof err === 'object' && 'response' in err
@@ -79,6 +89,16 @@ export default function PostToPayrollPage() {
   };
 
   useEffect(() => {
+    fetchColumnOptions();
+  }, []);
+
+  useEffect(() => {
+    if (organizationId) {
+      fetchElementMappingOptions();
+    }
+  }, [organizationId]);
+
+  useEffect(() => {
     fetchList();
   }, [organizationId, showAll]);
 
@@ -88,13 +108,14 @@ export default function PostToPayrollPage() {
   };
 
   const addRow = () => {
+    const firstCol = columnOptions[0];
     setRows((prev) => [
       ...prev,
       {
         localId: `new-${Date.now()}`,
-        columnKey: COLUMN_OPTIONS[0]?.value ?? '',
-        columnName: '',
-        format: FORMAT_OPTIONS[0]?.value ?? '0.00',
+        columnKey: firstCol?.key ?? '',
+        columnName: firstCol ? firstCol.label.replace('Post To Payroll.', '').trim() : '',
+        format: firstCol?.format ?? '0.00',
         elementMapping: '',
       },
     ]);
@@ -102,24 +123,6 @@ export default function PostToPayrollPage() {
 
   const removeRow = (index: number) => {
     setRows((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const moveUp = (index: number) => {
-    if (index <= 0) return;
-    setRows((prev) => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next;
-    });
-  };
-
-  const moveDown = (index: number) => {
-    if (index >= rows.length - 1) return;
-    setRows((prev) => {
-      const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      return next;
-    });
   };
 
   const updateRow = (index: number, field: keyof RowState, value: string) => {
@@ -131,9 +134,13 @@ export default function PostToPayrollPage() {
   };
 
   const handleSave = async () => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      setError('Organization not found. Please contact administrator.');
+      return;
+    }
     setSaving(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       const payload: PostToPayrollRowInput[] = rows.map((r, i) => ({
         columnKey: r.columnKey,
@@ -143,12 +150,14 @@ export default function PostToPayrollPage() {
         orderIndex: i,
       }));
       const list = await postToPayrollService.saveAll(organizationId, payload);
-      setRows(list.map((m, i) => toRowState(m, i)));
+      setRows(list.map((m) => toRowState(m)));
+      setSuccessMsg('Mappings saved successfully.');
+      setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string }; status?: number } };
       const msg =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-          : 'Failed to save';
+        axiosErr?.response?.data?.message ||
+        (axiosErr?.response?.status === 403 ? 'Access denied.' : 'Failed to save. Please try again.');
       setError(String(msg));
     } finally {
       setSaving(false);
@@ -166,13 +175,13 @@ export default function PostToPayrollPage() {
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-gray-100">
       <AppHeader
-        title="Post to Payroll"
+        title="Post to Payroll Setup"
         subtitle={organizationName ? `Organization: ${organizationName}` : undefined}
         onLogout={handleLogout}
       />
 
       <main className="flex-1 min-h-0 overflow-auto w-full bg-gray-100">
-        <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 bg-gray-50">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-6 bg-gray-50">
           {/* Breadcrumbs - Employee module style */}
           <div className="mb-6">
             <nav className="flex items-center text-sm text-gray-600" aria-label="Breadcrumb">
@@ -180,16 +189,16 @@ export default function PostToPayrollPage() {
                 Others Configuration
               </Link>
               <span className="mx-1 text-gray-400">/</span>
-              <span className="font-semibold text-gray-900">Post to Payroll</span>
+              <span className="font-semibold text-gray-900">Post to Payroll Setup</span>
             </nav>
           </div>
 
           {/* Title bar - project theme (gray, not blue) */}
           <div className="bg-white rounded-lg shadow border border-gray-200 mb-6 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <h1 className="text-2xl font-bold text-gray-900">Post to Payroll</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Post to Payroll Setup</h1>
               <p className="text-sm text-gray-600 mt-1">
-                Map attendance columns to payroll elements. Add rows, set order, and save.
+                Map attendance columns to payroll elements. Add rows and save.
               </p>
             </div>
 
@@ -204,6 +213,11 @@ export default function PostToPayrollPage() {
                 {error && (
                   <div className="mx-6 mt-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">
                     {error}
+                  </div>
+                )}
+                {successMsg && (
+                  <div className="mx-6 mt-4 rounded-lg bg-green-50 border border-green-200 text-green-700 px-4 py-3 text-sm">
+                    {successMsg}
                   </div>
                 )}
 
@@ -238,9 +252,6 @@ export default function PostToPayrollPage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Element Mapping
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                          Order
-                        </th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
                           Action
                         </th>
@@ -249,13 +260,13 @@ export default function PostToPayrollPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {loading ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500 text-sm">
+                          <td colSpan={5} className="px-4 py-8 text-center text-gray-500 text-sm">
                             Loading…
                           </td>
                         </tr>
                       ) : rows.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500 text-sm">
+                          <td colSpan={5} className="px-4 py-8 text-center text-gray-500 text-sm">
                             No mappings. Click &quot;Add row&quot; to add one.
                           </td>
                         </tr>
@@ -266,17 +277,17 @@ export default function PostToPayrollPage() {
                               <select
                                 value={row.columnKey}
                                 onChange={(e) => {
-                                  const opt = COLUMN_OPTIONS.find((o) => o.value === e.target.value);
+                                  const opt = columnOptions.find((o) => o.key === e.target.value);
                                   updateRow(index, 'columnKey', e.target.value);
-                                  if (opt && !row.columnName) {
-                                    const name = opt.value.replace('Post To Payroll.', '').trim();
-                                    updateRow(index, 'columnName', name);
+                                  if (opt) {
+                                    updateRow(index, 'columnName', opt.label.replace('Post To Payroll.', '').trim());
+                                    updateRow(index, 'format', opt.format);
                                   }
                                 }}
                                 className="w-full min-w-[180px] h-9 px-3 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
                               >
-                                {COLUMN_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
+                                {columnOptions.map((o) => (
+                                  <option key={o.key} value={o.key}>
                                     {o.label}
                                   </option>
                                 ))}
@@ -312,9 +323,9 @@ export default function PostToPayrollPage() {
                                   className="flex-1 min-w-[120px] h-9 px-3 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
                                 >
                                   <option value="">—</option>
-                                  {ELEMENT_MAPPING_OPTIONS.map((o) => (
-                                    <option key={o.value} value={o.value}>
-                                      {o.label}
+                                  {elementMappingOptions.map((name) => (
+                                    <option key={name} value={name}>
+                                      {name}
                                     </option>
                                   ))}
                                 </select>
@@ -326,32 +337,6 @@ export default function PostToPayrollPage() {
                                 >
                                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </td>
-                            <td className="px-4 py-2">
-                              <div className="flex items-center gap-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => moveUp(index)}
-                                  disabled={index === 0}
-                                  className="p-1.5 rounded border border-gray-300 bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                                  aria-label="Move up"
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                  </svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => moveDown(index)}
-                                  disabled={index === rows.length - 1}
-                                  className="p-1.5 rounded border border-gray-300 bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                                  aria-label="Move down"
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l7 7-7 7" />
                                   </svg>
                                 </button>
                               </div>

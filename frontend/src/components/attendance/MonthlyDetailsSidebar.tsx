@@ -68,15 +68,6 @@ function isForcedZeroOpeningLeaveName(name: string | null | undefined): boolean 
   return false;
 }
 
-function normalizeLeaveKey(name: string | null | undefined): string {
-  return (name || '')
-    .toLowerCase()
-    .trim()
-    .replace(/marraige/g, 'marriage')
-    .replace(/[^a-z0-9]/g, '');
-}
-
-
 type MonthlyRow = {
   name: string;
   opening: number;

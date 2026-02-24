@@ -200,6 +200,40 @@ export class MonthlyAttendanceSummaryController {
   }
 
   /**
+   * Unlock a month for the organization.
+   * POST /api/v1/monthly-attendance-summary/unlock-month
+   */
+  async unlockMonth(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizationId =
+        (req.body.organizationId as string) || (req.query.organizationId as string);
+      if (!organizationId) {
+        return res.status(400).json({
+          status: 'fail',
+          message: 'organizationId is required',
+        });
+      }
+      const year = parseInt(req.body.year ?? req.query.year, 10);
+      const month = parseInt(req.body.month ?? req.query.month, 10);
+      if (!year || !month || month < 1 || month > 12) {
+        return res.status(400).json({
+          status: 'fail',
+          message: 'year and month (1-12) are required',
+        });
+      }
+      const remarks = (req.body.remarks as string) || undefined;
+      await monthlyAttendanceSummaryService.unlockMonth(organizationId, year, month, remarks);
+      return res.status(200).json({
+        status: 'success',
+        message: 'Month unlocked successfully',
+        data: null,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * Get lock status for a month.
    * GET /api/v1/monthly-attendance-summary/lock?organizationId=&year=&month=
    */

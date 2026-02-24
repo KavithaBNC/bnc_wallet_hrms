@@ -82,6 +82,24 @@ export const EARNING_COMPONENTS = {
     isMandatory: false,
     defaultFormula: 'overtimeHours * hourlyRate * 1.5', // 1.5x for overtime
   },
+  NFH: {
+    name: 'NFH',
+    code: 'NFH',
+    description: 'Non-Festival Holiday allowance / holiday days',
+    defaultCalculationType: 'FIXED' as const,
+    isTaxable: true,
+    isStatutory: false,
+    isMandatory: false,
+  },
+  WO: {
+    name: 'Week Off',
+    code: 'WO',
+    description: 'Week Off allowance / weekend days',
+    defaultCalculationType: 'FIXED' as const,
+    isTaxable: true,
+    isStatutory: false,
+    isMandatory: false,
+  },
 } as const;
 
 // ============================================================================
@@ -156,6 +174,16 @@ export const DEDUCTION_COMPONENTS = {
     isTaxable: false,
     isStatutory: false,
     isMandatory: false,
+  },
+  LOP: {
+    name: 'Loss of Pay',
+    code: 'LOP',
+    description: 'Loss of Pay deduction for absent/unpaid leave days',
+    defaultCalculationType: 'FORMULA' as const,
+    isTaxable: false,
+    isStatutory: false,
+    isMandatory: false,
+    defaultFormula: '(grossSalary/totalWorkingDays)*(absentDays+unpaidLeaveDays)',
   },
 } as const;
 

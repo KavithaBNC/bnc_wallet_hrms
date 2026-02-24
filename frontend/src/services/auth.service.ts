@@ -40,6 +40,7 @@ export interface User {
   employee?: {
     id: string;
     organizationId: string;
+    employeeCode?: string;
     firstName: string;
     lastName: string;
     profilePictureUrl?: string;

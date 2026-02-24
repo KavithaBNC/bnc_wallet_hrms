@@ -399,6 +399,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         const showExcessTimeApproval = isExcessTimeApproval && canAccessEventApprovalByRole;
         const isHrActivitiesModule = mod.path === '/hr-activities' || mod.parentPath === '/hr-activities';
         const showHrActivities = isHrActivitiesModule && isHrOrOrgAdmin;
+        const isCoreHrModule = mod.path === '/core-hr' || mod.parentPath === '/core-hr';
+        const showCoreHr = isCoreHrModule && isHrOrOrgAdmin;
         if (
           hasThisView ||
           showTimeAttendance ||
@@ -409,7 +411,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           showEventBalanceEntry ||
           showExcessTimeRequest ||
           showExcessTimeApproval ||
-          showHrActivities
+          showHrActivities ||
+          showCoreHr
         ) {
           items.push(mod);
         }
@@ -520,6 +523,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const isHrActivitiesArea = currentModule?.path === '/hr-activities' || currentModule?.parentPath === '/hr-activities';
   const hasHrActivitiesAccess =
     hasView('hr_activities') || hasView('validation_process') || isHrOrOrgAdmin;
+  const isCoreHrArea = currentModule?.path === '/core-hr' || currentModule?.parentPath === '/core-hr';
+  const hasCoreHrAccess = hasView('core_hr') || hasView('compound_creation') || isHrOrOrgAdmin;
   const hasTimeAttendanceAccess =
     hasView('time_attendance') || hasView('shifts') || (isHrOrOrgAdmin && hasAnyReadPermission);
   const isEventApplyPath = currentModule?.path === '/attendance/apply-event';
@@ -561,7 +566,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               ? hasLeaveAccess
               : isHrActivitiesArea
                 ? hasHrActivitiesAccess
-                : hasView(currentModule.resource);
+                : isCoreHrArea
+                  ? hasCoreHrAccess
+                  : hasView(currentModule.resource);
 
   useEffect(() => {
     if (!isDashboardOrProfile && currentModule && !allowed) {

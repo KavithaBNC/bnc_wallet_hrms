@@ -24,23 +24,6 @@ function getValidationTitle(type?: string | null): string {
   return `Employee Grid (${label})`;
 }
 
-/** Map grid type (from URL) to validation rule grouping (e.g. late -> Late, earlyGoing -> Early Going) */
-function typeToValidationGrouping(type?: string | null): string | undefined {
-  const map: Record<string, string> = {
-    late: 'Late',
-    earlygoing: 'Early Going',
-    shortfall: 'Shortfall',
-    absent: 'Absent',
-    approvalpending: 'Approval Pending',
-    nooutpunch: 'No Out Punch',
-    overtime: 'OverTime',
-    shiftchange: 'Shift Change',
-    completed: 'Completed',
-    validationonhold: 'Validation on Hold',
-  };
-  return type ? (map[type.toLowerCase()] ?? type) : undefined;
-}
-
 export default function ValidationProcessEmployeeGridPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();

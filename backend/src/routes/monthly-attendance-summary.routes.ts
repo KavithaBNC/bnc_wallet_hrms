@@ -76,4 +76,14 @@ router.post(
   monthlyAttendanceSummaryController.lockMonth.bind(monthlyAttendanceSummaryController)
 );
 
+/**
+ * Unlock a month for the organization
+ * POST /api/v1/monthly-attendance-summary/unlock-month
+ */
+router.post(
+  '/unlock-month',
+  authorize('SUPER_ADMIN', 'ORG_ADMIN', 'HR_MANAGER'),
+  monthlyAttendanceSummaryController.unlockMonth.bind(monthlyAttendanceSummaryController)
+);
+
 export default router;

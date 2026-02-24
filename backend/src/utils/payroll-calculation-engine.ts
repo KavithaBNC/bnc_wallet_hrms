@@ -112,6 +112,16 @@ export interface PayrollCalculationResult {
 // ============================================================================
 
 export class PayrollCalculationEngine {
+  /** Map attendance columnKey -> salary component name (from post_to_payroll_mappings) */
+  static resolveComponentName(
+    columnKey: string,
+    mappings: Array<{ columnKey: string; elementMapping: string | null }>,
+    fallback: string
+  ): string {
+    const m = mappings.find((x) => x.columnKey === columnKey);
+    return (m?.elementMapping?.trim() || fallback);
+  }
+
   /**
    * Calculate payroll for an employee
    */
@@ -127,7 +137,9 @@ export class PayrollCalculationEngine {
     salaryStructureComponents: SalaryComponent[],
     periodData: EmployeePeriodData,
     taxRegime: 'OLD' | 'NEW' = 'NEW',
-    _organizationId: string
+    _organizationId: string,
+    /** From post_to_payroll_mappings: [{ columnKey, elementMapping }] – used for OT, LOP component names */
+    attendanceMappings?: Array<{ columnKey: string; elementMapping: string | null }>
   ): PayrollCalculationResult {
     const basicSalary = Number(employeeSalary.basicSalary);
     const grossSalary = Number(employeeSalary.grossSalary);
@@ -173,10 +185,11 @@ export class PayrollCalculationEngine {
       employeeSalary.components
     );
     
-    // Add overtime to earnings
+    // Add overtime to earnings (use mapped component name from post_to_payroll_mappings)
     if (overtimeAmount > 0) {
+      const otName = this.resolveComponentName('overtimeHours', attendanceMappings || [], 'Overtime');
       earnings.push({
-        component: 'Overtime',
+        component: otName,
         amount: overtimeAmount,
         isTaxable: true,
       });

@@ -49,7 +49,8 @@
     "map:unmapped-leave-components": "ts-node -r tsconfig-paths/register src/scripts/map-unmapped-leave-components.ts",
     "clear:hardcoded-leave-entitlements": "ts-node -r tsconfig-paths/register src/scripts/clear-hardcoded-leave-entitlements.ts",
     "fix:employee-approval-in-workflows": "ts-node -r tsconfig-paths/register src/scripts/fix-employee-approval-in-workflow-mappings.ts",
-    "migrate:face-encoding": "ts-node -r tsconfig-paths/register src/scripts/add-face-encoding-column.ts"
+    "migrate:face-encoding": "ts-node -r tsconfig-paths/register src/scripts/add-face-encoding-column.ts",
+    "test:lop": "ts-node -r tsconfig-paths/register src/scripts/test-lop-calculation.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
