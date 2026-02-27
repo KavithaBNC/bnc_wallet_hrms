@@ -11,6 +11,7 @@ import locationService from '../../services/location.service';
 import { employeeSalaryService } from '../../services/payroll.service';
 import { esopService, EsopRecord } from '../../services/esop.service';
 import Modal from '../common/Modal';
+import { toDisplayEmail, toDisplayName } from '../../utils/display';
 import DepartmentForm from '../departments/DepartmentForm';
 import PositionForm from '../positions/PositionForm';
 import EntityForm from '../entities/EntityForm';
@@ -269,9 +270,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [formData, setFormData] = useState({
     // Company Details (Module 2)
     paygroupDisplay: initialPaygroupName || (employee as any)?.paygroup?.name || '',
-    firstName: employee?.firstName || '',
+    firstName: toDisplayName(employee?.firstName) || '',
     middleName: (employee as any)?.middleName || '',
-    lastName: employee?.lastName || '',
+    lastName: toDisplayName(employee?.lastName) || '',
     gender: employee?.gender || '',
     dateOfBirth: employee?.dateOfBirth ? employee.dateOfBirth.split('T')[0] : '',
     joiningDate: employee?.dateOfJoining ? employee.dateOfJoining.split('T')[0] : '',
@@ -332,8 +333,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     bankIfscCode: (employee as any)?.bankDetails?.ifscCode || '',
     bankPaymentMode: (employee as any)?.bankDetails?.paymentMode || '',
     bankCurrency: (employee as any)?.bankDetails?.currency || '',
-    // Personal (login email required for create)
-    email: employee?.email || '',
+    // Personal (login email required for create) - never show placeholder emails
+    email: toDisplayEmail(employee?.email) || '',
     phoneNumber: employee?.phone || '',
     maritalStatus: employee?.maritalStatus || '',
     // Permanent Address (map from API address JSON when no dedicated fields)
@@ -390,6 +391,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       setFormData((prev) => ({ ...prev, paygroupDisplay: initialPaygroupName }));
     }
   }, [initialPaygroupName]);
+
+  useEffect(() => {
+    if (employee?.id) {
+      const eId = (employee as { entityId?: string; location?: { entityId?: string } }).entityId
+        || (employee as { location?: { entityId?: string } }).location?.entityId
+        || '';
+      const locId = (employee as { locationId?: string }).locationId || '';
+      setFormData((prev) =>
+        prev.entityId !== eId || prev.locationId !== locId
+          ? { ...prev, entityId: eId, locationId: locId }
+          : prev
+      );
+    }
+  }, [employee?.id, (employee as any)?.entityId, (employee as any)?.locationId]);
 
   useEffect(() => {
     fetchDepartments(organizationId);
@@ -803,8 +818,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         organizationId,
         firstName: formData.firstName.trim(),
         middleName: emptyToUndefined(formData.middleName),
-        lastName: employee ? formData.lastName.trim() : (formData.lastName.trim() || 'N/A'),
-        email: (formData.email || formData.personalEmail || '').trim(),
+        lastName: formData.lastName.trim() || '',
+        email: employee ? emptyToUndefined((formData.email || formData.personalEmail || '').trim()) : (formData.email || formData.personalEmail || '').trim(),
         phone: emptyToUndefined(formData.phoneNumber || formData.permanentPhoneNumber),
         officialEmail: emptyToUndefined(formData.officialEmail) || null,
         officialMobile: emptyToUndefined(formData.officialMobile) || null,
@@ -1231,7 +1246,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               <label className="block text-sm font-medium text-gray-700">Paygroup</label>
               <input
                 type="text"
-                value={formData.paygroupDisplay || 'Not assigned'}
+                value={formData.paygroupDisplay || ''}
                 readOnly
                 placeholder="Select paygroup when creating employee"
                 className="mt-1 block w-full h-10 bg-gray-100 rounded-md border border-gray-300 text-gray-700 sm:text-sm"
@@ -2545,7 +2560,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                     <td className="px-4 py-2 text-left">:</td>
                     <td className="px-4 py-2 text-left">
                       <span className="block w-32 h-9 flex items-center text-sm font-semibold text-gray-900">
-                        {salaryLoading ? '—' : (salaryFixedGross + salaryVehicleAllowances).toFixed(2)}
+                        {salaryLoading ? '' : (salaryFixedGross + salaryVehicleAllowances).toFixed(2)}
                       </span>
                     </td>
                   </tr>
@@ -3313,10 +3328,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                         {record.noOfEsop}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
-                        {record.dateOfAllocation ? new Date(record.dateOfAllocation).toLocaleDateString('en-GB') : '-'}
+                        {record.dateOfAllocation ? new Date(record.dateOfAllocation).toLocaleDateString('en-GB') : ''}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
-                        {record.visted || '-'}
+                        {record.visted || ''}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
                         {new Date(record.createdAt).toLocaleDateString('en-GB')}
