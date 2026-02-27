@@ -384,7 +384,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
   useEffect(() => {
     fetchDepartments(organizationId);
-    fetchPositions({ organizationId, limit: 100 });
+    // Fetch a larger set of positions so all designations (including newly added ones)
+    // are available in the dropdown for the selected organization.
+    fetchPositions({ organizationId, limit: 500 });
     fetchManagersForDropdown();
     const fetchEntities = async () => {
       try {

@@ -40,6 +40,18 @@ const DEPARTMENTS: { name: string; code: string }[] = [
   { name: 'Service', code: 'SERVICE' },
   { name: 'Stores Department', code: 'STORES_DEPT' },
   { name: 'STORES', code: 'STORES' },
+  // Newly added BNC departments
+  { name: 'Machine Shop', code: 'MACHINE_SHOP' },
+  { name: 'Purchase', code: 'PURCHASE' },
+  { name: 'Sheet Metal', code: 'SHEET_METAL' },
+  { name: 'Accounts & Admin', code: 'ACCOUNTS_ADMIN' },
+  { name: 'Tool Room', code: 'TOOL_ROOM' },
+  { name: 'Injection Moulding', code: 'INJECTION_MOULDING' },
+  { name: 'EDM', code: 'EDM' },
+  { name: 'Design', code: 'DESIGN' },
+  { name: 'PDC MAINTENANACE', code: 'PDC_MAINTENANCE' },
+  { name: 'Design Department', code: 'DESIGN_DEPT' },
+  { name: 'Admin & Marketing', code: 'ADMIN_MARKETING' },
 ];
 
 const prisma = new PrismaClient();
