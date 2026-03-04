@@ -126,6 +126,7 @@ export async function postCdata(req: Request, res: Response, next: NextFunction)
       }
     } else {
       rawBody = '';
+      logger.warn(`[iclock] POST body is empty/undefined (Content-Type: ${req.headers['content-type'] ?? 'none'}). Device may be sending with unsupported content type.`);
     }
 
     // eSSL cdata.aspx sends SN (serial) in query string; merge into body if missing
@@ -148,9 +149,7 @@ export async function postCdata(req: Request, res: Response, next: NextFunction)
     }
 
     const records = parseAdmsBody(rawBody);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/40a87c8f-5aae-4e89-ab91-22bf9e52eb76', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'iclock.controller.ts:postCdata', message: 'rawBody and records', data: { rawBodySnippet: rawBody.slice(0, 200), recordsCount: records.length, firstRecordTimestamp: records[0]?.timestamp }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'A' }) }).catch(() => { });
-    // #endregion
+    logger.info(`[iclock] POST parsed ${records.length} record(s) from body (${rawBody.length} chars)`);
     if (records.length === 0) {
       return res.status(200).send('OK');
     }
