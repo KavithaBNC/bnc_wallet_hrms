@@ -74,9 +74,10 @@ export function parseAdmsBody(body: string): AdmsPunchRecord[] {
     }
     // eSSL ATTLOG: no header, each line = Pin\tDateTime\tStatus (3+ columns)
     // DateTime can be YYYYMMDDHHmmss or "YYYY-MM-DD HH:mm:ss"
+    // Pin can be numeric (e.g. "001") or alphanumeric (e.g. "N001", "EMP-001")
     const dataOnly = tabLines.every((line) => {
       const p = line.split('\t').map((x) => x.trim());
-      const looksLikePin = p.length >= 3 && /^\d+$/.test(p[0]);
+      const looksLikePin = p.length >= 3 && /^[A-Za-z0-9_.-]+$/.test(p[0]);
       const looksLikeTs = /^\d{8,14}$/.test(p[1]) || /\d{4}-\d{2}-\d{2}/.test(p[1]);
       return looksLikePin && looksLikeTs;
     });
@@ -95,6 +96,30 @@ export function parseAdmsBody(body: string): AdmsPunchRecord[] {
       if (records.length > 0) return records;
     }
   }
+
+  // eSSL ATTLOG space-separated: "N001  2026-03-03 13:03:29      0       4   ..."
+  // Col0=userId, Col1=date, Col2=time, Col3=status (0=IN, 1=OUT)
+  const spaceLines = normalized.split('\n').filter((l) => l.trim());
+  for (const line of spaceLines) {
+    const parts = line.split(/\s+/).filter((p) => p.length > 0);
+    if (parts.length >= 4) {
+      const uid = parts[0];
+      const datePart = parts[1];
+      const timePart = parts[2];
+      const statusPart = parts[3];
+      const looksLikeDate = /^\d{4}-\d{2}-\d{2}$/.test(datePart);
+      const looksLikeTime = /^\d{1,2}:\d{2}(:\d{2})?$/.test(timePart);
+      if (uid && looksLikeDate && looksLikeTime) {
+        records.push({
+          userId: uid,
+          timestamp: `${datePart} ${timePart}`,
+          status: statusPart ?? '0',
+          serialNumber: '',
+        });
+      }
+    }
+  }
+  if (records.length > 0) return records;
 
   return records;
 }
@@ -261,16 +286,17 @@ export async function processAdmsRecords(records: AdmsPunchRecord[]): Promise<{ 
 
   // Must loop: device can send up to MaxLogCount (e.g. 50) records in one POST
   for (const rec of records) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/40a87c8f-5aae-4e89-ab91-22bf9e52eb76', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'iclock.service.ts:processAdmsRecords', message: 'record from device', data: { recTimestamp: rec.timestamp, userId: rec.userId }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'B' }) }).catch(() => { });
-    // #endregion
+    logger.info(`[iclock] Processing record: userId=${rec.userId} timestamp=${rec.timestamp} status=${rec.status} serial=${rec.serialNumber}`);
     let device = await getDeviceBySerial(rec.serialNumber);
 
     // Auto-create device if not found (fixes issue after DB reset)
     if (!device) {
       logger.info(`[iclock] New device detected: ${rec.serialNumber}, creating entry...`);
-      // Need a company to attach to. Find first company or create a default "Unknown" company.
-      let defaultCompany = await prisma.company.findFirst();
+      // Need a company to attach to. Prefer a company linked to an organization (for employee resolution).
+      let defaultCompany = await prisma.company.findFirst({ where: { organizationId: { not: null } } });
+      if (!defaultCompany) {
+        defaultCompany = await prisma.company.findFirst();
+      }
       if (!defaultCompany) {
         // Create a default organization and company if completely empty
         const org = await prisma.organization.create({ data: { name: 'Default Org', timezone: 'Asia/Kolkata', currency: 'INR' } });
@@ -321,9 +347,6 @@ export async function processAdmsRecords(records: AdmsPunchRecord[]): Promise<{ 
       }
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/40a87c8f-5aae-4e89-ab91-22bf9e52eb76', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'iclock.service.ts:processAdmsRecords', message: 'literal timestamp for DB', data: { recTimestamp: rec.timestamp, literalTs }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'D', runId: 'post-fix' }) }).catch(() => { });
-    // #endregion
     if (!literalTs) {
       result.skipped++;
       result.errors.push(`Invalid timestamp: ${rec.timestamp}`);
@@ -331,6 +354,7 @@ export async function processAdmsRecords(records: AdmsPunchRecord[]): Promise<{ 
     }
 
     const employeeId = await resolveEmployeeId(rec.userId, device.companyId);
+    logger.info(`[iclock] Employee resolution: userId="${rec.userId}" companyId=${device.companyId} → employeeId=${employeeId ?? 'NULL (not matched)'}`);
 
     try {
       // Store punch_timestamp as literal string so DB has exact device date/time (Prisma would convert to UTC)
