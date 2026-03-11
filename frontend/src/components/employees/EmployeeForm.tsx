@@ -9,7 +9,7 @@ import { subDepartmentService } from '../../services/sub-department.service';
 import entityService from '../../services/entity.service';
 import locationService from '../../services/location.service';
 import { employeeSalaryService } from '../../services/payroll.service';
-import { esopService, EsopRecord } from '../../services/esop.service';
+import { esopService, EsopGrant } from '../../services/esop.service';
 import Modal from '../common/Modal';
 import { toDisplayEmail, toDisplayName } from '../../utils/display';
 import DepartmentForm from '../departments/DepartmentForm';
@@ -111,7 +111,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [salaryHistory, setSalaryHistory] = useState<Array<{ effectiveDate: string; grossSalary: number; isCurrent: boolean }>>([]);
   const [salaryLoading, setSalaryLoading] = useState(false);
   const [othersTab, setOthersTab] = useState<'certifications' | 'knownLanguages'>('certifications');
-  const [esopRecords, setEsopRecords] = useState<EsopRecord[]>([]);
+  const [esopRecords, setEsopRecords] = useState<EsopGrant[]>([]);
   const [esopLoading, setEsopLoading] = useState(false);
   const [assets, setAssets] = useState<Array<{
     id: string;
@@ -244,17 +244,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     'company' | 'personal' | 'statutory' | 'bank' | 'salary' | 'assets' | 'academic' | 'previousEmployment' | 'family' | 'others' | 'newFields' | 'esop'
   >('company');
 
-  // Fetch ESOP records when ESOP tab is selected and employee exists
+  // Fetch ESOP grants when ESOP tab is selected and employee exists
   useEffect(() => {
     if (currentTab === 'esop' && employee?.id) {
       setEsopLoading(true);
+      const orgId = (employee as any).organizationId || (employee as any).organization?.id || '';
       esopService
-        .getByEmployeeId(employee.id)
-        .then((records) => {
-          setEsopRecords(records);
+        .getAllGrants({ organizationId: orgId, employeeId: employee.id, limit: 50 })
+        .then((res) => {
+          setEsopRecords(res.items);
         })
-        .catch((error) => {
-          console.error('Failed to fetch ESOP records:', error);
+        .catch(() => {
           setEsopRecords([]);
         })
         .finally(() => {
@@ -1015,10 +1015,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
         // Auto-create salary record if salary values were entered on the Salary tab
         const grossToSave = salaryFixedGross + salaryVehicleAllowances;
-        if (grossToSave > 0 && result?.id) {
+        if (grossToSave > 0 && result?.employee?.id) {
           try {
             await employeeSalaryService.createSalary({
-              employeeId: result.id,
+              employeeId: result.employee.id,
               effectiveDate: (formData.joiningDate || new Date().toISOString().split('T')[0]),
               basicSalary: Math.round(grossToSave * 0.4),
               grossSalary: grossToSave,
@@ -1033,10 +1033,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         }
 
         // Auto-create bank account record if bank fields were filled on the Bank tab
-        if (formData.bankAccountNumber?.trim() && formData.bankName?.trim() && result?.id) {
+        if (formData.bankAccountNumber?.trim() && formData.bankName?.trim() && result?.employee?.id) {
           try {
             await employeeSalaryService.createBankAccount({
-              employeeId: result.id,
+              employeeId: result.employee.id,
               bankName: formData.bankName.trim(),
               accountNumber: formData.bankAccountNumber.trim(),
               routingNumber: formData.bankIfscCode?.trim() || undefined,
@@ -3353,40 +3353,36 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               <table className="min-w-full divide-y divide-gray-200 border border-gray-300">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
-                      Financial Year
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
-                      No of ESOP
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
-                      Date of Allocation
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
-                      Vested
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
-                      Created At
-                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">Grant Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">Total Shares</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">Vested</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">Exercised</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">Grant Price</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">Status</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {esopRecords.map((record) => (
                     <tr key={record.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
-                        {record.financialYear}
+                        {new Date(record.grantDate).toLocaleDateString('en-GB')}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
-                        {record.noOfEsop}
+                        {record.totalShares.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
-                        {record.dateOfAllocation ? new Date(record.dateOfAllocation).toLocaleDateString('en-GB') : ''}
+                        {record.vestedShares.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
-                        {record.visted || ''}
+                        {record.exercisedShares.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200">
-                        {new Date(record.createdAt).toLocaleDateString('en-GB')}
+                        ₹{Number(record.grantPrice).toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm border-b border-gray-200">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${record.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : record.status === 'CANCELLED' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                          {record.status}
+                        </span>
                       </td>
                     </tr>
                   ))}

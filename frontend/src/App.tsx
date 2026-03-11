@@ -102,8 +102,14 @@ import OrganizationsPage from './pages/OrganizationsPage';
 import PermissionsPage from './pages/PermissionsPage';
 import HRAuditSettingsPage from './pages/HRAuditSettingsPage';
 import EmployeeMasterApprovalPage from './pages/EmployeeMasterApprovalPage';
-import EsopListPage from './pages/EsopListPage';
-import EsopPage from './pages/EsopPage';
+import EsopDashboardPage from './pages/EsopDashboardPage';
+import EsopPoolsPage from './pages/EsopPoolsPage';
+import VestingPlansPage from './pages/VestingPlansPage';
+import EsopGrantsPage from './pages/EsopGrantsPage';
+import VestingSchedulePage from './pages/VestingSchedulePage';
+import ExerciseRequestsPage from './pages/ExerciseRequestsPage';
+import EsopLedgerPage from './pages/EsopLedgerPage';
+import EsopMyHoldingsPage from './pages/EsopMyHoldingsPage';
 import LeaveApprovalPage from './pages/LeaveApprovalPage';
 import EventRequestPage from './pages/EventRequestPage';
 import EventBalanceEntryPage from './pages/EventBalanceEntryPage';
@@ -1245,26 +1251,15 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/esop"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <EsopListPage />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/esop/add"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <EsopPage />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/esop" element={<ProtectedRoute><DashboardLayout><EsopDashboardPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/dashboard" element={<ProtectedRoute><DashboardLayout><EsopDashboardPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/pools" element={<ProtectedRoute><DashboardLayout><EsopPoolsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/vesting-plans" element={<ProtectedRoute><DashboardLayout><VestingPlansPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/grants" element={<ProtectedRoute><DashboardLayout><EsopGrantsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/vesting-schedules" element={<ProtectedRoute><DashboardLayout><VestingSchedulePage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/exercise-requests" element={<ProtectedRoute><DashboardLayout><ExerciseRequestsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/ledger" element={<ProtectedRoute><DashboardLayout><EsopLedgerPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/esop/my-holdings" element={<ProtectedRoute><DashboardLayout><EsopMyHoldingsPage /></DashboardLayout></ProtectedRoute>} />
           <Route
             path="/transaction"
             element={

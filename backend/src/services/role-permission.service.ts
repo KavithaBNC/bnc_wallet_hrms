@@ -286,6 +286,12 @@ export class RolePermissionService {
       if (allowedResources.has('time_attendance')) {
         allowedResources.add('shifts');
       }
+      // ESOP parent implies all ESOP sub-modules
+      if (allowedResources.has('esop')) {
+        for (const r of ['esop_pools', 'esop_vesting_plans', 'esop_grants', 'esop_vesting_schedules', 'esop_exercise_requests', 'esop_ledger']) {
+          allowedResources.add(r);
+        }
+      }
       // Transaction modules: always allow so Org Admin can assign Increment, Transfer and Promotion Entry, Emp Code Transfer
       allowedResources.add('transfer_promotions');
       allowedResources.add('transfer_promotion_entry');

@@ -78,6 +78,12 @@ model Organization {
   employeeLoans                EmployeeLoan[]
   auditLogs                    AuditLog[]
   complianceReportRecords      ComplianceReportRecord[]
+  esopPools                    EsopPool[]
+  vestingPlans                 VestingPlan[]
+  esopGrants                   EsopGrant[]
+  vestingSchedules             VestingSchedule[]
+  esopExerciseRequests         EsopExerciseRequest[]
+  esopLedger                   EsopLedger[]
   @@map("organizations")
 }
 
@@ -440,6 +446,8 @@ model Employee {
   variableInputs               VariableInput[]
   fnfSettlements               FnfSettlement[]
   loans                        EmployeeLoan[]
+  esopGrants                   EsopGrant[]
+  esopExerciseRequests         EsopExerciseRequest[]
 
   @@map("employees")
 }
@@ -2242,5 +2250,206 @@ enum OfferStatus {
   EXPIRED
 
   @@map("offer_status")
+}
+
+// ============================================================
+// ESOP MODULE
+// ============================================================
+
+enum VestingFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+
+  @@map("vesting_frequency")
+}
+
+enum GrantStatus {
+  ACTIVE
+  CANCELLED
+  COMPLETED
+
+  @@map("grant_status")
+}
+
+enum VestingScheduleStatus {
+  PENDING
+  VESTED
+  LAPSED
+
+  @@map("vesting_schedule_status")
+}
+
+enum ExerciseRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+
+  @@map("exercise_request_status")
+}
+
+enum EsopLedgerType {
+  POOL_CREATED
+  POOL_UPDATED
+  PLAN_CREATED
+  GRANT_ISSUED
+  GRANT_CANCELLED
+  SHARES_VESTED
+  EXERCISE_REQUESTED
+  EXERCISE_APPROVED
+  EXERCISE_REJECTED
+  EXERCISE_COMPLETED
+
+  @@map("esop_ledger_type")
+}
+
+model EsopPool {
+  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  poolName        String       @map("pool_name") @db.VarChar(255)
+  totalShares     Int          @map("total_shares")
+  allocatedShares Int          @default(0) @map("allocated_shares")
+  availableShares Int          @default(0) @map("available_shares")
+  sharePrice      Decimal      @map("share_price") @db.Decimal(15, 4)
+  currency        String       @default("INR") @map("currency") @db.VarChar(3)
+  description     String?      @db.Text
+  isActive        Boolean      @default(true) @map("is_active")
+  createdBy       String?      @map("created_by") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  grants          EsopGrant[]
+  ledgerEntries   EsopLedger[]
+
+  @@index([organizationId])
+  @@map("esop_pools")
+}
+
+model VestingPlan {
+  id                  String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId      String           @map("organization_id") @db.Uuid
+  planName            String           @map("plan_name") @db.VarChar(255)
+  description         String?          @db.Text
+  vestingPeriodMonths Int              @map("vesting_period_months")
+  cliffMonths         Int              @default(0) @map("cliff_months")
+  frequency           VestingFrequency
+  isActive            Boolean          @default(true) @map("is_active")
+  createdBy           String?          @map("created_by") @db.Uuid
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+  organization        Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  grants              EsopGrant[]
+
+  @@index([organizationId])
+  @@map("vesting_plans")
+}
+
+model EsopGrant {
+  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  employeeId      String       @map("employee_id") @db.Uuid
+  poolId          String       @map("pool_id") @db.Uuid
+  vestingPlanId   String       @map("vesting_plan_id") @db.Uuid
+  grantDate       DateTime     @map("grant_date") @db.Date
+  totalShares     Int          @map("total_shares")
+  vestedShares    Int          @default(0) @map("vested_shares")
+  exercisedShares Int          @default(0) @map("exercised_shares")
+  grantPrice      Decimal      @map("grant_price") @db.Decimal(15, 4)
+  status          GrantStatus  @default(ACTIVE)
+  remarks         String?      @db.Text
+  grantedBy       String?      @map("granted_by") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee        Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  pool            EsopPool              @relation(fields: [poolId], references: [id])
+  vestingPlan     VestingPlan           @relation(fields: [vestingPlanId], references: [id])
+  vestingSchedules VestingSchedule[]
+  exerciseRequests EsopExerciseRequest[]
+  ledgerEntries   EsopLedger[]
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([poolId])
+  @@map("esop_grants")
+}
+
+model VestingSchedule {
+  id              String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String                @map("organization_id") @db.Uuid
+  grantId         String                @map("grant_id") @db.Uuid
+  trancheNumber   Int                   @map("tranche_number")
+  vestingDate     DateTime              @map("vesting_date") @db.Date
+  scheduledShares Int                   @map("scheduled_shares")
+  vestedShares    Int                   @default(0) @map("vested_shares")
+  status          VestingScheduleStatus @default(PENDING)
+  processedAt     DateTime?             @map("processed_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  grant           EsopGrant             @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  ledgerEntries   EsopLedger[]
+
+  @@index([organizationId])
+  @@index([grantId])
+  @@index([vestingDate, status])
+  @@map("vesting_schedules")
+}
+
+model EsopExerciseRequest {
+  id                 String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId     String                @map("organization_id") @db.Uuid
+  grantId            String                @map("grant_id") @db.Uuid
+  employeeId         String                @map("employee_id") @db.Uuid
+  sharesRequested    Int                   @map("shares_requested")
+  exercisePrice      Decimal               @map("exercise_price") @db.Decimal(15, 4)
+  totalExerciseValue Decimal               @map("total_exercise_value") @db.Decimal(15, 2)
+  requestDate        DateTime              @default(now()) @map("request_date") @db.Date
+  status             ExerciseRequestStatus @default(PENDING)
+  approvedBy         String?               @map("approved_by") @db.Uuid
+  approvedAt         DateTime?             @map("approved_at")
+  rejectionReason    String?               @map("rejection_reason") @db.Text
+  completedAt        DateTime?             @map("completed_at")
+  remarks            String?               @db.Text
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+  organization       Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  grant              EsopGrant             @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  employee           Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  ledgerEntries      EsopLedger[]
+
+  @@index([organizationId])
+  @@index([grantId])
+  @@index([employeeId])
+  @@map("esop_exercise_requests")
+}
+
+model EsopLedger {
+  id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId    String          @map("organization_id") @db.Uuid
+  transactionType   EsopLedgerType  @map("transaction_type")
+  poolId            String?         @map("pool_id") @db.Uuid
+  grantId           String?         @map("grant_id") @db.Uuid
+  scheduleId        String?         @map("schedule_id") @db.Uuid
+  exerciseRequestId String?         @map("exercise_request_id") @db.Uuid
+  employeeId        String?         @map("employee_id") @db.Uuid
+  sharesCount       Int?            @map("shares_count")
+  sharePrice        Decimal?        @map("share_price") @db.Decimal(15, 4)
+  transactionValue  Decimal?        @map("transaction_value") @db.Decimal(15, 2)
+  description       String?         @db.Text
+  performedBy       String?         @map("performed_by") @db.Uuid
+  transactionDate   DateTime        @default(now()) @map("transaction_date")
+  metadata          Json?
+  organization      Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pool              EsopPool?             @relation(fields: [poolId], references: [id])
+  grant             EsopGrant?            @relation(fields: [grantId], references: [id])
+  schedule          VestingSchedule?      @relation(fields: [scheduleId], references: [id])
+  exerciseRequest   EsopExerciseRequest?  @relation(fields: [exerciseRequestId], references: [id])
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([grantId])
+  @@map("esop_ledger")
 }
 
