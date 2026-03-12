@@ -101,17 +101,9 @@ export default function ValidationProcessEmployeeGridPage() {
     navigate('/login');
   };
 
-  if (!user) {
-    return (
-      <div className="flex flex-col flex-1 min-h-0 bg-gray-100 items-center justify-center p-8">
-        <p className="text-gray-600">Loading...</p>
-      </div>
-    );
-  }
+  // ─── Hooks must be declared before any conditional return ───────────────────
 
-  const title = getValidationTitle(type);
-  const selectedCorrection =
-    correctionOptions.find((opt) => opt.id === selectedCorrectionId) ?? correctionOptions[0];
+  const isOnHoldType = type.toLowerCase() === 'validationonhold';
 
   const loadEmployeeList = useCallback(async () => {
     if (!organizationId || !type) {
@@ -148,8 +140,6 @@ export default function ValidationProcessEmployeeGridPage() {
   useEffect(() => {
     loadEmployeeList();
   }, [loadEmployeeList]);
-
-  const isOnHoldType = type.toLowerCase() === 'validationonhold';
 
   useEffect(() => {
     if (isOnHoldType) {
@@ -220,6 +210,19 @@ export default function ValidationProcessEmployeeGridPage() {
     };
     loadCorrectionOptions();
   }, [organizationId, type, fromDate, toDate, date, isOnHoldType]);
+
+  // ─── Conditional render after all hooks ──────────────────────────────────────
+  if (!user) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 bg-gray-100 items-center justify-center p-8">
+        <p className="text-gray-600">Loading...</p>
+      </div>
+    );
+  }
+
+  const title = getValidationTitle(type);
+  const selectedCorrection =
+    correctionOptions.find((opt) => opt.id === selectedCorrectionId) ?? correctionOptions[0];
 
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-gray-100">

@@ -32,12 +32,27 @@ export const ASSIGNABLE_MODULE_RESOURCES = [
   'employee_separations',
   'employee_rejoin',
   'salary_structures',
+  'salary_templates',
   'employee_salaries',
   'hr_audit_settings',
   'employee_master_approval',
   'esop',
+  'esop_pools',
+  'esop_vesting_plans',
+  'esop_grants',
+  'esop_vesting_schedules',
+  'esop_exercise_requests',
+  'esop_ledger',
   'transfer_promotions',
   'transfer_promotion_entry',
+  'fnf_settlements',
+  'employee_loans',
+  'statutory_compliance',
+  'epf_processing',
+  'esic_processing',
+  'professional_tax',
+  'tds_income_tax',
+  'reports',
 ] as const;
 
 export type AssignableModuleResource = (typeof ASSIGNABLE_MODULE_RESOURCES)[number];
@@ -93,6 +108,12 @@ export class OrganizationModuleService {
     if (resources.includes('time_attendance') && !resources.includes('shifts')) {
       resources = [...resources, 'shifts'];
     }
+    // ESOP parent implies all ESOP sub-modules
+    if (resources.includes('esop')) {
+      for (const r of ['esop_pools', 'esop_vesting_plans', 'esop_grants', 'esop_vesting_schedules', 'esop_exercise_requests', 'esop_ledger']) {
+        if (!resources.includes(r)) resources = [...resources, r];
+      }
+    }
     // Transaction sub-modules: always include so Org Admin can see and assign Increment, Transfer and Promotion Entry, Emp Code Transfer
     if (!resources.includes('transfer_promotions')) resources = [...resources, 'transfer_promotions'];
     if (!resources.includes('transfer_promotion_entry')) resources = [...resources, 'transfer_promotion_entry'];
@@ -124,6 +145,12 @@ export class OrganizationModuleService {
     // Time attendance implies shifts (Shift Master, Shift Assign, Associate Shift Change)
     if (unique.includes('time_attendance') && !unique.includes('shifts')) {
       unique = [...unique, 'shifts'];
+    }
+    // ESOP parent implies all ESOP sub-modules
+    if (unique.includes('esop')) {
+      for (const r of ['esop_pools', 'esop_vesting_plans', 'esop_grants', 'esop_vesting_schedules', 'esop_exercise_requests', 'esop_ledger']) {
+        if (!unique.includes(r)) unique = [...unique, r];
+      }
     }
 
     await prisma.$transaction(async (tx) => {
